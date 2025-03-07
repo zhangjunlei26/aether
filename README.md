@@ -22,3 +22,4 @@ Every component—from assembly-level system calls to high-level language constr
 
 Elimination of Unneeded Runtime Overhead:
 By integrating concurrency primitives directly into the language’s syntax and semantics, Aether removes the need for additional libraries or runtime checks, which can slow down execution.
+

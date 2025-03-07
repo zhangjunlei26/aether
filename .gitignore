@@ -1,0 +1,30 @@
+# Build artifacts
+/build/
+/bin/
+/out/
+
+# Compiled object files, executables, and generated binaries
+*.o
+*.exe
+aether_program
+aetherc
+
+# Generated C files from the Aether compiler (if not tracked)
+build/*.c
+
+# Assembly intermediate files (if generated)
+*.s
+
+# Temporary files and logs
+*.tmp
+*.log
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE directories and files
+.vscode/
+.idea/
