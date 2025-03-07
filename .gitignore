@@ -12,8 +12,6 @@ aetherc
 # Generated C files from the Aether compiler (if not tracked)
 build/*.c
 
-# Assembly intermediate files (if generated)
-*.s
 
 # Temporary files and logs
 *.tmp
