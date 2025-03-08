@@ -190,6 +190,11 @@ void process_main_body(const char *body, FILE *out) {
             line = strtok(NULL, "\n");
             continue;
         }
+        if (strncmp(trim, "switch", 6) == 0 || strncmp(trim, "func", 4) == 0 || strchr(trim, '[')) {
+            fprintf(out, "%s\n", trim);
+            line = strtok(NULL, "\n");
+            continue;
+        }
 
         fprintf(out, "%s\n", trim);
         line = strtok(NULL, "\n");
