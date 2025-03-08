@@ -4,21 +4,47 @@
 #include <ctype.h>
 #define BUFFER_SIZE 65536
 
-/* process_spawn_block
-   Processes a spawn block: extracts the block content, generates a new pthread function,
-   and outputs the pthread creation code.
-*/
+void substitute_and_write(FILE *out, const char *src) {
+    const char *needle = "print";
+    size_t needle_len = strlen(needle);
+    const char *p = src;
+    const char *match;
+    while ((match = strstr(p, needle)) != NULL) {
+        fwrite(p, 1, match - p, out);
+        fprintf(out, "printf");
+        p = match + needle_len;
+    }
+    fputs(p, out);
+}
+
+void parse_func_signature(const char **p) {
+    while (isspace(**p)) (*p)++;
+    if (strncmp(*p, "func", 4) != 0) {
+        fprintf(stderr, "Error: Expected 'func' after spawn\n");
+        exit(1);
+    }
+    *p += 4;
+    while (isspace(**p)) (*p)++;
+    if (**p != '(') {
+        fprintf(stderr, "Error: Expected '(' after 'func'\n");
+        exit(1);
+    }
+    (*p)++;
+    while (isspace(**p)) (*p)++;
+    if (**p != ')') {
+        fprintf(stderr, "Error: Expected ')' after '(' in func signature\n");
+        exit(1);
+    }
+    (*p)++;
+}
+
 static int spawn_counter = 0;
 void process_spawn_block(const char **p, FILE *out) {
     while (isspace(**p)) (*p)++;
-    if (strncmp(*p, "func()", 6) != 0) {
-        fprintf(stderr, "Error: Expected 'func()' after spawn\n");
-        exit(1);
-    }
-    *p += 6;
+    parse_func_signature(p);
     while (isspace(**p)) (*p)++;
     if (**p != '{') {
-        fprintf(stderr, "Error: Expected '{' after func()\n");
+        fprintf(stderr, "Error: Expected '{' after func() in spawn block\n");
         exit(1);
     }
     (*p)++;
@@ -44,37 +70,14 @@ void process_spawn_block(const char **p, FILE *out) {
     char func_name[64];
     sprintf(func_name, "spawn_func_%d", spawn_counter);
     fprintf(out, "\nvoid* %s(void* arg) {\n", func_name);
-    fprintf(out, "%s\n", block);
-    fprintf(out, "    return NULL;\n}\n");
+    substitute_and_write(out, block);
+    fprintf(out, "\n    return NULL;\n}\n");
     fprintf(out, "{ pthread_t thread; pthread_create(&thread, NULL, %s, NULL); pthread_join(thread, NULL); }\n", func_name);
-}
-
-/* process_if_statement
-   Processes an if statement by copying the entire if statement (including its block) verbatim.
-   It handles nested braces.
-*/
-void process_if_statement(const char **p, FILE *out) {
-    int brace_count = 0;
-    const char *start = *p;
-    while (**p && **p != '{') {
-        (*p)++;
-    }
-    if (**p == '{') {
-        brace_count = 1;
-        (*p)++; 
-        while (brace_count > 0 && **p) {
-            if (**p == '{') brace_count++;
-            else if (**p == '}') brace_count--;
-            (*p)++;
-        }
-    }
-    size_t len = *p - start;
-    fwrite(start, 1, len, out);
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s input.ae output.c\n", argv[0]);
+        fprintf(stderr, "Usage: %s input.aeth output.c\n", argv[0]);
         return 1;
     }
     const char* input_filename = argv[1];
@@ -109,7 +112,10 @@ int main(int argc, char* argv[]) {
     while (*p) {
         if (strncmp(p, "import", 6) == 0 || strncmp(p, "module", 6) == 0) {
             while (*p && *p != '\n') p++;
-            if (*p == '\n') { fputc('\n', fout); p++; }
+            if (*p == '\n') {
+                fputc('\n', fout);
+                p++;
+            }
             continue;
         }
         if (strncmp(p, "func main()", 11) == 0) {
@@ -126,10 +132,6 @@ int main(int argc, char* argv[]) {
             p += 5;
             while (*p && (isspace(*p) || *p == '(')) p++;
             process_spawn_block(&p, fout);
-            continue;
-        }
-        if (strncmp(p, "if", 2) == 0) {
-            process_if_statement(&p, fout);
             continue;
         }
         fputc(*p, fout);
