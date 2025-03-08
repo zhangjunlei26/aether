@@ -1,6 +1,6 @@
 import Runtime;
 
-func main() {
+main() {
     print("Hello from the Aether runtime!\n");
     int x = 5;
     print("x is %d\n", x);

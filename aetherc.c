@@ -5,7 +5,7 @@
 
 #define BUFFER_SIZE 65536
 #define MAX_LINE 1024
-#define MAIN_SIG "func main()"
+#define MAIN_SIG "main()"
 
 static int spawn_counter = 0;
 
