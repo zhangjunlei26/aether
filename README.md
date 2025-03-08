@@ -1,5 +1,5 @@
 # aether
-Aether is designed to be faster than many existing languages because it’s built from the ground up with a singular focus on minimalism and concurrency. Here’s why it can outperform more general-purpose languages:
+Aether is designed to be fast,it's built from the ground up with a singular focus on minimalism and concurrency.
 
 Zero–Overhead Abstractions:
 Aether is engineered with minimal runtime overhead. By implementing its low–level primitives (like system calls and thread spawning) directly in assembly and exposing them natively to the language, every feature is optimized for speed without the layers of abstraction seen in many other languages.
@@ -23,3 +23,20 @@ Every component—from assembly-level system calls to high-level language constr
 Elimination of Unneeded Runtime Overhead:
 By integrating concurrency primitives directly into the language’s syntax and semantics, Aether removes the need for additional libraries or runtime checks, which can slow down execution.
 
+Build Instructions:
+
+Assemble the Assembly Code: as --64 asm/syscalls.s -o asm/syscalls.o
+
+Compile the Aether Compiler: gcc -O2 aetherc.c -o aetherc -lpthread
+
+Generate the C Code from Aether Source: ./aetherc src/main.ae build/main.c
+
+Compile the Generated C Code: gcc build/main.c asm/syscalls.o -o aether_program -lpthread
+
+Run the Program: ./aether_program
+
+Requirements:
+
+GCC (or TDM-GCC for Windows)
+GNU Assembler (as)
+pthread library (included with GCC/TDM-GCC)
