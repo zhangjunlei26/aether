@@ -115,6 +115,18 @@ All benchmarks are:
 - Repeatable (multiple runs, variance reported)
 - Self-contained (single C file per experiment)
 
+## Comparison to Industry Standards
+
+**See**: `COMPARISON_TO_ERLANG_AND_GO.md` for detailed technical analysis
+
+We're not working in a vacuum. Erlang (BEAM) and Go have proven that lightweight concurrency works at massive scale. Our experiments directly compare against their approaches:
+
+- **Erlang**: Preemptive green threads with reduction counting (~2.6KB/process)
+- **Go**: M:N work-stealing scheduler with goroutines (~2KB/goroutine)  
+- **Aether**: Cooperative state machines (128B/actor)
+
+Key insight: By compiling to C instead of using a runtime, we achieve lighter weight at the cost of preemption. The comparison doc covers what we learned, what we're copying, and where we differ.
+
 ## Papers & References
 
 Key research papers that informed these experiments:

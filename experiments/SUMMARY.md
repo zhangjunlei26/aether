@@ -183,10 +183,11 @@ This research directly enables:
 ## 📖 Key Files to Review
 
 1. **`experiments/README.md`** - Start here! Overview of all experiments
-2. **`experiments/02_state_machine/README.md`** - Full analysis of state machines
-3. **`experiments/papers/README.md`** - Academic publication framework
-4. **`docs/CONCURRENCY_EXPERIMENTS.md`** - High-level analysis for docs/
-5. **`docs/PROJECT_STATUS.md`** - Complete project status
+2. **`experiments/COMPARISON_TO_ERLANG_AND_GO.md`** - Why our approach differs from BEAM/goroutines
+3. **`experiments/02_state_machine/README.md`** - Full analysis of state machines
+4. **`experiments/papers/README.md`** - Academic publication framework
+5. **`docs/CONCURRENCY_EXPERIMENTS.md`** - High-level analysis for docs/
+6. **`docs/PROJECT_STATUS.md`** - Complete project status
 
 ---
 
