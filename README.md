@@ -39,17 +39,24 @@ main() {
 }
 ```
 
-### Compile and Run
+### Easy Mode: One-Step Compilation and Execution
 
 ```bash
-# Compile Aether to C
-./aetherc hello.ae hello.c
+# Compile and run in one command!
+./build/aetherc run examples/hello_world.ae
+```
 
-# Compile C to executable
-gcc hello.c ../runtime/*.c -o hello -lpthread
+### Advanced: Step-by-Step Compilation
 
-# Run the program
-./hello
+```bash
+# Step 1: Compile Aether to C
+./build/aetherc examples/hello_world.ae output.c
+
+# Step 2: Compile C to executable
+gcc output.c runtime/*.c -Iruntime -o program -lpthread
+
+# Step 3: Run
+./program
 ```
 
 ## Language Features
@@ -193,6 +200,8 @@ make all
 - [Language Specification](docs/LANGUAGE_SPEC.md)
 - [Getting Started Guide](docs/GETTING_STARTED.md)
 - [Build Instructions](BUILD_INSTRUCTIONS.md)
+- [Development Roadmap](docs/ROADMAP.md)
+- [Concurrency Experiments](docs/CONCURRENCY_EXPERIMENTS.md)
 
 ## License
 

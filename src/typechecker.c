@@ -143,7 +143,7 @@ Type* infer_type(ASTNode* expr, SymbolTable* table) {
     }
 }
 
-Type* infer_binary_type(ASTNode* left, ASTNode* right, TokenType operator) {
+Type* infer_binary_type(ASTNode* left, ASTNode* right, AeTokenType operator) {
     Type* left_type = left ? left->node_type : NULL;
     Type* right_type = right ? right->node_type : NULL;
     
@@ -184,7 +184,7 @@ Type* infer_binary_type(ASTNode* left, ASTNode* right, TokenType operator) {
     return create_type(TYPE_UNKNOWN);
 }
 
-Type* infer_unary_type(ASTNode* operand, TokenType operator) {
+Type* infer_unary_type(ASTNode* operand, AeTokenType operator) {
     Type* operand_type = operand ? operand->node_type : NULL;
     if (!operand_type) return create_type(TYPE_UNKNOWN);
     
@@ -202,7 +202,7 @@ Type* infer_unary_type(ASTNode* operand, TokenType operator) {
     }
 }
 
-TokenType get_token_type_from_string(const char* str) {
+AeTokenType get_token_type_from_string(const char* str) {
     if (!str) return TOKEN_ERROR;
     
     if (strcmp(str, "+") == 0) return TOKEN_PLUS;
@@ -557,7 +557,7 @@ int typecheck_binary_expression(ASTNode* expr, SymbolTable* table) {
     Type* left_type = infer_type(left, table);
     Type* right_type = infer_type(right, table);
     
-    TokenType operator = get_token_type_from_string(expr->value);
+    AeTokenType operator = get_token_type_from_string(expr->value);
     
     if (operator == TOKEN_ASSIGN) {
         if (!is_assignable(right_type, left_type)) {

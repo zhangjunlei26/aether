@@ -31,7 +31,7 @@ Token* advance_token(Parser* parser) {
     return parser->tokens[parser->current_token++];
 }
 
-Token* expect_token(Parser* parser, TokenType expected) {
+Token* expect_token(Parser* parser, AeTokenType expected) {
     Token* token = peek_token(parser);
     if (!token || token->type != expected) {
         char error_msg[256];
@@ -50,7 +50,7 @@ int is_at_end(Parser* parser) {
            peek_token(parser)->type == TOKEN_EOF;
 }
 
-int match_token(Parser* parser, TokenType type) {
+int match_token(Parser* parser, AeTokenType type) {
     if (is_at_end(parser)) return 0;
     if (peek_token(parser)->type == type) {
         advance_token(parser);
@@ -215,7 +215,7 @@ ASTNode* parse_unary_expression(Parser* parser) {
     return parse_postfix_expression(parser);
 }
 
-int get_operator_precedence(TokenType type) {
+int get_operator_precedence(AeTokenType type) {
     switch (type) {
         case TOKEN_OR: return 1;
         case TOKEN_AND: return 2;

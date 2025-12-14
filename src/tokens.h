@@ -75,10 +75,10 @@ typedef enum {
     TOKEN_PRINT,
     TOKEN_EOF,
     TOKEN_ERROR
-} TokenType;
+} AeTokenType;
 
 typedef struct {
-    TokenType type;
+    AeTokenType type;
     char* value;
     int line;
     int column;
@@ -89,8 +89,8 @@ void lexer_init(const char* src);
 Token* next_token(void);
 
 // Token functions
-Token* create_token(TokenType type, const char* value, int line, int column);
+Token* create_token(AeTokenType type, const char* value, int line, int column);
 void free_token(Token* token);
-const char* token_type_to_string(TokenType type);
+const char* token_type_to_string(AeTokenType type);
 
 #endif
