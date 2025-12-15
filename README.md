@@ -1,232 +1,96 @@
-# Aether Language
+# Aether - State Machine Actors
 
-A modern programming language designed for performance and concurrency, featuring actor-based concurrency and compile-time type safety.
+High-performance actor concurrency through compile-time transformation to C state machines.
 
-## Features
+## Status
 
-- **Actor-Based Concurrency**: Modern actor model for safe concurrent programming
-- **Type Safety**: Compile-time type checking with actor-specific types
-- **Performance**: Zero-overhead abstractions with C transpilation
-- **Clean Syntax**: Intuitive, readable language design
-- **Cross-Platform**: Runs on Windows and Linux
+**Phase 1: Basic Actor Syntax** - In Progress  
+**Goal**: Prove actors can compile to efficient state machine C code
+
+### Completed ✅
+- Struct types (Phase 1 complete)
+- Actor syntax parsing (`actor`, `state`, `receive`)
+- Message type system
+- Member access operator (`.`)
+- Basic actor struct generation
+
+### In Progress 🚧
+- Message handling codegen
+- Assignment statement generation
+- Mailbox system integration
+
+### Next 
+- Actor spawning and message sending
+- Scheduler integration
+- Performance benchmarks (target: 125M msg/s like POC)
 
 ## Quick Start
 
-### Building the Compiler
-
 ```bash
-cd src
-make all
+# Build compiler
+make
+
+# Test actor compilation
+./build/aetherc examples/test_actor_simple.ae output.c
 ```
 
-Or manually:
-```bash
-cd src
-gcc -O2 -o aetherc aetherc.c lexer.c ast.c parser.c typechecker.c codegen.c ../runtime/actor.c ../runtime/scheduler.c ../runtime/memory.c -lpthread
-```
+## Actor Syntax
 
-### Your First Aether Program
-
-Create a file `hello.ae`:
-```aether
-main() {
-    print("Hello, Aether World!\n");
-    
-    int x = 42;
-    if (x > 40) {
-        print("x is greater than 40!\n");
-    }
-}
-```
-
-### Easy Mode: One-Step Compilation and Execution
-
-```bash
-# Compile and run in one command!
-./build/aetherc run examples/hello_world.ae
-```
-
-### Advanced: Step-by-Step Compilation
-
-```bash
-# Step 1: Compile Aether to C
-./build/aetherc examples/hello_world.ae output.c
-
-# Step 2: Compile C to executable
-gcc output.c runtime/*.c -Iruntime -o program -lpthread
-
-# Step 3: Run
-./program
-```
-
-## Language Features
-
-### Basic Types
-- `int` - Integer numbers
-- `float` - Floating point numbers
-- `bool` - Boolean values
-- `string` - String literals
-
-### Control Flow
-- `if/else` statements
-- `for` loops
-- `while` loops
-- `switch` statements
-
-### Functions
-```aether
-func add(a: int, b: int) -> int {
-    return a + b;
-}
-```
-
-### Actor System (Future)
 ```aether
 actor Counter {
     state int count = 0;
     
     receive(msg) {
-        match msg {
-            Increment => { count += 1; }
-            GetValue(sender) => { send(sender, count); }
-        }
+        count = count + 1;
     }
 }
 ```
 
-## Project Structure
+Compiles to:
+```c
+typedef struct Counter {
+    int id;
+    int active;
+    Mailbox mailbox;
+    int count;
+} Counter;
 
-```
-aether/
-├── src/                    # Compiler source
-│   ├── aetherc.c          # Main compiler
-│   ├── lexer.c            # Tokenization
-│   ├── parser.c           # AST construction
-│   ├── ast.c              # AST nodes
-│   ├── typechecker.c      # Type system
-│   ├── codegen.c          # C code generation
-│   └── Makefile           # Build system
-├── runtime/               # Actor runtime
-│   ├── actor.c            # Actor lifecycle
-│   ├── scheduler.c        # Thread scheduler
-│   ├── memory.c           # Memory management
-│   └── aether_runtime.h   # Runtime API
-├── examples/              # Example programs
-│   ├── hello_world.ae     # Simple hello world
-│   ├── main_example.ae    # Comprehensive example
-│   └── hello_actors.ae    # Actor examples
-├── stdlib/                # Standard library
-├── docs/                  # Documentation
-└── README.md              # This file
-```
-
-## Examples
-
-### Hello World
-```aether
-main() {
-    print("Hello, Aether!\n");
-}
-```
-
-### Variables and Control Flow
-```aether
-main() {
-    int x = 42;
-    int y = 8;
-    
-    if (x > y) {
-        print("x (%d) is greater than y (%d)\n", x, y);
+void Counter_step(Counter* self) {
+    Message msg;
+    if (!mailbox_receive(&self->mailbox, &msg)) {
+        self->active = 0;
+        return;
     }
-    
-    for (int i = 0; i < 5; i++) {
-        print("Loop iteration: %d\n", i);
-    }
+    // message processing
 }
 ```
 
-### Functions
-```aether
-func factorial(n: int) -> int {
-    if (n <= 1) {
-        return 1;
-    }
-    return n * factorial(n - 1);
-}
+## Why State Machines?
 
-main() {
-    int result = factorial(5);
-    print("5! = %d\n", result);
-}
-```
+**Evidence** from `experiments/02_state_machine/`:
+- **6,000x-50,000x less memory** than pthreads (168B vs 1-8MB per actor)
+- **1,000x-10,000x faster throughput** (125M msg/s vs 1M msg/s)
+- **Scales to 100K+ actors** on single thread
 
-## Building from Source
-
-### Prerequisites
-- GCC or compatible C compiler
-- Make (optional, for automated builds)
-- pthread library
-
-### Windows (MinGW)
-```bash
-cd src
-gcc -O2 -o aetherc.exe aetherc.c lexer.c ast.c parser.c typechecker.c codegen.c ../runtime/actor.c ../runtime/scheduler.c ../runtime/memory.c -lpthread
-```
-
-### Linux
-```bash
-cd src
-make all
-```
-
-## Development
-
-### Compiler Architecture
-1. **Lexer**: Tokenizes Aether source code
-2. **Parser**: Builds Abstract Syntax Tree (AST)
-3. **Type Checker**: Performs type checking and validation
-4. **Code Generator**: Translates AST to C code
-5. **Runtime**: Actor system with threading and memory management
-
-### Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+See `experiments/docs/evidence-summary.md` for full analysis.
 
 ## Documentation
 
-- [Language Specification](docs/LANGUAGE_SPEC.md)
-- [Getting Started Guide](docs/GETTING_STARTED.md)
-- [Build Instructions](BUILD_INSTRUCTIONS.md)
-- [Development Roadmap](docs/ROADMAP.md)
-- [Concurrency Experiments](docs/CONCURRENCY_EXPERIMENTS.md)
+- `docs/actor-implementation-status.md` - Current implementation status
+- `docs/IMPLEMENTATION_PLAN.md` - Full roadmap
+- `experiments/docs/evidence-summary.md` - Performance evidence
+- `experiments/docs/erlang-go-comparison.md` - Industry comparison
 
-## License
+## Examples
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- `examples/test_actor_simple.ae` - Basic actor compilation test
+- `experiments/02_state_machine/state_machine_bench.c` - Proof of concept (125M msg/s)
 
-## Status
+## Development
 
-**Current Version**: Proof of Concept (POC)
-- ✅ Complete compiler pipeline
-- ✅ Basic language features
-- ✅ Actor runtime system
-- ✅ Type checking
-- ✅ C code generation
-- 🔄 Advanced actor syntax (in development)
-- 🔄 LLVM backend (planned)
+Current focus: **State machine actor implementation** (concurrency first, pattern matching deferred)
 
-## Roadmap
-
-- [ ] Complete actor syntax implementation
-- [ ] Advanced type system features
-- [ ] LLVM backend for optimization
-- [ ] Package management system
-- [ ] IDE support and tooling
-- [ ] Standard library expansion
-
----
-
-**Aether Language** - Modern concurrency, clean syntax, high performance.
+Commits:
+- `bf66467` - Struct types complete
+- `bc0139d` - Documentation structure
+- Latest - WIP actor syntax and codegen
