@@ -1,10 +1,10 @@
-# 🎉 Aether Experiments Framework - Complete!
+# Aether Experiments Framework - Summary
 
-## What We Built
+## Overview
 
-You asked for **"several types of concurrency experiments in a proper folder with benchmarks and documentation like papers"** - and that's exactly what we delivered!
+This directory implements multiple concurrency models with comprehensive benchmarks and documentation, providing empirical evidence for compiler implementation decisions.
 
-### 📁 New Directory Structure
+### Directory Structure
 
 ```
 experiments/
@@ -31,7 +31,7 @@ experiments/
 
 ---
 
-## 📊 Experiments Summary
+## Experiments Summary
 
 ### Experiment 01: Pthread Baseline
 **Traditional 1:1 OS Threading**
@@ -51,7 +51,7 @@ experiments/
 ### Experiment 02: State Machine Actors
 **Cooperative Scheduling, Single-Threaded**
 
-✅ **Implemented & Benchmarked**
+**Implemented and benchmarked**
 
 **Results** (100,000 actors, 1M messages):
 ```
@@ -65,7 +65,7 @@ Total Memory: 12.8 MB (128 bytes per actor)
 - Throughput: **1,250x** improvement
 - Max Actors: **100x-1,000x** more
 
-**Conclusion**: ✅ Validates hypothesis - state machines are the future!
+**Conclusion**: Validates hypothesis - state machines provide substantial performance improvements.
 
 ---
 
