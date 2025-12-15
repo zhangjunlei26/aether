@@ -1,132 +1,92 @@
-# Aether Build Instructions
+# Build Instructions
 
 ## Prerequisites
 
-- GCC (GNU Compiler Collection) or compatible C compiler
-- GNU Make
-- pthread library (usually included with GCC)
-- Standard C library
+Windows:
+- GCC (MinGW-w64 or similar)
+- Git
 
-## Building the Compiler
+Linux/Mac:
+- GCC or Clang
+- Make
+- pthread library
 
-### 1. Navigate to Source Directory
-
-```bash
-cd src
-```
-
-### 2. Build the New Compiler
+## Quick Build
 
 ```bash
-make
-```
+# Build compiler
+gcc -o build/aetherc.exe src/*.c -Isrc -O2
 
-This will create `aetherc_new`, the new Aether compiler with full lexer, parser, type checker, and code generator.
+# Compile an Aether program
+build/aetherc examples/test_actor_working.ae output.c
 
-### 3. Build Runtime Library (Optional)
-
-```bash
-make runtime
-```
-
-This creates `libaetheruntime.a` for linking with generated C code.
-
-## Building Example Programs
-
-### 1. Compile Aether Source
-
-```bash
-./aetherc_new ../examples/hello_actors.ae ../build/hello_actors.c
-```
-
-### 2. Compile Generated C Code
-
-```bash
-gcc ../build/hello_actors.c ../runtime/*.c -o hello_actors -lpthread
-```
-
-### 3. Run the Program
-
-```bash
-./hello_actors
+# Compile and run generated C code
+gcc output.c runtime/multicore_scheduler.c -Iruntime -pthread -o program
+./program
 ```
 
 ## Makefile Targets
 
-- `make` - Build the compiler
-- `make runtime` - Build runtime library
-- `make test` - Compile test program
-- `make clean` - Clean build artifacts
-- `make install` - Install compiler (optional)
-
-## Troubleshooting
-
-### Compilation Errors
-
-If you get compilation errors:
-
-1. Check GCC version: `gcc --version`
-2. Ensure pthread is available: `gcc -lpthread --version`
-3. Check file permissions: `ls -la src/`
-
-### Runtime Errors
-
-If programs don't run:
-
-1. Check pthread library: `ldd your_program`
-2. Verify runtime files exist: `ls -la runtime/`
-3. Check for missing dependencies
-
-### Memory Issues
-
-If you get memory errors:
-
-1. Check available memory: `free -h`
-2. Reduce actor count in examples
-3. Check for memory leaks with valgrind
-
-## Development Build
-
-For development with debug symbols:
-
 ```bash
-make CFLAGS="-g -O0 -Wall -Wextra"
+make              # Build compiler
+make test         # Run test suite
+make benchmark    # Run performance benchmarks
+make examples     # Compile example programs
+make clean        # Remove build artifacts
 ```
 
-## Cross-Platform Build
+## Multi-Core Programs
 
-### Windows (MinGW)
+Multi-core actor programs require the scheduler:
 
 ```bash
-make CC=gcc CFLAGS="-O2 -Wall -Wextra -std=c99"
+# Compile
+build/aetherc your_program.ae output.c
+
+# Link with scheduler
+gcc output.c runtime/multicore_scheduler.c -Iruntime -pthread -O2 -o program
+
+# Run
+./program
 ```
 
-### macOS
+## Single-Core Programs
+
+For single-core only:
 
 ```bash
-make CC=clang CFLAGS="-O2 -Wall -Wextra -std=c99"
-```
+# Compile
+build/aetherc your_program.ae output.c
 
-### Linux
-
-```bash
-make CFLAGS="-O2 -Wall -Wextra -std=c99"
-```
-
-## Performance Build
-
-For maximum performance:
-
-```bash
-make CFLAGS="-O3 -march=native -Wall -Wextra"
+# Link without scheduler (manual actor management)
+gcc output.c -Iruntime -o program
+./program
 ```
 
 ## Testing
 
-Run the test suite:
-
 ```bash
-make test
+# Compiler tests
+gcc tests/test_*.c src/*.c -Isrc -o build/test_runner.exe
+build/test_runner.exe
+
+# Actor compilation tests
+build/aetherc examples/test_actor_working.ae build/test.c
+gcc -c build/test.c -Iruntime
+
+# Performance benchmarks
+gcc examples/ring_benchmark_manual.c -Iruntime -O2 -o bench
+./bench
 ```
 
-This compiles and runs a basic test program to verify the compiler works correctly.
+## Optimization Flags
+
+Recommended for production:
+```bash
+gcc -O3 -march=native -flto ...
+```
+
+For debugging:
+```bash
+gcc -g -O0 -fsanitize=address ...
+```

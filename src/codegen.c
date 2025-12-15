@@ -422,8 +422,6 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             break;
             
         default:
-            // Generate all children
-            fprintf(stderr, "[DEBUG] generate_statement: Unknown type %d, generating %d children\n", stmt->type, stmt->child_count);
             for (int i = 0; i < stmt->child_count; i++) {
                 generate_statement(gen, stmt->children[i]);
             }
@@ -638,14 +636,8 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
 }
 
 void generate_program(CodeGenerator* gen, ASTNode* program) {
-    if (!program || program->type != AST_PROGRAM) {
-        fprintf(stderr, "[DEBUG] generate_program: Invalid program node\n");
-        return;
-    }
+    if (!program || program->type != AST_PROGRAM) return;
     
-    fprintf(stderr, "[DEBUG] generate_program: Processing %d top-level nodes\n", program->child_count);
-    
-    // Generate includes
     print_line(gen, "#include <stdio.h>");
     print_line(gen, "#include <stdlib.h>");
     print_line(gen, "#include <string.h>");
@@ -655,41 +647,26 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "");
     print_line(gen, "extern __thread int current_core_id;");
     print_line(gen, "");
-
-    // Generate all top-level definitions
+    
     for (int i = 0; i < program->child_count; i++) {
         ASTNode* child = program->children[i];
-        if (!child) {
-            fprintf(stderr, "[DEBUG] generate_program: Child %d is NULL\n", i);
-            continue;
-        }
-        
-        fprintf(stderr, "[DEBUG] generate_program: Processing child %d, type=%d\n", i, child->type);
+        if (!child) continue;
         
         switch (child->type) {
             case AST_ACTOR_DEFINITION:
-                fprintf(stderr, "[DEBUG] Generating actor definition\n");
                 generate_actor_definition(gen, child);
                 break;
             case AST_FUNCTION_DEFINITION:
-                fprintf(stderr, "[DEBUG] Generating function definition\n");
                 generate_function_definition(gen, child);
                 break;
             case AST_STRUCT_DEFINITION:
-                fprintf(stderr, "[DEBUG] Generating struct definition\n");
                 generate_struct_definition(gen, child);
                 break;
             case AST_MAIN_FUNCTION:
-                fprintf(stderr, "[DEBUG] Generating main function\n");
                 generate_main_function(gen, child);
                 break;
             default:
-                fprintf(stderr, "[DEBUG] Unknown child type: %d\n", child->type);
                 break;
         }
-        
-        fprintf(stderr, "[DEBUG] Finished processing child %d\n", i);
     }
-    
-    fprintf(stderr, "[DEBUG] generate_program: Complete\n");
 }

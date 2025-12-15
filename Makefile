@@ -1,80 +1,54 @@
-# Makefile for Aether Project (Windows-friendly)
+.PHONY: all clean test compiler examples
 
-# Compiler variables
 CC = gcc
-AS = as
-CFLAGS = -O2 -lpthread
+CFLAGS = -O2 -Isrc -Iruntime
+LDFLAGS = -pthread
 
-# Files and paths
-AE_COMPILER = aetherc.exe
-AEC_SRC = src/aetherc.c
-AE_SRC = src/main.ae
-AE_GEN = build/main.c
-ASM_SRC = asm/syscalls.s
-ASM_OBJ = asm/syscalls.o
-OUTPUT = aether_program.exe
+COMPILER_SRC = src/aetherc.c src/lexer.c src/parser.c src/ast.c src/typechecker.c src/codegen.c
+RUNTIME_SRC = runtime/multicore_scheduler.c
 
-# Test variables
-TEST_DIR = tests
-TEST_HARNESS = $(TEST_DIR)/test_harness.c
-TEST_MAIN = $(TEST_DIR)/test_main.c
-TEST_SOURCES = $(TEST_DIR)/test_examples.c $(TEST_DIR)/test_integration.c \
-               $(TEST_DIR)/test_lexer.c $(TEST_DIR)/test_parser.c \
-               $(TEST_DIR)/test_codegen.c $(TEST_DIR)/test_typechecker.c
-TEST_EXE = build/test_runner.exe
+all: compiler
 
-.PHONY: all clean run test test-examples test-unit test-integration test-loop
+compiler:
+	@mkdir -p build
+	$(CC) $(CFLAGS) $(COMPILER_SRC) -o build/aetherc.exe
 
-all: $(OUTPUT)
+test: compiler
+	@echo "Running compiler tests..."
+	$(CC) tests/test_*.c $(COMPILER_SRC) -Isrc -o build/test_runner.exe
+	build/test_runner.exe
+	@echo ""
+	@echo "Running actor compilation tests..."
+	build/aetherc.exe examples/test_actor_working.ae build/test1.c
+	$(CC) -c build/test1.c -Iruntime -o build/test1.o
+	build/aetherc.exe examples/test_multiple_actors.ae build/test2.c
+	$(CC) -c build/test2.c -Iruntime -o build/test2.o
+	@echo "All tests passed"
 
-$(OUTPUT): $(AE_GEN) $(ASM_OBJ)
-	$(CC) $(AE_GEN) $(ASM_OBJ) -o $(OUTPUT) $(CFLAGS)
+benchmark: compiler
+	@echo "Single-core benchmark..."
+	$(CC) examples/ring_benchmark_manual.c -Iruntime -O2 -o build/ring_bench.exe
+	build/ring_bench.exe
+	@echo ""
+	@echo "Multi-core benchmark..."
+	$(CC) examples/multicore_bench.c $(RUNTIME_SRC) -Iruntime $(LDFLAGS) -O2 -o build/mc_bench.exe
+	build/mc_bench.exe
 
-$(AE_GEN): $(AE_SRC) $(AE_COMPILER)
-	./$(AE_COMPILER) $(AE_SRC) $(AE_GEN)
-
-$(ASM_OBJ): $(ASM_SRC)
-	$(AS) --64 $(ASM_SRC) -o $(ASM_OBJ)
-
-$(AE_COMPILER): $(AEC_SRC)
-	cd src && $(MAKE) -f Makefile
-	@if exist src\aetherc.exe copy src\aetherc.exe $(AE_COMPILER)
-	@if exist src\aetherc copy src\aetherc $(AE_COMPILER)
+examples: compiler
+	@echo "Compiling examples..."
+	build/aetherc.exe examples/test_actor_working.ae build/actor1.c
+	build/aetherc.exe examples/test_multiple_actors.ae build/actor2.c
+	@echo "Examples compiled to build/"
 
 clean:
-	@echo Cleaning build files...
-	@if not exist build mkdir build
-	@del /Q build\main.c 2>nul || true
-	@del /Q asm\syscalls.o 2>nul || true
-	@del /Q $(OUTPUT) 2>nul || true
-	@del /Q $(AE_COMPILER) 2>nul || true
-	@del /Q build\test_runner.exe 2>nul || true
+	rm -rf build/*.exe build/*.o build/*.c examples/*.ae.c
 
-run: all
-	./$(OUTPUT)
-
-# Test targets
-test: $(TEST_EXE)
-	@echo Running all tests...
-	./$(TEST_EXE)
-
-test-examples: $(TEST_EXE)
-	@echo Running example tests...
-	./$(TEST_EXE) examples
-
-test-unit: $(TEST_EXE)
-	@echo Running unit tests...
-	./$(TEST_EXE) unit
-
-test-integration: $(TEST_EXE)
-	@echo Running integration tests...
-	./$(TEST_EXE) integration
-
-test-loop: $(TEST_EXE)
-	@echo Running loop-specific tests...
-	./$(TEST_EXE) loop
-
-$(TEST_EXE): $(TEST_HARNESS) $(TEST_MAIN) $(TEST_SOURCES) $(AE_COMPILER)
-	@echo Building test runner...
-	@if not exist build mkdir build
-	$(CC) $(TEST_HARNESS) $(TEST_MAIN) $(TEST_SOURCES) -o $(TEST_EXE) $(CFLAGS) -I$(TEST_DIR) -Isrc -Iruntime
+help:
+	@echo "Aether Build System"
+	@echo ""
+	@echo "Targets:"
+	@echo "  make          - Build compiler"
+	@echo "  make test     - Run all tests"
+	@echo "  make benchmark - Run performance benchmarks"
+	@echo "  make examples  - Compile example programs"
+	@echo "  make clean     - Remove build artifacts"
