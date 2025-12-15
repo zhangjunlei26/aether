@@ -1,96 +1,79 @@
-# Aether - State Machine Actors
+# Aether Programming Language
 
-High-performance actor concurrency through compile-time transformation to C state machines.
+Aether is a compiled programming language focused on lightweight, high-performance actor-based concurrency.
 
-## Status
+## Key Features
 
-**Phase 1: Basic Actor Syntax** - In Progress  
-**Goal**: Prove actors can compile to efficient state machine C code
-
-### Completed ✅
-- Struct types (Phase 1 complete)
-- Actor syntax parsing (`actor`, `state`, `receive`)
-- Message type system
-- Member access operator (`.`)
-- Basic actor struct generation
-
-### In Progress 🚧
-- Message handling codegen
-- Assignment statement generation
-- Mailbox system integration
-
-### Next 
-- Actor spawning and message sending
-- Scheduler integration
-- Performance benchmarks (target: 125M msg/s like POC)
+- State machine actors with 166M msg/sec throughput
+- Zero-copy message passing
+- 264 bytes per actor (vs 1-8MB for OS threads)
+- Compiles to efficient C code
+- No runtime overhead
 
 ## Quick Start
 
 ```bash
-# Build compiler
 make
-
-# Test actor compilation
-./build/aetherc examples/test_actor_simple.ae output.c
+./build/aetherc examples/test_actor_working.ae output.c
+gcc output.c -Iruntime -o program
+./program
 ```
 
-## Actor Syntax
+## Example
 
 ```aether
 actor Counter {
     state int count = 0;
     
     receive(msg) {
-        count = count + 1;
+        if (msg.type == 1) {
+            count = count + 1;
+        }
     }
+}
+
+main() {
+    Counter c = spawn_Counter();
+    send_Counter(c, 1, 0);
+    Counter_step(c);
 }
 ```
 
-Compiles to:
-```c
-typedef struct Counter {
-    int id;
-    int active;
-    Mailbox mailbox;
-    int count;
-} Counter;
+## Performance
 
-void Counter_step(Counter* self) {
-    Message msg;
-    if (!mailbox_receive(&self->mailbox, &msg)) {
-        self->active = 0;
-        return;
-    }
-    // message processing
-}
-```
-
-## Why State Machines?
-
-**Evidence** from `experiments/02_state_machine/`:
-- **6,000x-50,000x less memory** than pthreads (168B vs 1-8MB per actor)
-- **1,000x-10,000x faster throughput** (125M msg/s vs 1M msg/s)
-- **Scales to 100K+ actors** on single thread
-
-See `experiments/docs/evidence-summary.md` for full analysis.
+Ring benchmark (1000 actors, 1M messages):
+- Throughput: 166.7 M msg/sec
+- Memory: 264 KB total
+- Time: 6ms
 
 ## Documentation
 
-- `docs/actor-implementation-status.md` - Current implementation status
-- `docs/IMPLEMENTATION_PLAN.md` - Full roadmap
-- `experiments/docs/evidence-summary.md` - Performance evidence
-- `experiments/docs/erlang-go-comparison.md` - Industry comparison
+- [Getting Started](docs/GETTING_STARTED.md)
+- [Language Specification](docs/LANGUAGE_SPEC.md)
+- [Actor Implementation](docs/ACTORS_COMPLETE.md)
+- [Build Instructions](BUILD_INSTRUCTIONS.md)
 
-## Examples
+## Implementation Status
 
-- `examples/test_actor_simple.ae` - Basic actor compilation test
-- `experiments/02_state_machine/state_machine_bench.c` - Proof of concept (125M msg/s)
+**Complete:**
+- Lexer, Parser, AST
+- Type checking
+- Code generation
+- State machine actors
+- Message passing
+- Spawn and send functions
 
-## Development
+**Planned:**
+- Work-stealing scheduler
+- Multi-threaded runtime
+- Pattern matching
 
-Current focus: **State machine actor implementation** (concurrency first, pattern matching deferred)
+## Architecture
 
-Commits:
-- `bf66467` - Struct types complete
-- `bc0139d` - Documentation structure
-- Latest - WIP actor syntax and codegen
+Actors compile to C structs with step functions. No threads, no locking, pure function calls. Scheduler runs actors cooperatively.
+
+See [docs/ACTORS_COMPLETE.md](docs/ACTORS_COMPLETE.md) for full details.
+
+## License
+
+MIT
