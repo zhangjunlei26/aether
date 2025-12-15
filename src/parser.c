@@ -92,6 +92,10 @@ Type* parse_type(Parser* parser) {
             advance_token(parser);
             type = create_type(TYPE_STRING);
             break;
+        case TOKEN_MESSAGE:
+            advance_token(parser);
+            type = create_type(TYPE_MESSAGE);
+            break;
         case TOKEN_IDENTIFIER: {
             // Could be a struct type
             advance_token(parser);
@@ -184,7 +188,7 @@ ASTNode* parse_binary_expression(Parser* parser, int precedence) {
     return left;
 }
 
-// Parse postfix expressions like i++ / i--
+// Parse postfix expressions like i++ / i-- / obj.field
 static ASTNode* parse_postfix_expression(Parser* parser) {
     ASTNode* expr = parse_primary_expression(parser);
     if (!expr) return NULL;
@@ -195,9 +199,19 @@ static ASTNode* parse_postfix_expression(Parser* parser) {
         
         if (op->type == TOKEN_INCREMENT || op->type == TOKEN_DECREMENT) {
             advance_token(parser);
-            // We currently represent both prefix and postfix as AST_UNARY_EXPRESSION.
-            // Codegen emits prefix form (e.g. ++i), which is acceptable for now.
             expr = create_unary_expression(expr, op);
+            continue;
+        }
+        
+        if (op->type == TOKEN_DOT) {
+            // Member access: expr.field
+            advance_token(parser);
+            Token* field = expect_token(parser, TOKEN_IDENTIFIER);
+            if (!field) return NULL;
+            
+            ASTNode* member_access = create_ast_node(AST_MEMBER_ACCESS, field->value, op->line, op->column);
+            add_child(member_access, expr);
+            expr = member_access;
             continue;
         }
         

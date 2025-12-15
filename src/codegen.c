@@ -56,6 +56,7 @@ const char* get_c_type(Type* type) {
         case TYPE_STRING: return "char*";
         case TYPE_VOID: return "void";
         case TYPE_ACTOR_REF: return "ActorRef*";
+        case TYPE_MESSAGE: return "Message";
         case TYPE_STRUCT: {
             static char buffer[256];
             snprintf(buffer, sizeof(buffer), "struct %s", 
@@ -132,6 +133,14 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
             
         case AST_IDENTIFIER:
             fprintf(gen->output, "%s", expr->value);
+            break;
+        
+        case AST_MEMBER_ACCESS:
+            // expr.field becomes expr.field in C
+            if (expr->child_count > 0) {
+                generate_expression(gen, expr->children[0]);
+                fprintf(gen->output, ".%s", expr->value);
+            }
             break;
             
         case AST_BINARY_EXPRESSION:
@@ -402,16 +411,25 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
 void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
     if (!actor || actor->type != AST_ACTOR_DEFINITION) return;
     
-    // Generate actor struct
+    // Generate actor struct (state machine state)
+    print_line(gen, "// Actor: %s (State Machine)", actor->value);
     print_line(gen, "typedef struct %s {", actor->value);
     indent(gen);
     
-    // Generate state variables
+    // Core state machine fields
+    print_line(gen, "int id;");
+    print_line(gen, "int active;  // 1 = has messages, 0 = waiting");
+    print_line(gen, "Mailbox mailbox;");
+    print_line(gen, "");
+    
+    // User-defined state variables
     for (int i = 0; i < actor->child_count; i++) {
         ASTNode* child = actor->children[i];
         if (child->type == AST_STATE_DECLARATION) {
+            print_indent(gen);
             generate_type(gen, child->node_type);
             fprintf(gen->output, " %s;\n", child->value);
+            // Note: Initializers will be set in actor_init() function
         }
     }
     
@@ -419,11 +437,56 @@ void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
     print_line(gen, "} %s;", actor->value);
     print_line(gen, "");
     
-    // Generate actor receive function
-    fprintf(gen->output, "void %s_receive(Actor* self, Message* msg) {\n", actor->value);
+    // Generate step function (this is the compiled "receive" block)
+    print_line(gen, "void %s_step(%s* self) {", actor->value, actor->value);
     indent(gen);
-    print_line(gen, "%s* state = (%s*)self->user_data;", actor->value, actor->value);
-    print_line(gen, "// Actor receive logic would go here");
+    print_line(gen, "Message msg;");
+    print_line(gen, "");
+    print_line(gen, "// Try to receive a message");
+    print_line(gen, "if (!mailbox_receive(&self->mailbox, &msg)) {");
+    indent(gen);
+    print_line(gen, "self->active = 0;  // No messages, yield");
+    print_line(gen, "return;");
+    unindent(gen);
+    print_line(gen, "}");
+    print_line(gen, "");
+    print_line(gen, "// Process message");
+    
+    // Find the receive statement and generate its body
+    for (int i = 0; i < actor->child_count; i++) {
+        ASTNode* child = actor->children[i];
+        if (child->type == AST_RECEIVE_STATEMENT) {
+            // The receive block body
+            if (child->child_count > 0) {
+                ASTNode* body = child->children[0];
+                if (body->type == AST_BLOCK) {
+                    // Generate block contents directly (not the braces)
+                    for (int j = 0; j < body->child_count; j++) {
+                        ASTNode* stmt = body->children[j];
+                        if (stmt->type == AST_EXPRESSION_STATEMENT && stmt->child_count > 0) {
+                            // Check if it's an assignment
+                            ASTNode* expr = stmt->children[0];
+                            if (expr->type == AST_BINARY_EXPRESSION && strcmp(expr->value, "=") == 0) {
+                                // It's an assignment, generate directly
+                                print_indent(gen);
+                                generate_expression(gen, expr->children[0]);
+                                fprintf(gen->output, " = ");
+                                generate_expression(gen, expr->children[1]);
+                                fprintf(gen->output, ";\n");
+                            } else {
+                                generate_statement(gen, stmt);
+                            }
+                        } else {
+                            generate_statement(gen, stmt);
+                        }
+                    }
+                } else {
+                    generate_statement(gen, body);
+                }
+            }
+        }
+    }
+    
     unindent(gen);
     print_line(gen, "}");
     print_line(gen, "");

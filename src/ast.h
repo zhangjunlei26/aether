@@ -56,6 +56,7 @@ typedef enum {
     TYPE_BOOL,
     TYPE_STRING,
     TYPE_ACTOR_REF,
+    TYPE_MESSAGE,
     TYPE_ARRAY,
     TYPE_STRUCT,
     TYPE_VOID,

@@ -32,6 +32,7 @@ typedef enum {
     TOKEN_BOOL,
     TOKEN_STRING,
     TOKEN_ACTOR_REF,
+    TOKEN_MESSAGE,
     
     // Literals
     TOKEN_IDENTIFIER,

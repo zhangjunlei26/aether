@@ -151,6 +151,7 @@ Token* read_identifier() {
     if (strcmp(buffer, "bool") == 0) return create_token(TOKEN_BOOL, buffer, current_line, current_column);
     if (strcmp(buffer, "string") == 0) return create_token(TOKEN_STRING, buffer, current_line, current_column);
     if (strcmp(buffer, "ActorRef") == 0) return create_token(TOKEN_ACTOR_REF, buffer, current_line, current_column);
+    if (strcmp(buffer, "Message") == 0) return create_token(TOKEN_MESSAGE, buffer, current_line, current_column);
     if (strcmp(buffer, "true") == 0) return create_token(TOKEN_TRUE, buffer, current_line, current_column);
     if (strcmp(buffer, "false") == 0) return create_token(TOKEN_FALSE, buffer, current_line, current_column);
     if (strcmp(buffer, "print") == 0) return create_token(TOKEN_PRINT, buffer, current_line, current_column);
@@ -321,6 +322,7 @@ const char* token_type_to_string(AeTokenType type) {
         case TOKEN_BOOL: return "BOOL";
         case TOKEN_STRING: return "STRING";
         case TOKEN_ACTOR_REF: return "ACTOR_REF";
+        case TOKEN_MESSAGE: return "MESSAGE";
         case TOKEN_IDENTIFIER: return "IDENTIFIER";
         case TOKEN_NUMBER: return "NUMBER";
         case TOKEN_STRING_LITERAL: return "STRING_LITERAL";
