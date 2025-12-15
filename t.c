@@ -3,16 +3,16 @@
 #include <string.h>
 #include "aether_runtime.h"
 
-// Actor: Counter (State Machine)
-typedef struct Counter {
+// Actor: A (State Machine)
+typedef struct A {
     int id;
     int active;  // 1 = has messages, 0 = waiting
     Mailbox mailbox;
     
     int count;
-} Counter;
+} A;
 
-void Counter_step(Counter* self) {
+void A_step(A* self) {
     Message msg;
     
     // Try to receive a message
@@ -22,16 +22,7 @@ void Counter_step(Counter* self) {
     }
     
     // Process message
-    (count = (count + 1));
+    count;
+    (count + 1);
 }
 
-int main() {
-    aether_runtime_init(4); // Initialize with 4 worker threads
-    
-    {
-printf("Actor compiled!\n");
-    }
-    
-    aether_runtime_shutdown();
-    return 0;
-}

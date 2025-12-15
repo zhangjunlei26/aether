@@ -22,16 +22,7 @@ void Counter_step(Counter* self) {
     }
     
     // Process message
-    (count = (count + 1));
+count;
+(count + 1);
 }
 
-int main() {
-    aether_runtime_init(4); // Initialize with 4 worker threads
-    
-    {
-printf("Actor compiled!\n");
-    }
-    
-    aether_runtime_shutdown();
-    return 0;
-}

@@ -29,7 +29,7 @@ int main() {
     aether_runtime_init(4); // Initialize with 4 worker threads
     
     {
-printf("Actor compiled!\n");
+printf("Actor simple assignment test\n");
     }
     
     aether_runtime_shutdown();

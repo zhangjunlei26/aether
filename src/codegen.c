@@ -132,6 +132,8 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
             break;
             
         case AST_IDENTIFIER:
+            // In actor context, state variables need self-> prefix
+            // For now, just generate the identifier as-is
             fprintf(gen->output, "%s", expr->value);
             break;
         
@@ -460,22 +462,16 @@ void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
             if (child->child_count > 0) {
                 ASTNode* body = child->children[0];
                 if (body->type == AST_BLOCK) {
-                    // Generate block contents directly (not the braces)
+                    // Generate block contents
                     for (int j = 0; j < body->child_count; j++) {
                         ASTNode* stmt = body->children[j];
+                        // For state machine actors, we need to prefix state vars with self->
+                        // For now, just generate the statement
+                        print_indent(gen);
                         if (stmt->type == AST_EXPRESSION_STATEMENT && stmt->child_count > 0) {
-                            // Check if it's an assignment
-                            ASTNode* expr = stmt->children[0];
-                            if (expr->type == AST_BINARY_EXPRESSION && strcmp(expr->value, "=") == 0) {
-                                // It's an assignment, generate directly
-                                print_indent(gen);
-                                generate_expression(gen, expr->children[0]);
-                                fprintf(gen->output, " = ");
-                                generate_expression(gen, expr->children[1]);
-                                fprintf(gen->output, ";\n");
-                            } else {
-                                generate_statement(gen, stmt);
-                            }
+                            // Generate the expression and add semicolon
+                            generate_expression(gen, stmt->children[0]);
+                            fprintf(gen->output, ";\n");
                         } else {
                             generate_statement(gen, stmt);
                         }

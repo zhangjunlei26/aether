@@ -176,10 +176,11 @@ ASTNode* parse_binary_expression(Parser* parser, int precedence) {
         if (!operator) break;
         
         int op_precedence = get_operator_precedence(operator->type);
-        if (op_precedence <= precedence) break;
+        if (op_precedence < 0) break;  // Not an operator
+        if (op_precedence < precedence) break;  // Lower precedence, stop
         
         advance_token(parser);
-        ASTNode* right = parse_binary_expression(parser, op_precedence);
+        ASTNode* right = parse_binary_expression(parser, op_precedence + 1);  // Left-associative
         if (!right) return NULL;
         
         left = create_binary_expression(left, right, operator);
@@ -238,6 +239,7 @@ ASTNode* parse_unary_expression(Parser* parser) {
 
 int get_operator_precedence(AeTokenType type) {
     switch (type) {
+        case TOKEN_ASSIGN: return 0;  // Lowest precedence (right-associative)
         case TOKEN_OR: return 1;
         case TOKEN_AND: return 2;
         case TOKEN_EQUALS:
@@ -253,7 +255,7 @@ int get_operator_precedence(AeTokenType type) {
         case TOKEN_MODULO: return 6;
         case TOKEN_INCREMENT:
         case TOKEN_DECREMENT: return 7;
-        default: return 0;
+        default: return -1;  // Not an operator
     }
 }
 
