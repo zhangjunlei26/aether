@@ -322,9 +322,9 @@ int typecheck_actor_definition(ASTNode* actor, SymbolTable* table) {
 
 int typecheck_function_definition(ASTNode* func, SymbolTable* table) {
     if (!func || func->type != AST_FUNCTION_DEFINITION) return 0;
-
+    
     SymbolTable* func_table = create_symbol_table(table);
-
+    
     // Add parameters to function's symbol table
     for (int i = 0; i < func->child_count - 1; i++) { // Last child is body
         ASTNode* param = func->children[i];
@@ -332,11 +332,11 @@ int typecheck_function_definition(ASTNode* func, SymbolTable* table) {
             add_symbol(func_table, param->value, clone_type(param->node_type), 0, 0, 0);
         }
     }
-
+    
     // Type check function body
     ASTNode* body = func->children[func->child_count - 1];
     typecheck_statement(body, func_table);
-
+    
     free_symbol_table(func_table);
     return 1;
 }

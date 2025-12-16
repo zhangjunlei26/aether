@@ -48,11 +48,11 @@ Ring benchmark (1000 actors, 1M messages):
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md)
-- [Language Specification](docs/language-spec.md)
-- [Actor Implementation](docs/actors-complete.md)
-- [Multi-Core Architecture](docs/multicore-architecture.md)
-- [Build Instructions](BUILD_INSTRUCTIONS.md)
+- [Getting Started](docs/getting-started.md) - Installation and first program
+- [Language Reference](docs/language-reference.md) - Complete syntax
+- [Runtime Guide](docs/runtime.md) - Actors and concurrency
+- [Architecture](docs/architecture.md) - Compiler internals
+- [Build Instructions](BUILD_INSTRUCTIONS.md) - Compilation guide
 
 ## Implementation Status
 
@@ -74,7 +74,7 @@ Ring benchmark (1000 actors, 1M messages):
 
 Actors compile to C structs with step functions. No threads, no locking, pure function calls. Scheduler runs actors cooperatively.
 
-See [docs/ACTORS_COMPLETE.md](docs/ACTORS_COMPLETE.md) for full details.
+See [Runtime Guide](docs/runtime.md) for actor details.
 
 ## License
 

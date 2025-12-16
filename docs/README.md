@@ -1,38 +1,37 @@
 # Aether Documentation
 
-Complete technical documentation for the Aether programming language and its actor-based concurrency system.
+Welcome to the Aether programming language documentation.
 
-## Quick Links
+## Documentation Structure
 
-**Getting Started:**
-- [getting-started.md](getting-started.md) - Installation and first program
-- [language-spec.md](language-spec.md) - Language syntax reference
+Following industry-standard documentation practices (similar to Rust, Go, and Swift):
 
-**Core Features:**
-- [actors-complete.md](actors-complete.md) - Single-threaded actors (166M msg/sec)
-- [multicore-architecture.md](multicore-architecture.md) - Multi-core design
-- [multicore-implementation.md](multicore-implementation.md) - Multi-core implementation details
+### For Users
 
-**Implementation:**
-- [implementation-plan.md](implementation-plan.md) - Development roadmap
-- [project-status.md](project-status.md) - Current feature status
-- [roadmap.md](roadmap.md) - Future plans
-- [IMPLEMENTATION_COMPLETE.md](IMPLEMENTATION_COMPLETE.md) - Final status
+- **[Getting Started](getting-started.md)** - Installation, first program, basic concepts
+- **[Language Reference](language-reference.md)** - Complete syntax and semantics
+- **[Runtime Guide](runtime.md)** - Actor model, concurrency, message passing
+- **[Examples](../examples/)** - Working code samples with explanations
 
-**Performance:**
-- [concurrency-experiments.md](concurrency-experiments.md) - Benchmark methodology
-- See `../experiments/` for detailed benchmarks and comparisons
+### For Contributors
 
-**Development Notes:**
-- [phase1-complete.md](phase1-complete.md) - Actor syntax implementation
-- [phase2-progress.md](phase2-progress.md) - Message passing implementation
-- [actor-test-plan.md](actor-test-plan.md) - Test strategy
-- [actor-implementation-status.md](actor-implementation-status.md) - Technical notes
-- [struct-implementation.md](struct-implementation.md) - Struct types
-- [implementation-log.md](implementation-log.md) - Change log
-- [actor-progress-summary.md](actor-progress-summary.md) - Progress tracking
-- [documentation-structure.md](documentation-structure.md) - Doc organization
+- **[Contributing](../CONTRIBUTING.md)** - Development setup, coding standards
+- **[Architecture](architecture.md)** - Compiler internals, runtime design
+- **[Design Decisions](design/)** - Rationale for major features
+
+## Quick Navigation
+
+**New to Aether?** Start with [Getting Started](getting-started.md)
+
+**Learning the language?** Read [Language Reference](language-reference.md)
+
+**Using actors?** See [Runtime Guide](runtime.md)
+
+**Looking for examples?** Check [examples/](../examples/)
 
 ## Documentation Standards
 
-All docs use lowercase-with-dashes.md naming except top-level README files.
+- All documentation files use lowercase-with-dashes.md naming
+- Code examples are tested and working
+- Links are relative and verified
+- Documentation is kept up-to-date with implementation
