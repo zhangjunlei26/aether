@@ -75,6 +75,15 @@ Actors compile to C structs with step functions. No threads, no locking, pure fu
 
 See [Runtime Guide](docs/runtime.md) for actor details.
 
+## Project Structure
+
+- `src/` - Compiler source (lexer, parser, typechecker, codegen)
+- `runtime/` - Actor runtime (mailbox, scheduler, queues)
+- `examples/` - Example Aether programs
+- `tests/` - Test suite
+- `docs/` - Documentation
+- `asm/` - Assembly stubs (not integrated, see [asm-status.md](docs/asm-status.md))
+
 ## License
 
 MIT
