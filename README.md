@@ -82,7 +82,12 @@ See [Runtime Guide](docs/runtime.md) for actor details.
 - `examples/` - Example Aether programs
 - `tests/` - Test suite
 - `docs/` - Documentation
+- `editor/` - Editor support files (VS Code/Cursor syntax highlighting)
 - `asm/` - Assembly stubs (not integrated, see [asm-status.md](docs/asm-status.md))
+
+## Editor Support
+
+VS Code and Cursor syntax highlighting with Erlang-inspired color scheme is available. See [editor/README.md](editor/README.md) for installation instructions.
 
 ## License
 
