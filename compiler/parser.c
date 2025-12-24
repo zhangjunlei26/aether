@@ -881,7 +881,19 @@ ASTNode* parse_actor_definition(Parser* parser) {
         }
         
         if (match_token(parser, TOKEN_STATE)) {
-            ASTNode* state_decl = parse_variable_declaration(parser);
+            // Check if there's an explicit type or Python-style
+            Token* next_tok = peek_token(parser);
+            ASTNode* state_decl = NULL;
+            
+            if (next_tok && (next_tok->type == TOKEN_INT || next_tok->type == TOKEN_FLOAT || 
+                            next_tok->type == TOKEN_STRING || next_tok->type == TOKEN_BOOL)) {
+                // Explicit type: state int count = 0;
+                state_decl = parse_variable_declaration(parser);
+            } else if (next_tok && next_tok->type == TOKEN_IDENTIFIER) {
+                // Python-style: state count = 0
+                state_decl = parse_python_style_declaration(parser);
+            }
+            
             if (state_decl) {
                 state_decl->type = AST_STATE_DECLARATION;
                 add_child(actor, state_decl);

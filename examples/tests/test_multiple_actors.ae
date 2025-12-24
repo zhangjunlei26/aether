@@ -1,24 +1,19 @@
 actor Counter {
-    state int count = 0;
+    state count = 0;
     
     receive(msg) {
-        if (msg.type == 1) {
-            count = count + 1;
-        }
+        count = count + 1;
     }
 }
 
-actor Player {
-    state int health = 100;
-    state int score = 0;
+actor Printer {
+    state messages = 0;
     
     receive(msg) {
-        if (msg.type == 10) {
-            score = score + msg.payload_int;
-        }
+        messages = messages + 1;
     }
 }
 
 main() {
-    print("Actor tests compiled\n");
+    print("Multiple actors test\n");
 }

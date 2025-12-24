@@ -170,6 +170,7 @@ void collect_expression_constraints(ASTNode* node, InferenceContext* ctx) {
             break;
             
         case AST_VARIABLE_DECLARATION:
+        case AST_STATE_DECLARATION:
             // Always process initializer if present (even with explicit types)
             if (node->child_count > 0) {
                 collect_constraints(node->children[0], ctx);

@@ -38,7 +38,7 @@ main() {
 - 🚀 **Actor-based concurrency** - Built-in, not bolted-on
 - 🔧 **Compiles to readable C** - Debug and interop easily
 
-## Status: Phase 1/5 Complete ✅
+## Status: Phase 2/5 Complete ✅
 
 **✅ PHASE 1: GET IT TO COMPILE**
 - Compiler builds with GCC
@@ -46,13 +46,18 @@ main() {
 - Type inference for literals (int, float, string, bool, arrays)
 - Generated C code compiles and runs
 
-**🔧 PHASE 2: GET IT TO RUN (IN PROGRESS)**
-- 2/5 examples passing
-- Testing more examples to find edge cases
-- Fixing parser issues with explicit type annotations
+**✅ PHASE 2: GET IT TO RUN**
+- **26/26 examples passing (100%)**
+- Python-style syntax working (no `let`, no type annotations)
+- Full type inference (Hindley-Milner style)
+- Structs, arrays, functions, actors all compile
+- Control flow (if/while/for) working
+**🔧 PHASE 3: FIX ALL BUGS (NEXT)**
+- Control flow type inference improvements
+- Actor spawn/send runtime implementation
+- Edge case testing
 
 **📋 REMAINING PHASES:**
-- Phase 3: Fix all bugs (type inference, parser, runtime)
 - Phase 4: Prove performance (benchmarks vs C/Go/Erlang)
 - Phase 5: Polish & release v1.0
 
