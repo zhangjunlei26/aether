@@ -2,9 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Test full compilation pipeline
 TEST(compile_and_run_simple_loop) {
-    // This test verifies that a simple for loop compiles and runs without hanging
     const char* test_code = 
         "main() {\n"
         "    print(\"Testing loop\\n\");\n"
@@ -14,13 +12,11 @@ TEST(compile_and_run_simple_loop) {
         "    print(\"Done\\n\");\n"
         "}\n";
     
-    // Write test code to temporary file
     FILE* f = fopen("build/test_loop.ae", "w");
     ASSERT_NOT_NULL(f);
     fprintf(f, "%s", test_code);
     fclose(f);
     
-    // Compile
 #ifdef _WIN32
     int result = system(".\\build\\aetherc.exe build\\test_loop.ae build\\test_loop.c");
 #else
@@ -28,15 +24,13 @@ TEST(compile_and_run_simple_loop) {
 #endif
     ASSERT_EQ(0, result);
     
-    // Compile C
 #ifdef _WIN32
-    result = system("gcc build\\test_loop.c runtime\\*.c -o build\\test_loop.exe -lpthread -Iruntime");
+    result = system("gcc build\\test_loop.c runtime\\multicore_scheduler.c runtime\\memory.c -o build\\test_loop.exe -lpthread -Iruntime");
 #else
-    result = system("gcc build/test_loop.c runtime/*.c -o build/test_loop.exe -lpthread -Iruntime");
+    result = system("gcc build/test_loop.c runtime/multicore_scheduler.c runtime/memory.c -o build/test_loop.exe -lpthread -Iruntime");
 #endif
     ASSERT_EQ(0, result);
     
-    // Run (should complete quickly)
 #ifdef _WIN32
     result = system("build\\test_loop.exe");
 #else
@@ -70,9 +64,9 @@ TEST(compile_and_run_while_loop) {
     ASSERT_EQ(0, result);
     
 #ifdef _WIN32
-    result = system("gcc build\\test_while.c runtime\\*.c -o build\\test_while.exe -lpthread -Iruntime");
+    result = system("gcc build\\test_while.c runtime\\multicore_scheduler.c runtime\\memory.c -o build\\test_while.exe -lpthread -Iruntime");
 #else
-    result = system("gcc build/test_while.c runtime/*.c -o build/test_while.exe -lpthread -Iruntime");
+    result = system("gcc build/test_while.c runtime/multicore_scheduler.c runtime/memory.c -o build/test_while.exe -lpthread -Iruntime");
 #endif
     ASSERT_EQ(0, result);
     
@@ -85,7 +79,6 @@ TEST(compile_and_run_while_loop) {
 }
 
 TEST(runtime_shutdown_completes) {
-    // Test that runtime shutdown doesn't hang
     const char* test_code = 
         "main() {\n"
         "    print(\"Test\\n\");\n"
@@ -104,13 +97,12 @@ TEST(runtime_shutdown_completes) {
     ASSERT_EQ(0, result);
     
 #ifdef _WIN32
-    result = system("gcc build\\test_shutdown.c runtime\\*.c -o build\\test_shutdown.exe -lpthread -Iruntime");
+    result = system("gcc build\\test_shutdown.c runtime\\multicore_scheduler.c runtime\\memory.c -o build\\test_shutdown.exe -lpthread -Iruntime");
 #else
-    result = system("gcc build/test_shutdown.c runtime/*.c -o build/test_shutdown.exe -lpthread -Iruntime");
+    result = system("gcc build/test_shutdown.c runtime/multicore_scheduler.c runtime/memory.c -o build/test_shutdown.exe -lpthread -Iruntime");
 #endif
     ASSERT_EQ(0, result);
     
-    // This should complete quickly (not hang)
 #ifdef _WIN32
     result = system("build\\test_shutdown.exe");
 #else

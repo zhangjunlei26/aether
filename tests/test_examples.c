@@ -12,12 +12,10 @@
 #include <unistd.h>
 #endif
 
-// Helper function to check if file exists
 static int file_exists(const char* filename) {
     return access(filename, F_OK) == 0;
 }
 
-// Helper function to compile an Aether file
 static int compile_aether_file(const char* input_file, const char* output_file) {
     char command[512];
 #ifdef _WIN32
@@ -28,18 +26,16 @@ static int compile_aether_file(const char* input_file, const char* output_file) 
     return system(command);
 }
 
-// Helper function to compile C file
 static int compile_c_file(const char* input_file, const char* output_file) {
     char command[512];
 #ifdef _WIN32
-    snprintf(command, sizeof(command), "gcc %s runtime\\*.c -o %s -lpthread -Iruntime", input_file, output_file);
+    snprintf(command, sizeof(command), "gcc %s runtime\\multicore_scheduler.c runtime\\memory.c -o %s -lpthread -Iruntime", input_file, output_file);
 #else
-    snprintf(command, sizeof(command), "gcc %s runtime/*.c -o %s -lpthread -Iruntime", input_file, output_file);
+    snprintf(command, sizeof(command), "gcc %s runtime/multicore_scheduler.c runtime/memory.c -o %s -lpthread -Iruntime", input_file, output_file);
 #endif
     return system(command);
 }
 
-// Helper function to run executable and capture output
 static int run_executable(const char* exe_path) {
     char command[512];
 #ifdef _WIN32
@@ -50,7 +46,6 @@ static int run_executable(const char* exe_path) {
     return system(command);
 }
 
-// Test a single example file
 static void test_example_file(const char* example_name) {
     char input_path[256];
     char c_output_path[256];
@@ -60,22 +55,17 @@ static void test_example_file(const char* example_name) {
     snprintf(c_output_path, sizeof(c_output_path), "build/test_%s.c", example_name);
     snprintf(exe_path, sizeof(exe_path), "build/test_%s.exe", example_name);
     
-    // Check if example file exists
     if (!file_exists(input_path)) {
-        printf("  ⚠ SKIPPED (file not found: %s)\n", input_path);
-        // Don't fail the test if file doesn't exist
+        printf("  SKIPPED (file not found: %s)\n", input_path);
         return;
     }
     
-    // Compile Aether to C
     int result = compile_aether_file(input_path, c_output_path);
     ASSERT_EQ(0, result);
     
-    // Compile C to executable
     result = compile_c_file(c_output_path, exe_path);
     ASSERT_EQ(0, result);
     
-    // Run executable (with timeout to prevent hangs)
     result = run_executable(exe_path);
     ASSERT_EQ(0, result);
 }

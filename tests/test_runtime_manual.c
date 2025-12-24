@@ -1,7 +1,9 @@
+// Manual runtime test - compile and run separately
+// This is NOT part of the automated test suite
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "actor_state_machine.h"
+#include "../runtime/actor_state_machine.h"
 
 typedef struct Counter {
     int id;
@@ -45,3 +47,4 @@ int main() {
     free(c);
     return 0;
 }
+

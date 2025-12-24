@@ -1,5 +1,10 @@
 # Build artifacts
-/build/
+/build/*.exe
+!/build/aetherc.exe
+!/build/test_runner.exe
+/build/*.c
+/build/*.ae
+/build/*.o
 /bin/
 /out/
 
@@ -11,6 +16,16 @@ aetherc
 
 # Generated C files from the Aether compiler (if not tracked)
 build/*.c
+
+# Examples compiled
+examples/**/*.exe
+
+# Compiler temps
+compiler/*.tmp
+compiler/*.exe
+
+# Debug files
+debug_*.c
 
 
 # Temporary files and logs

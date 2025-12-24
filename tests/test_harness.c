@@ -29,13 +29,10 @@ void run_all_tests(void) {
         printf("[%d/%d] Running test: %s\n", i + 1, test_count, tests[i].name);
         fflush(stdout);
         
-        // Run test
-        // Note: Assertions call exit(1) on failure, so if we reach here,
-        // the test passed
         tests[i].func();
         
         passed_count++;
-        printf("  ✓ PASSED\n");
+        printf("  PASSED\n");
     }
     
     printf("\n");

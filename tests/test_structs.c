@@ -3,10 +3,10 @@
 #include <string.h>
 #include "test_harness.h"
 #include "../compiler/tokens.h"
-#include "../compiler/lexer.c"
-#include "../compiler/ast.c"
-#include "../compiler/parser.c"
-#include "../compiler/typechecker.c"
+#include "../compiler/lexer.h"
+#include "../compiler/ast.h"
+#include "../compiler/parser.h"
+#include "../compiler/typechecker.h"
 
 // Test struct lexing
 void test_struct_keyword() {
@@ -123,21 +123,5 @@ void test_duplicate_field_detection() {
     free(tokens);
 }
 
-int main() {
-    printf("Running struct tests...\n");
-    
-    test_struct_keyword();
-    printf("✓ Struct keyword lexing\n");
-    
-    test_parse_simple_struct();
-    printf("✓ Simple struct parsing\n");
-    
-    test_typecheck_struct();
-    printf("✓ Struct type checking\n");
-    
-    test_duplicate_field_detection();
-    printf("✓ Duplicate field detection\n");
-    
-    printf("\nAll struct tests passed!\n");
-    return 0;
-}
+// Test functions are now wrapped in TEST() macros above
+// No separate main() needed - test harness provides it

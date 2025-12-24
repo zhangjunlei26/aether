@@ -144,9 +144,13 @@ Token* read_identifier() {
     if (strcmp(buffer, "send") == 0) return create_token(TOKEN_SEND, buffer, current_line, current_column);
     if (strcmp(buffer, "spawn_actor") == 0) return create_token(TOKEN_SPAWN_ACTOR, buffer, current_line, current_column);
     if (strcmp(buffer, "spawn") == 0) return create_token(TOKEN_SPAWN, buffer, current_line, current_column);
+    if (strcmp(buffer, "make") == 0) return create_token(TOKEN_MAKE, buffer, current_line, current_column);
     if (strcmp(buffer, "self") == 0) return create_token(TOKEN_SELF, buffer, current_line, current_column);
     if (strcmp(buffer, "state") == 0) return create_token(TOKEN_STATE, buffer, current_line, current_column);
     if (strcmp(buffer, "struct") == 0) return create_token(TOKEN_STRUCT, buffer, current_line, current_column);
+    if (strcmp(buffer, "import") == 0) return create_token(TOKEN_IMPORT, buffer, current_line, current_column);
+    if (strcmp(buffer, "export") == 0) return create_token(TOKEN_EXPORT, buffer, current_line, current_column);
+    if (strcmp(buffer, "module") == 0) return create_token(TOKEN_MODULE, buffer, current_line, current_column);
     if (strcmp(buffer, "int") == 0) return create_token(TOKEN_INT, buffer, current_line, current_column);
     if (strcmp(buffer, "float") == 0) return create_token(TOKEN_FLOAT, buffer, current_line, current_column);
     if (strcmp(buffer, "bool") == 0) return create_token(TOKEN_BOOL, buffer, current_line, current_column);

@@ -1,5 +1,4 @@
 // Runtime Integration Test Program
-// Python-style syntax: no 'let', no 'func', types inferred
 
 struct Player {
     name,

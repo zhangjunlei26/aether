@@ -1,93 +1,184 @@
 # Aether Programming Language
 
-Aether is a compiled programming language focused on lightweight, high-performance actor-based concurrency.
+**Python syntax. C performance. Actor concurrency.**
 
-## Key Features
+Modern systems language with full type inference and zero runtime overhead.
 
-- State machine actors with 166M msg/sec throughput
-- Zero-copy message passing
-- 264 bytes per actor (vs 1-8MB for OS threads)
-- Compiles to efficient C code
-- No runtime overhead
+## Why Aether?
+
+Write code that looks like Python but runs like C:
+
+```aether
+# No types needed - compiler figures it out
+x = 42
+name = "Alice"
+nums = [1, 2, 3]
+
+main() {
+    print(x)
+}
+```
+
+**Compiles to:** Optimized C code with proper types.
+
+## Aether vs C
+
+| Feature | Aether | C |
+|---------|--------|---|
+| **Type annotations** | Optional (full inference) | Required everywhere |
+| **Syntax** | Minimal (Python-style) | Verbose |
+| **Memory safety** | Bounds checking (optional) | Manual |
+| **Concurrency** | Built-in actors | Manual threads |
+| **String handling** | First-class (ref-counted) | Manual char* |
+| **Performance** | Same (compiles to C) | Native |
+
+**Differentiators:**
+- ✨ **Zero-cost abstractions** - Actor model compiles to state machines
+- 🧠 **Type inference** - Write less, get type safety
+- 🚀 **Actor-based concurrency** - Built-in, not bolted-on
+- 🔧 **Compiles to readable C** - Debug and interop easily
+
+## Status: Phase 1/5 Complete ✅
+
+**✅ PHASE 1: GET IT TO COMPILE**
+- Compiler builds with GCC
+- Lexer, parser, type checker, code generator all working
+- Type inference for literals (int, float, string, bool, arrays)
+- Generated C code compiles and runs
+
+**🔧 PHASE 2: GET IT TO RUN (IN PROGRESS)**
+- 2/5 examples passing
+- Testing more examples to find edge cases
+- Fixing parser issues with explicit type annotations
+
+**📋 REMAINING PHASES:**
+- Phase 3: Fix all bugs (type inference, parser, runtime)
+- Phase 4: Prove performance (benchmarks vs C/Go/Erlang)
+- Phase 5: Polish & release v1.0
 
 ## Quick Start
 
-```bash
+### 1. Build Compiler
+```powershell
+# Windows (requires GCC from Cygwin/MSYS2)
+.\build_compiler.ps1
+
+# Linux/Mac
 make
-./build/aetherc examples/test_actor_working.ae output.c
-gcc output.c -Iruntime -o program
-./program
 ```
 
-## Example
+### 2. Run Tests
+```powershell
+# Test all examples
+.\test_all_examples.ps1
 
+# Run full test suite
+.\test.ps1
+```
+
+### 3. Compile Your Code
+```powershell
+# Aether → C → Executable
+.\build\aetherc.exe your_program.ae output.c
+gcc output.c -Iruntime runtime\*.c -o program.exe
+.\program.exe
+```
+
+## Working Examples
+
+**Type Inference:**
 ```aether
-actor Counter {
-    state int count = 0;
+x = 42          # int
+pi = 3.14       # float  
+name = "Alice"  # string
+nums = [1, 2, 3] # int[3]
+
+main() {
+    print(x)
+}
+```
+
+**Functions (no `func` keyword):**
+```aether
+add(a, b) {
+    return a + b
+}
+
+main() {
+    result = add(10, 20)
+    print(result)
+}
+```
+
+**Actors (planned):**
+```aether
+actor counter {
+    state: count = 0
     
     receive(msg) {
-        if (msg.type == 1) {
-            count = count + 1;
-        }
+        count = count + 1
+        print(count)
     }
 }
 
 main() {
-    Counter c = spawn_Counter();
-    send_Counter(c, 1, 0);
-    Counter_step(c);
+    c = spawn(counter)
+    send(c, "tick")
 }
 ```
 
-## Performance
+## Test Results (5 examples)
 
-Ring benchmark (1000 actors, 1M messages):
-- Throughput: 166.7 M msg/sec
-- Memory: 264 KB total
-- Time: 6ms
+```
+✅ test_type_inference_literals.ae    - Type inference works!
+✅ ultra_simple.ae                    - Basic compilation works!
+❌ hello_world.ae                     - Parser bug with explicit types (investigating)
+❌ test_type_inference_functions.ae   - Function inference incomplete
+❌ test_type_inference_structs.ae     - Struct inference incomplete
+```
+
+**Current pass rate: 40% (2/5)**
+**Target: 90%+ (Phase 2 goal)**
 
 ## Documentation
 
-- [Language Reference](docs/language-reference.md) - Complete syntax and semantics
-- [Runtime Guide](docs/runtime.md) - Actors and concurrency model
-- [Build Guide](docs/build.md) - Compilation and build instructions
-- [Architecture](docs/architecture.md) - Compiler internals and design
+- `TESTING_GUIDE.md` - How to run tests
+- `docs/TYPE_INFERENCE_GUIDE.md` - Type system internals
+- `docs/RUNTIME_GUIDE.md` - Runtime API reference
+- `docs/language-reference.md` - Full language spec
 
-## Implementation Status
+## Known Issues
 
-**Complete:**
-- Lexer, Parser, AST
-- Type checking
-- Code generation
-- State machine actors (single-threaded: 166M msg/sec)
-- Multi-core scheduler (fixed core partitioning)
-- Message passing with lock-free queues
-- Spawn and send functions
+1. Parser doesn't handle explicit type annotations (`int x = 42`) correctly
+2. Function return type inference incomplete
+3. Struct field type inference incomplete
+4. Actor code generation not implemented yet
+5. Performance benchmarks not run yet
 
-**Optional Future:**
-- Pattern matching
-- Work-stealing scheduler
-- NUMA-aware placement
+## Next Steps
 
-## Architecture
+**Phase 2 Goals (Current):**
+- [ ] Fix parser to handle explicit types correctly
+- [ ] Get 5-10 examples compiling and running
+- [ ] Test runtime library integration (strings, I/O, math)
+- [ ] Fix type inference for functions and structs
 
-Actors compile to C structs with step functions. No threads, no locking, pure function calls. Scheduler runs actors cooperatively.
+**Phase 3 Goals (Next):**
+- [ ] Systematic bug fixing across all examples
+- [ ] Achieve 90%+ test pass rate
+- [ ] Memory leak testing
 
-See [Runtime Guide](docs/runtime.md) for actor details.
+**Phase 4 Goals (Performance):**
+- [ ] Run C benchmarks (baseline)
+- [ ] Implement actor benchmarks in Aether
+- [ ] Document real performance numbers
+- [ ] Compare vs Go, Erlang
 
-## Project Structure
+## Contributing
 
-- `compiler/` - Compiler source (lexer, parser, typechecker, codegen)
-- `runtime/` - Actor runtime (mailbox, scheduler, queues)
-- `examples/` - Example Aether programs
-- `tests/` - Test suite
-- `docs/` - Documentation
-- `editor/` - Editor support files (VS Code/Cursor syntax highlighting)
-- `asm/` - Assembly stubs (not integrated, see [asm-status.md](docs/asm-status.md))
+Active development project. We're building in public!
 
-## Editor Support
-
-VS Code and Cursor syntax highlighting with Erlang-inspired color scheme is available. See [editor/README.md](editor/README.md) for installation instructions.
+Join us at: [GitHub issues](issues)
 
 ## License
 

@@ -8,7 +8,13 @@
 #include "typechecker.h"
 #include "codegen.h"
 
+// Compiler limits
 #define MAX_TOKENS 10000
+#define AETHER_VERSION "0.0.1"
+
+// Constants for better maintainability
+#define DEFAULT_MAX_ACTORS 1000
+#define DEFAULT_WORKER_THREADS 4
 
 #ifdef _WIN32
     #include <windows.h>
@@ -46,9 +52,16 @@ int compile_source(const char* input_path, const char* output_path) {
         return 0;
     }
     
-    fread(source, 1, file_size, input);
+    size_t bytes_read = fread(source, 1, file_size, input);
     fclose(input);
-    source[file_size] = '\0';
+    if (bytes_read == 0 && file_size > 0) {
+        fprintf(stderr, "Error: Failed to read file\n");
+        free(source);
+        return 0;
+    }
+    // On Windows text mode, bytes_read may be less than file_size due to line ending conversion
+    // Null-terminate at actual bytes read
+    source[bytes_read] = '\0';
     
     printf("Compiling %s...\n", input_path);
     
@@ -131,11 +144,8 @@ int compile_source(const char* input_path, const char* output_path) {
         return 0;
     }
     
-    printf("Creating code generator...\n");
     CodeGenerator* codegen = create_code_generator(output);
-    printf("Generating program...\n");
     generate_program(codegen, program);
-    printf("Closing output file...\n");
     fclose(output);
     
     printf("Code generation successful\n");
@@ -184,10 +194,17 @@ int compile_c_to_exe(const char* c_file, const char* exe_file) {
 }
 
 int main(int argc, char *argv[]) {
+    // Version flag (check before other args)
+    if (argc >= 2 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)) {
+        printf("Aether Compiler v%s\n", AETHER_VERSION);
+        return 0;
+    }
+    
     if (argc < 2) {
         fprintf(stderr, "Usage:\n");
         fprintf(stderr, "  Compile to C: %s <input.ae> <output.c>\n", argv[0]);
         fprintf(stderr, "  Run directly: %s run <input.ae>\n", argv[0]);
+        fprintf(stderr, "  Version:     %s --version\n", argv[0]);
         return 1;
     }
 
@@ -227,8 +244,7 @@ int main(int argc, char *argv[]) {
         int result = system(exe_path);
         
         // 4. Cleanup
-        // remove(c_path); // Optional: keep for debugging?
-        // remove(exe_path);
+        // Note: Temporary files are kept for debugging
         
         return result;
     }
