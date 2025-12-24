@@ -24,6 +24,14 @@ Token* peek_token(Parser* parser) {
     return parser->tokens[parser->current_token];
 }
 
+Token* peek_ahead(Parser* parser, int offset) {
+    int pos = parser->current_token + offset;
+    if (pos >= parser->token_count) {
+        return NULL;
+    }
+    return parser->tokens[pos];
+}
+
 Token* advance_token(Parser* parser) {
     if (parser->current_token >= parser->token_count) {
         return NULL;
@@ -144,8 +152,62 @@ ASTNode* parse_primary_expression(Parser* parser) {
         case TOKEN_FALSE:
             return create_literal_node(advance_token(parser));
             
-        case TOKEN_IDENTIFIER:
-            return create_identifier_node(advance_token(parser));
+        case TOKEN_IDENTIFIER: {
+            // Could be identifier or struct literal
+            Token* next = parser->tokens[parser->current_token + 1];
+            if (next && next->type == TOKEN_LEFT_BRACE) {
+                // Struct literal: TypeName{ field: value, ... }
+                char* struct_name = strdup(token->value);
+                int line = token->line;
+                int column = token->column;
+                advance_token(parser); // consume identifier
+                advance_token(parser); // consume '{'
+                
+                ASTNode* struct_lit = create_ast_node(AST_STRUCT_LITERAL, struct_name, line, column);
+                
+                // Parse field initializers
+                if (!match_token(parser, TOKEN_RIGHT_BRACE)) {
+                    do {
+                        // Parse field name
+                        Token* field_name = expect_token(parser, TOKEN_IDENTIFIER);
+                        if (!field_name) {
+                            free_ast_node(struct_lit);
+                            return NULL;
+                        }
+                        
+                        // Expect colon
+                        if (!expect_token(parser, TOKEN_COLON)) {
+                            free_ast_node(struct_lit);
+                            return NULL;
+                        }
+                        
+                        // Parse field value
+                        ASTNode* value_expr = parse_expression(parser);
+                        if (!value_expr) {
+                            free_ast_node(struct_lit);
+                            return NULL;
+                        }
+                        
+                        // Create field init node
+                        ASTNode* field_init = create_ast_node(AST_ASSIGNMENT, field_name->value,
+                                                              field_name->line, field_name->column);
+                        add_child(field_init, value_expr);
+                        add_child(struct_lit, field_init);
+                        
+                    } while (match_token(parser, TOKEN_COMMA));
+                    
+                    if (!expect_token(parser, TOKEN_RIGHT_BRACE)) {
+                        free_ast_node(struct_lit);
+                        return NULL;
+                    }
+                }
+                
+                return struct_lit;
+            } else {
+                // Regular identifier
+                return create_identifier_node(advance_token(parser));
+            }
+        }
             
         case TOKEN_LEFT_PAREN: {
             advance_token(parser);
@@ -154,9 +216,75 @@ ASTNode* parse_primary_expression(Parser* parser) {
             return expr;
         }
         
+        case TOKEN_LEFT_BRACKET: {
+            // Array literal: [1, 2, 3]
+            int line = token->line;
+            int column = token->column;
+            advance_token(parser); // consume '['
+            
+            ASTNode* array_lit = create_ast_node(AST_ARRAY_LITERAL, NULL, line, column);
+            
+            // Parse array elements
+            if (!match_token(parser, TOKEN_RIGHT_BRACKET)) {
+                do {
+                    ASTNode* element = parse_expression(parser);
+                    if (element) {
+                        add_child(array_lit, element);
+                    }
+                } while (match_token(parser, TOKEN_COMMA));
+                
+                if (!expect_token(parser, TOKEN_RIGHT_BRACKET)) {
+                    free_ast_node(array_lit);
+                    return NULL;
+                }
+            }
+            
+            return array_lit;
+        }
+        
         case TOKEN_SELF:
             advance_token(parser);
             return create_ast_node(AST_ACTOR_REF, "self", token->line, token->column);
+        
+        case TOKEN_MAKE: {
+            // make([]type, size) for dynamic arrays
+            int line = token->line;
+            int column = token->column;
+            advance_token(parser); // consume 'make'
+            
+            if (!expect_token(parser, TOKEN_LEFT_PAREN)) return NULL;
+            
+            // Parse []type syntax
+            if (!expect_token(parser, TOKEN_LEFT_BRACKET)) return NULL;
+            if (!expect_token(parser, TOKEN_RIGHT_BRACKET)) return NULL;
+            
+            // Parse element type
+            Type* element_type = parse_type(parser);
+            if (!element_type) {
+                parser_error(parser, "Expected type after [] in make");
+                return NULL;
+            }
+            
+            // Parse comma
+            if (!expect_token(parser, TOKEN_COMMA)) return NULL;
+            
+            // Parse size expression
+            ASTNode* size_expr = parse_expression(parser);
+            if (!size_expr) {
+                parser_error(parser, "Expected size expression in make");
+                return NULL;
+            }
+            
+            if (!expect_token(parser, TOKEN_RIGHT_PAREN)) return NULL;
+            
+            // Create a function call node: malloc(size * sizeof(type))
+            // We'll transform this in codegen
+            ASTNode* make_node = create_ast_node(AST_FUNCTION_CALL, "make", line, column);
+            make_node->node_type = create_array_type(element_type, -1); // Dynamic array
+            add_child(make_node, size_expr);
+            
+            return make_node;
+        }
             
         default:
             return NULL;
@@ -171,7 +299,15 @@ ASTNode* parse_binary_expression(Parser* parser, int precedence) {
     ASTNode* left = parse_unary_expression(parser);
     if (!left) return NULL;
     
+    int iteration_count = 0;
+    const int MAX_BINARY_OPS = 1000;
+    
     while (1) {
+        if (++iteration_count > MAX_BINARY_OPS) {
+            fprintf(stderr, "Error: Expression too complex (max %d binary operators)\n", MAX_BINARY_OPS);
+            break;
+        }
+        
         Token* operator = peek_token(parser);
         if (!operator) break;
         
@@ -194,7 +330,15 @@ static ASTNode* parse_postfix_expression(Parser* parser) {
     ASTNode* expr = parse_primary_expression(parser);
     if (!expr) return NULL;
     
+    int iteration_count = 0;
+    const int MAX_POSTFIX_OPS = 100;
+    
     while (1) {
+        if (++iteration_count > MAX_POSTFIX_OPS) {
+            fprintf(stderr, "Error: Too many postfix operations (max %d)\n", MAX_POSTFIX_OPS);
+            break;
+        }
+        
         Token* op = peek_token(parser);
         if (!op) break;
         
@@ -213,6 +357,56 @@ static ASTNode* parse_postfix_expression(Parser* parser) {
             ASTNode* member_access = create_ast_node(AST_MEMBER_ACCESS, field->value, op->line, op->column);
             add_child(member_access, expr);
             expr = member_access;
+            continue;
+        }
+        
+        if (op->type == TOKEN_LEFT_BRACKET) {
+            // Array indexing: expr[index]
+            advance_token(parser); // consume '['
+            ASTNode* index = parse_expression(parser);
+            if (!index) return NULL;
+            if (!expect_token(parser, TOKEN_RIGHT_BRACKET)) return NULL;
+            
+            ASTNode* array_access = create_ast_node(AST_ARRAY_ACCESS, NULL, op->line, op->column);
+            add_child(array_access, expr);  // array expression
+            add_child(array_access, index); // index expression
+            expr = array_access;
+            continue;
+        }
+        
+        if (op->type == TOKEN_LEFT_PAREN) {
+            // Function call: expr(arg1, arg2, ...)
+            // Extract function name if expr is an identifier
+            const char* func_name = NULL;
+            if (expr && expr->type == AST_IDENTIFIER && expr->value) {
+                func_name = strdup(expr->value);
+            }
+            
+            advance_token(parser); // consume '('
+            
+            ASTNode* func_call = create_ast_node(AST_FUNCTION_CALL, func_name, op->line, op->column);
+            
+            // Parse arguments
+            if (!match_token(parser, TOKEN_RIGHT_PAREN)) {
+                do {
+                    ASTNode* arg = parse_expression(parser);
+                    if (!arg) {
+                        free_ast_node(func_call);
+                        return NULL;
+                    }
+                    add_child(func_call, arg);
+                } while (match_token(parser, TOKEN_COMMA));
+                
+                if (!expect_token(parser, TOKEN_RIGHT_PAREN)) {
+                    free_ast_node(func_call);
+                    return NULL;
+                }
+            }
+            
+            // Free the original identifier node since we've copied its name
+            if (expr) free_ast_node(expr);
+            
+            expr = func_call;
             continue;
         }
         
@@ -266,10 +460,15 @@ ASTNode* parse_statement(Parser* parser) {
     switch (token->type) {
         case TOKEN_LET:
         case TOKEN_VAR:
+            // Optional 'let' or 'var' - skip it and parse as Python-style
+            advance_token(parser);
+            return parse_python_style_declaration(parser);
+            
         case TOKEN_INT:
         case TOKEN_STRING:
         case TOKEN_FLOAT:
         case TOKEN_BOOL:
+            // Explicit type: int x = 42;
             return parse_variable_declaration(parser);
             
         case TOKEN_IF:
@@ -309,6 +508,24 @@ ASTNode* parse_statement(Parser* parser) {
         case TOKEN_LEFT_BRACE:
             return parse_block(parser);
             
+        case TOKEN_IDENTIFIER: {
+            // Check if this is: identifier = expression (Python-style)
+            Token* next = peek_ahead(parser, 1);
+            if (next && next->type == TOKEN_ASSIGN) {
+                // This is: x = value (could be declaration or assignment)
+                return parse_python_style_declaration(parser);
+            }
+            // Otherwise fall through to expression statement
+            ASTNode* expr = parse_expression(parser);
+            if (expr) {
+                expect_token(parser, TOKEN_SEMICOLON);
+                ASTNode* stmt = create_ast_node(AST_EXPRESSION_STATEMENT, NULL, token->line, token->column);
+                add_child(stmt, expr);
+                return stmt;
+            }
+            return NULL;
+        }
+            
         default: {
             ASTNode* expr = parse_expression(parser);
             if (expr) {
@@ -345,6 +562,26 @@ ASTNode* parse_variable_declaration_with_semicolon(Parser* parser, bool expect_s
     if (expect_semicolon) {
         expect_token(parser, TOKEN_SEMICOLON);
     }
+    return decl;
+}
+
+// Python-style variable declaration: x = 42 (no 'let', type inferred)
+ASTNode* parse_python_style_declaration(Parser* parser) {
+    Token* name = expect_token(parser, TOKEN_IDENTIFIER);
+    if (!name) return NULL;
+    
+    // Create declaration node with TYPE_UNKNOWN (will be inferred)
+    ASTNode* decl = create_ast_node(AST_VARIABLE_DECLARATION, name->value, name->line, name->column);
+    decl->node_type = create_type(TYPE_UNKNOWN);
+    
+    if (match_token(parser, TOKEN_ASSIGN)) {
+        ASTNode* value = parse_expression(parser);
+        if (value) {
+            add_child(decl, value);
+        }
+    }
+    
+    expect_token(parser, TOKEN_SEMICOLON);
     return decl;
 }
 
@@ -430,7 +667,7 @@ ASTNode* parse_while_loop(Parser* parser) {
 }
 
 ASTNode* parse_switch_statement(Parser* parser) {
-    advance_token(parser); // switch
+    advance_token(parser);
     ASTNode* expression = parse_expression(parser);
     if (!expression) return NULL;
     
@@ -439,10 +676,21 @@ ASTNode* parse_switch_statement(Parser* parser) {
     ASTNode* switch_stmt = create_ast_node(AST_SWITCH_STATEMENT, NULL, 0, 0);
     add_child(switch_stmt, expression);
     
-    while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
+    int iteration_count = 0;
+    const int MAX_CASES = 1000;
+    
+    while (!match_token(parser, TOKEN_RIGHT_BRACE) && !is_at_end(parser)) {
+        if (++iteration_count > MAX_CASES) {
+            fprintf(stderr, "Error: Too many cases in switch statement (max %d)\n", MAX_CASES);
+            return switch_stmt;
+        }
+        
         ASTNode* case_stmt = parse_case_statement(parser);
         if (case_stmt) {
             add_child(switch_stmt, case_stmt);
+        } else {
+            fprintf(stderr, "Parse error: Expected 'case' or 'default' in switch statement\n");
+            advance_token(parser);
         }
     }
     
@@ -452,20 +700,59 @@ ASTNode* parse_switch_statement(Parser* parser) {
 ASTNode* parse_case_statement(Parser* parser) {
     if (match_token(parser, TOKEN_DEFAULT)) {
         expect_token(parser, TOKEN_COLON);
-        ASTNode* body = parse_statement(parser);
+        
         ASTNode* case_stmt = create_ast_node(AST_CASE_STATEMENT, "default", 0, 0);
-        add_child(case_stmt, body);
+        
+        int iteration_count = 0;
+        const int MAX_CASE_STMTS = 1000;
+        
+        while (!is_at_end(parser)) {
+            if (++iteration_count > MAX_CASE_STMTS) {
+                fprintf(stderr, "Error: Too many statements in case block (max %d)\n", MAX_CASE_STMTS);
+                break;
+            }
+            
+            Token* next = peek_token(parser);
+            if (!next || next->type == TOKEN_CASE || next->type == TOKEN_DEFAULT || next->type == TOKEN_RIGHT_BRACE) {
+                break;
+            }
+            ASTNode* stmt = parse_statement(parser);
+            if (stmt) {
+                add_child(case_stmt, stmt);
+            } else {
+                advance_token(parser);
+            }
+        }
         return case_stmt;
     }
     
     if (match_token(parser, TOKEN_CASE)) {
         ASTNode* value = parse_expression(parser);
         expect_token(parser, TOKEN_COLON);
-        ASTNode* body = parse_statement(parser);
         
         ASTNode* case_stmt = create_ast_node(AST_CASE_STATEMENT, NULL, 0, 0);
         add_child(case_stmt, value);
-        add_child(case_stmt, body);
+        
+        int iteration_count = 0;
+        const int MAX_CASE_STMTS = 1000;
+        
+        while (!is_at_end(parser)) {
+            if (++iteration_count > MAX_CASE_STMTS) {
+                fprintf(stderr, "Error: Too many statements in case block (max %d)\n", MAX_CASE_STMTS);
+                break;
+            }
+            
+            Token* next = peek_token(parser);
+            if (!next || next->type == TOKEN_CASE || next->type == TOKEN_DEFAULT || next->type == TOKEN_RIGHT_BRACE) {
+                break;
+            }
+            ASTNode* stmt = parse_statement(parser);
+            if (stmt) {
+                add_child(case_stmt, stmt);
+            } else {
+                advance_token(parser);
+            }
+        }
         return case_stmt;
     }
     
@@ -579,7 +866,20 @@ ASTNode* parse_actor_definition(Parser* parser) {
     
     ASTNode* actor = create_ast_node(AST_ACTOR_DEFINITION, name->value, name->line, name->column);
     
+    int iteration_count = 0;
+    const int MAX_ACTOR_BODY = 1000;
+    
     while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
+        if (++iteration_count > MAX_ACTOR_BODY) {
+            fprintf(stderr, "Error: Too many statements in actor definition (max %d)\n", MAX_ACTOR_BODY);
+            break;
+        }
+        
+        if (is_at_end(parser)) {
+            fprintf(stderr, "Error: Unexpected end of file in actor definition\n");
+            break;
+        }
+        
         if (match_token(parser, TOKEN_STATE)) {
             ASTNode* state_decl = parse_variable_declaration(parser);
             if (state_decl) {
@@ -595,6 +895,10 @@ ASTNode* parse_actor_definition(Parser* parser) {
             ASTNode* stmt = parse_statement(parser);
             if (stmt) {
                 add_child(actor, stmt);
+            } else {
+                // If we can't parse a statement, advance to avoid infinite loop
+                fprintf(stderr, "Warning: Skipping unexpected token in actor body\n");
+                advance_token(parser);
             }
         }
     }
@@ -618,7 +922,10 @@ ASTNode* parse_receive_statement(Parser* parser) {
 }
 
 ASTNode* parse_function_definition(Parser* parser) {
-    advance_token(parser); // func
+    // Functions work without types - they're inferred!
+    // Syntax: name(param1, param2) { ... }
+    // Or: name(param1: type, param2) { ... }  (mixed)
+    
     Token* name = expect_token(parser, TOKEN_IDENTIFIER);
     if (!name) return NULL;
     
@@ -626,22 +933,37 @@ ASTNode* parse_function_definition(Parser* parser) {
     
     ASTNode* func = create_ast_node(AST_FUNCTION_DEFINITION, name->value, name->line, name->column);
     
-    // Parse parameters
-    while (!match_token(parser, TOKEN_RIGHT_PAREN)) {
-        Type* param_type = parse_type(parser);
-        Token* param_name = expect_token(parser, TOKEN_IDENTIFIER);
-        if (param_type && param_name) {
-            ASTNode* param = create_ast_node(AST_VARIABLE_DECLARATION, param_name->value, param_name->line, param_name->column);
-            param->node_type = param_type;
+    // Parse parameters (types optional!)
+    if (!match_token(parser, TOKEN_RIGHT_PAREN)) {
+        do {
+            Token* param_name = expect_token(parser, TOKEN_IDENTIFIER);
+            if (!param_name) break;
+            
+            ASTNode* param = create_ast_node(AST_VARIABLE_DECLARATION, param_name->value, 
+                                            param_name->line, param_name->column);
+            
+            // Optional type annotation: param: type
+            if (match_token(parser, TOKEN_COLON)) {
+                Type* param_type = parse_type(parser);
+                if (param_type) {
+                    param->node_type = param_type;
+                }
+            } else {
+                // No type annotation - will be inferred
+                param->node_type = create_type(TYPE_UNKNOWN);
+            }
+            
             add_child(func, param);
-        }
+            
+        } while (match_token(parser, TOKEN_COMMA));
         
-        if (!match_token(parser, TOKEN_COMMA)) break;
+        // Consume closing paren
+        expect_token(parser, TOKEN_RIGHT_PAREN);
     }
     
-    // Parse return type
-    Type* return_type = create_type(TYPE_VOID);
-    if (match_token(parser, TOKEN_COLON)) {
+    // Optional return type annotation: -> type
+    Type* return_type = create_type(TYPE_UNKNOWN);  // Will be inferred if not specified
+    if (match_token(parser, TOKEN_ARROW)) {
         Type* parsed_type = parse_type(parser);
         if (parsed_type) {
             free_type(return_type);
@@ -686,36 +1008,36 @@ ASTNode* parse_struct_definition(Parser* parser) {
     
     if (!expect_token(parser, TOKEN_LEFT_BRACE)) return NULL;
     
-    // Parse fields
+    // Parse fields (types optional - will be inferred!)
     while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
         if (is_at_end(parser)) {
             parser_error(parser, "Unexpected end of struct definition");
             return NULL;
         }
         
-        // Parse field type
-        Type* field_type = parse_type(parser);
-        if (!field_type) {
-            parser_error(parser, "Expected field type");
-            return NULL;
-        }
-        
-        // Parse field name
         Token* field_name = expect_token(parser, TOKEN_IDENTIFIER);
-        if (!field_name) {
-            free_type(field_type);
-            return NULL;
-        }
+        if (!field_name) return NULL;
         
         // Create field node
         ASTNode* field = create_ast_node(AST_STRUCT_FIELD, field_name->value, 
                                         field_name->line, field_name->column);
-        field->node_type = field_type;
+        
+        // Optional type annotation: name: type
+        if (match_token(parser, TOKEN_COLON)) {
+            Type* field_type = parse_type(parser);
+            if (field_type) {
+                field->node_type = field_type;
+            }
+        } else {
+            // No type - will be inferred from usage
+            field->node_type = create_type(TYPE_UNKNOWN);
+        }
+        
         add_child(struct_def, field);
         
-        // Expect semicolon
-        if (!expect_token(parser, TOKEN_SEMICOLON)) {
-            return NULL;
+        // Optional comma or semicolon
+        if (!match_token(parser, TOKEN_COMMA)) {
+            match_token(parser, TOKEN_SEMICOLON);  // Optional semicolon
         }
     }
     
@@ -726,6 +1048,7 @@ ASTNode* parse_program(Parser* parser) {
     ASTNode* program = create_ast_node(AST_PROGRAM, NULL, 0, 0);
     
     int safety_counter = 0;
+    // Safety limit to prevent infinite loops on malformed input
     const int MAX_ITERATIONS = 10000;
     
     while (!is_at_end(parser) && safety_counter < MAX_ITERATIONS) {
@@ -741,6 +1064,8 @@ ASTNode* parse_program(Parser* parser) {
                 node = parse_actor_definition(parser);
                 break;
             case TOKEN_FUNC:
+                // 'func' keyword is optional but still supported
+                advance_token(parser);
                 node = parse_function_definition(parser);
                 break;
             case TOKEN_STRUCT:
@@ -749,8 +1074,21 @@ ASTNode* parse_program(Parser* parser) {
             case TOKEN_MAIN:
                 node = parse_main_function(parser);
                 break;
+            case TOKEN_IDENTIFIER: {
+                // Check if this is a function: identifier(...)
+                Token* next = parser->tokens[parser->current_token + 1];
+                if (next && next->type == TOKEN_LEFT_PAREN) {
+                    // Function without 'func' keyword
+                    node = parse_function_definition(parser);
+                } else {
+                    parser_error(parser, "Unexpected identifier at top level (expected actor, struct, or function)");
+                    advance_token(parser);
+                    continue;
+                }
+                break;
+            }
             default:
-                parser_error(parser, "Expected actor, func, struct, or main");
+                parser_error(parser, "Expected actor, struct, function, or main");
                 advance_token(parser);
                 continue;
         }

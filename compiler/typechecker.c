@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "typechecker.h"
+#include "type_inference.h"
 
 static int error_count = 0;
 static int warning_count = 0;
@@ -113,6 +114,10 @@ Type* infer_type(ASTNode* expr, SymbolTable* table) {
     switch (expr->type) {
         case AST_LITERAL:
             return clone_type(expr->node_type);
+            
+        case AST_ARRAY_LITERAL:
+            // Return the inferred array type
+            return expr->node_type ? clone_type(expr->node_type) : create_type(TYPE_UNKNOWN);
             
         case AST_IDENTIFIER: {
             Symbol* symbol = lookup_symbol(table, expr->value);
@@ -263,6 +268,25 @@ int typecheck_program(ASTNode* program) {
         }
     }
     
+    // NEW: Run type inference before type checking
+    if (!infer_all_types(program, global_table)) {
+        fprintf(stderr, "Type inference failed\n");
+        free_symbol_table(global_table);
+        return 0;
+    }
+    
+    // Update symbol table with inferred types
+    for (int i = 0; i < program->child_count; i++) {
+        ASTNode* child = program->children[i];
+        if (child->type == AST_FUNCTION_DEFINITION && child->value && child->node_type) {
+            Symbol* func_sym = lookup_symbol(global_table, child->value);
+            if (func_sym) {
+                if (func_sym->type) free_type(func_sym->type);
+                func_sym->type = clone_type(child->node_type);
+            }
+        }
+    }
+    
     // Second pass: type check all nodes
     for (int i = 0; i < program->child_count; i++) {
         typecheck_node(program->children[i], global_table);
@@ -390,7 +414,12 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
                 typecheck_expression(init, table);
                 Type* init_type = infer_type(init, table);
                 
-                if (!is_assignable(init_type, stmt->node_type)) {
+                // If variable has no explicit type (TYPE_UNKNOWN), use initializer's type
+                if (!stmt->node_type || stmt->node_type->kind == TYPE_UNKNOWN) {
+                    if (stmt->node_type) free_type(stmt->node_type);
+                    stmt->node_type = clone_type(init_type);
+                } else if (!is_assignable(init_type, stmt->node_type)) {
+                    // Has explicit type but initializer doesn't match
                     type_error("Type mismatch in variable initialization", stmt->line, stmt->column);
                     return 0;
                 }
@@ -580,6 +609,13 @@ int typecheck_expression(ASTNode* expr, SymbolTable* table) {
         
         case AST_LITERAL:
             // Literals are already typed
+            return 1;
+            
+        case AST_ARRAY_LITERAL:
+            // Type check all array elements
+            for (int i = 0; i < expr->child_count; i++) {
+                typecheck_expression(expr->children[i], table);
+            }
             return 1;
             
         default:

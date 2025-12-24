@@ -63,7 +63,7 @@ const char* get_c_type(Type* type) {
         case TYPE_INT: return "int";
         case TYPE_FLOAT: return "float";
         case TYPE_BOOL: return "int";
-        case TYPE_STRING: return "char*";
+        case TYPE_STRING: return "AetherString*";  // Use runtime string type (pointer)
         case TYPE_VOID: return "void";
         case TYPE_ACTOR_REF: return "ActorRef*";
         case TYPE_MESSAGE: return "Message";
@@ -121,7 +121,8 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
     switch (expr->type) {
         case AST_LITERAL:
             if (expr->node_type && expr->node_type->kind == TYPE_STRING) {
-                fprintf(gen->output, "\"");
+                // String literal: generate aether_string_from_literal() call
+                fprintf(gen->output, "aether_string_from_literal(\"");
                 // Escape string characters
                 const char* str = expr->value;
                 while (*str) {
@@ -135,7 +136,7 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                     }
                     str++;
                 }
-                fprintf(gen->output, "\"");
+                fprintf(gen->output, "\")");
             } else {
                 fprintf(gen->output, "%s", expr->value);
             }
@@ -186,12 +187,30 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
             break;
             
         case AST_FUNCTION_CALL:
-            fprintf(gen->output, "%s(", expr->value);
-            for (int i = 0; i < expr->child_count; i++) {
-                if (i > 0) fprintf(gen->output, ", ");
-                generate_expression(gen, expr->children[i]);
+            // Function calls: expr->value is the function name, children are arguments
+            if (expr->value) {
+                const char* func_name = expr->value;
+                
+                // Special handling for make()
+                if (strcmp(func_name, "make") == 0 && expr->node_type && expr->node_type->kind == TYPE_ARRAY) {
+                    // make([]type, size) → malloc(size * sizeof(type))
+                    fprintf(gen->output, "(%s)malloc(", get_c_type(expr->node_type));
+                    if (expr->child_count > 0) {
+                        fprintf(gen->output, "(");
+                        generate_expression(gen, expr->children[0]); // size expression
+                        fprintf(gen->output, ") * sizeof(%s)", get_c_type(expr->node_type->element_type));
+                    }
+                    fprintf(gen->output, ")");
+                } else {
+                    // Regular function call: func_name(arg1, arg2, ...)
+                    fprintf(gen->output, "%s(", func_name);
+                    for (int i = 0; i < expr->child_count; i++) {
+                        if (i > 0) fprintf(gen->output, ", ");
+                        generate_expression(gen, expr->children[i]);
+                    }
+                    fprintf(gen->output, ")");
+                }
             }
-            fprintf(gen->output, ")");
             break;
             
         case AST_ACTOR_REF:
@@ -199,6 +218,26 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                 fprintf(gen->output, "aether_self()");
             } else {
                 fprintf(gen->output, "%s", expr->value);
+            }
+            break;
+        
+        case AST_ARRAY_LITERAL:
+            // Array literal: {1, 2, 3}
+            fprintf(gen->output, "{");
+            for (int i = 0; i < expr->child_count; i++) {
+                if (i > 0) fprintf(gen->output, ", ");
+                generate_expression(gen, expr->children[i]);
+            }
+            fprintf(gen->output, "}");
+            break;
+        
+        case AST_ARRAY_ACCESS:
+            // Array indexing: arr[index]
+            if (expr->child_count >= 2) {
+                generate_expression(gen, expr->children[0]);  // array
+                fprintf(gen->output, "[");
+                generate_expression(gen, expr->children[1]);  // index
+                fprintf(gen->output, "]");
             }
             break;
             
@@ -214,21 +253,22 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
 void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
     if (!stmt) return;
     
-    // Debug: Print statement type being generated
-    static int depth = 0;
-    static int call_count = 0;
-    call_count++;
-    depth++;
-    if (call_count > 1000) {
-        fprintf(stderr, "ERROR: generate_statement called too many times (possible infinite loop)\n");
-        fprintf(stderr, "Current statement type: %d, depth: %d\n", stmt->type, depth);
-        exit(1);
-    }
-    
     switch (stmt->type) {
         case AST_VARIABLE_DECLARATION: {
-            generate_type(gen, stmt->node_type);
-            fprintf(gen->output, " %s", stmt->value);
+            // Handle array types specially (C syntax: int name[size])
+            if (stmt->node_type && stmt->node_type->kind == TYPE_ARRAY) {
+                const char* elem_type = get_c_type(stmt->node_type->element_type);
+                fprintf(gen->output, "%s %s", elem_type, stmt->value);
+                if (stmt->node_type->array_size > 0) {
+                    fprintf(gen->output, "[%d]", stmt->node_type->array_size);
+                } else {
+                    // Dynamic array - use pointer
+                    fprintf(gen->output, "*");
+                }
+            } else {
+                generate_type(gen, stmt->node_type);
+                fprintf(gen->output, " %s", stmt->value);
+            }
             
             if (stmt->child_count > 0) {
                 fprintf(gen->output, " = ");
@@ -382,33 +422,53 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             break;
             
         case AST_PRINT_STATEMENT:
-            fprintf(gen->output, "printf(");
+            // Generate type-appropriate printf calls
             for (int i = 0; i < stmt->child_count; i++) {
-                if (i > 0) fprintf(gen->output, ", ");
-                generate_expression(gen, stmt->children[i]);
+                ASTNode* expr = stmt->children[i];
+                if (expr->node_type) {
+                    switch (expr->node_type->kind) {
+                        case TYPE_INT:
+                            fprintf(gen->output, "printf(\"%%d\\n\", ");
+                            generate_expression(gen, expr);
+                            fprintf(gen->output, ");\n");
+                            break;
+                        case TYPE_FLOAT:
+                            fprintf(gen->output, "printf(\"%%f\\n\", ");
+                            generate_expression(gen, expr);
+                            fprintf(gen->output, ");\n");
+                            break;
+                        case TYPE_BOOL:
+                            fprintf(gen->output, "printf(\"%%s\\n\", ");
+                            generate_expression(gen, expr);
+                            fprintf(gen->output, " ? \"true\" : \"false\");\n");
+                            break;
+                        case TYPE_STRING:
+                            fprintf(gen->output, "printf(\"%%s\\n\", ");
+                            generate_expression(gen, expr);
+                            fprintf(gen->output, "->data);\n");  // AetherString* has data field
+                            break;
+                        default:
+                            fprintf(gen->output, "printf(\"[value]\\n\");\n");
+                            break;
+                    }
+                } else {
+                    fprintf(gen->output, "printf(\"[unknown]\\n\");\n");
+                }
             }
-            fprintf(gen->output, ");\n");
             break;
             
         case AST_SEND_STATEMENT:
-            fprintf(gen->output, "aether_send_message(");
-            if (stmt->child_count >= 2) {
-                generate_expression(gen, stmt->children[0]);
-                fprintf(gen->output, ", aether_self(), ");
-                generate_expression(gen, stmt->children[1]);
-                fprintf(gen->output, ", sizeof(");
-                generate_expression(gen, stmt->children[1]);
-                fprintf(gen->output, ")");
-            }
-            fprintf(gen->output, ");\n");
+            // Note: Generic send() syntax not yet implemented
+            // Use type-specific send_ActorName() functions generated for each actor
+            fprintf(stderr, "Error: Generic send() not supported. Use send_ActorName() functions.\n");
+            fprintf(gen->output, "/* ERROR: Generic send() not supported - use type-specific send functions */\n");
             break;
             
         case AST_SPAWN_ACTOR_STATEMENT:
-            fprintf(gen->output, "ActorRef* actor_%d = aether_spawn_actor(\"", gen->actor_count++);
-            if (stmt->child_count > 0) {
-                generate_expression(gen, stmt->children[0]);
-            }
-            fprintf(gen->output, "\", NULL, NULL);\n");
+            // Note: Generic spawn_actor() syntax not yet implemented  
+            // Use type-specific spawn_ActorName() functions generated for each actor
+            fprintf(stderr, "Error: Generic spawn_actor() not supported. Use spawn_ActorName() functions.\n");
+            fprintf(gen->output, "/* ERROR: Generic spawn_actor() not supported - use type-specific spawn functions */\n");
             break;
             
         case AST_BLOCK:
@@ -427,8 +487,6 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             }
             break;
     }
-    
-    depth--;
 }
 
 void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
@@ -638,12 +696,22 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
 void generate_program(CodeGenerator* gen, ASTNode* program) {
     if (!program || program->type != AST_PROGRAM) return;
     
+    // Generate includes for runtime libraries
     print_line(gen, "#include <stdio.h>");
     print_line(gen, "#include <stdlib.h>");
     print_line(gen, "#include <string.h>");
+    print_line(gen, "#include <stdbool.h>");
     print_line(gen, "#include <stdatomic.h>");
+    print_line(gen, "");
+    print_line(gen, "// Aether runtime libraries");
     print_line(gen, "#include \"actor_state_machine.h\"");
     print_line(gen, "#include \"multicore_scheduler.h\"");
+    print_line(gen, "#include \"aether_string.h\"");
+    print_line(gen, "#include \"aether_io.h\"");
+    print_line(gen, "#include \"aether_math.h\"");
+    print_line(gen, "#include \"aether_supervision.h\"");
+    print_line(gen, "#include \"aether_tracing.h\"");
+    print_line(gen, "#include \"aether_bounds_check.h\"");
     print_line(gen, "");
     print_line(gen, "extern __thread int current_core_id;");
     print_line(gen, "");

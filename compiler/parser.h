@@ -29,6 +29,7 @@ ASTNode* parse_binary_expression(Parser* parser, int precedence);
 ASTNode* parse_unary_expression(Parser* parser);
 ASTNode* parse_variable_declaration(Parser* parser);
 ASTNode* parse_variable_declaration_with_semicolon(Parser* parser, bool expect_semicolon);
+ASTNode* parse_python_style_declaration(Parser* parser);
 ASTNode* parse_if_statement(Parser* parser);
 ASTNode* parse_for_loop(Parser* parser);
 ASTNode* parse_while_loop(Parser* parser);
@@ -43,6 +44,7 @@ ASTNode* parse_receive_statement(Parser* parser);
 
 // Utility functions
 Token* peek_token(Parser* parser);
+Token* peek_ahead(Parser* parser, int offset);
 Token* advance_token(Parser* parser);
 Token* expect_token(Parser* parser, AeTokenType expected);
 int is_at_end(Parser* parser);

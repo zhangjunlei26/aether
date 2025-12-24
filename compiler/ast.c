@@ -200,8 +200,10 @@ const char* ast_node_type_to_string(ASTNodeType type) {
         case AST_ACTOR_REF: return "ACTOR_REF";
         case AST_IDENTIFIER: return "IDENTIFIER";
         case AST_LITERAL: return "LITERAL";
+        case AST_ARRAY_LITERAL: return "ARRAY_LITERAL";
         case AST_ARRAY_ACCESS: return "ARRAY_ACCESS";
         case AST_MEMBER_ACCESS: return "MEMBER_ACCESS";
+        case AST_STRUCT_LITERAL: return "STRUCT_LITERAL";
         case AST_TYPE_ANNOTATION: return "TYPE_ANNOTATION";
         case AST_ACTOR_REF_TYPE: return "ACTOR_REF_TYPE";
         case AST_ARRAY_TYPE: return "ARRAY_TYPE";
@@ -216,7 +218,8 @@ ASTNode* create_literal_node(Token* token) {
     
     switch (token->type) {
         case TOKEN_NUMBER:
-            type = create_type(TYPE_INT); // Default to int, could be float
+            // Let type inference determine if it's int or float
+            type = create_type(TYPE_UNKNOWN);
             break;
         case TOKEN_STRING_LITERAL:
             type = create_type(TYPE_STRING);

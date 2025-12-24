@@ -23,9 +23,13 @@ typedef enum {
     TOKEN_SEND,
     TOKEN_SPAWN_ACTOR,
     TOKEN_SPAWN,
+    TOKEN_MAKE,
     TOKEN_SELF,
     TOKEN_STATE,
     TOKEN_STRUCT,
+    TOKEN_IMPORT,
+    TOKEN_EXPORT,
+    TOKEN_MODULE,
     
     // Types
     TOKEN_INT,
