@@ -779,12 +779,12 @@ ASTNode* parse_return_statement(Parser* parser) {
 }
 
 ASTNode* parse_defer_statement(Parser* parser) {
-    Token* defer_token = parser->current_token;
+    Token* defer_token = peek_token(parser);
     advance_token(parser);
     
     ASTNode* deferred_stmt = parse_statement(parser);
     if (!deferred_stmt) {
-        aether_error(defer_token->line, defer_token->column, "Expected statement after 'defer'");
+        parser_error(parser, "Expected statement after 'defer'");
         return NULL;
     }
     

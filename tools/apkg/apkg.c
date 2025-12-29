@@ -1,6 +1,12 @@
 #include "apkg.h"
 #include <sys/stat.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#define mkdir(path, mode) _mkdir(path)
+#else
 #include <unistd.h>
+#endif
 
 #define APKG_VERSION "0.1.0"
 

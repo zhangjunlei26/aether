@@ -6,7 +6,7 @@
 
 Scheduler schedulers[MAX_CORES];
 int num_cores = 0;
-atomic_int next_actor_id = ATOMIC_VAR_INIT(1);
+atomic_int next_actor_id = 1;
 
 __thread int current_core_id = -1;
 

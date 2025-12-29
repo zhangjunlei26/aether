@@ -41,6 +41,7 @@ ASTNode* parse_send_statement(Parser* parser);
 ASTNode* parse_spawn_actor_statement(Parser* parser);
 ASTNode* parse_block(Parser* parser);
 ASTNode* parse_receive_statement(Parser* parser);
+ASTNode* parse_defer_statement(Parser* parser);
 
 // Utility functions
 Token* peek_token(Parser* parser);

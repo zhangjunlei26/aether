@@ -23,37 +23,37 @@ TEST(math_pow_zero_exponent) {
 }
 
 TEST(math_abs_positive) {
-    int result = aether_abs(42);
+    int result = aether_abs_int(42);
     ASSERT_EQ(42, result);
 }
 
 TEST(math_abs_negative) {
-    int result = aether_abs(-42);
+    int result = aether_abs_int(-42);
     ASSERT_EQ(42, result);
 }
 
 TEST(math_abs_zero) {
-    int result = aether_abs(0);
+    int result = aether_abs_int(0);
     ASSERT_EQ(0, result);
 }
 
 TEST(math_min_basic) {
-    int result = aether_min(5, 10);
+    int result = aether_min_int(5, 10);
     ASSERT_EQ(5, result);
 }
 
 TEST(math_min_equal) {
-    int result = aether_min(7, 7);
+    int result = aether_min_int(7, 7);
     ASSERT_EQ(7, result);
 }
 
 TEST(math_max_basic) {
-    int result = aether_max(5, 10);
+    int result = aether_max_int(5, 10);
     ASSERT_EQ(10, result);
 }
 
 TEST(math_max_equal) {
-    int result = aether_max(7, 7);
+    int result = aether_max_int(7, 7);
     ASSERT_EQ(7, result);
 }
 

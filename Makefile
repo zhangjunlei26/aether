@@ -21,7 +21,12 @@ CC = gcc
 CFLAGS = -O2 -Icompiler -Iruntime -Istd -Istd/string -Istd/io -Istd/math -Istd/net -Istd/collections -Istd/json -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
 LDFLAGS = -pthread
 
+ifeq ($(OS),Windows_NT)
+    LDFLAGS += -lws2_32
+endif
+
 COMPILER_SRC = compiler/aetherc.c compiler/lexer.c compiler/parser.c compiler/ast.c compiler/typechecker.c compiler/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/type_inference.c
+COMPILER_LIB_SRC = compiler/lexer.c compiler/parser.c compiler/ast.c compiler/typechecker.c compiler/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/type_inference.c
 RUNTIME_SRC = runtime/multicore_scheduler.c runtime/memory.c runtime/aether_arena.c runtime/aether_pool.c runtime/aether_memory_stats.c runtime/aether_tracing.c runtime/aether_bounds_check.c runtime/aether_test.c
 STD_SRC = std/string/aether_string.c std/io/aether_io.c std/math/aether_math.c std/net/aether_http.c std/net/aether_net.c std/collections/aether_collections.c std/json/aether_json.c
 
@@ -32,13 +37,13 @@ all: compiler
 
 compiler:
 	@$(MKDIR)
-	$(CC) $(CFLAGS) $(COMPILER_SRC) $(STD_SRC) -o build/aetherc$(EXE_EXT)
+	$(CC) $(CFLAGS) $(COMPILER_SRC) $(STD_SRC) -o build/aetherc$(EXE_EXT) $(LDFLAGS)
 
 test: compiler
 	@echo "==================================="
 	@echo "Building Test Suite ($(DETECTED_OS))"
 	@echo "==================================="
-	$(CC) $(CFLAGS) $(TEST_SRC) $(COMPILER_SRC) $(RUNTIME_SRC) $(STD_SRC) -Icompiler -Istd -o build/test_runner$(EXE_EXT)
+	$(CC) $(CFLAGS) $(TEST_SRC) $(COMPILER_LIB_SRC) $(RUNTIME_SRC) $(STD_SRC) -Icompiler -Istd -o build/test_runner$(EXE_EXT) $(LDFLAGS)
 	@echo ""
 	@echo "==================================="
 	@echo "Running Tests"
