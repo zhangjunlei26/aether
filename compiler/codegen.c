@@ -211,7 +211,35 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                         fprintf(gen->output, ") * sizeof(%s)", get_c_type(expr->node_type->element_type));
                     }
                     fprintf(gen->output, ")");
-                } else {
+                }
+                // Runtime type checking builtins
+                else if (strcmp(func_name, "typeof") == 0) {
+                    // typeof(value) → aether_typeof(value)
+                    fprintf(gen->output, "aether_typeof(");
+                    if (expr->child_count > 0) {
+                        generate_expression(gen, expr->children[0]);
+                    }
+                    fprintf(gen->output, ")");
+                }
+                else if (strcmp(func_name, "is_type") == 0) {
+                    // is_type(value, "typename") → aether_is_type(value, "typename")
+                    fprintf(gen->output, "aether_is_type(");
+                    for (int i = 0; i < expr->child_count; i++) {
+                        if (i > 0) fprintf(gen->output, ", ");
+                        generate_expression(gen, expr->children[i]);
+                    }
+                    fprintf(gen->output, ")");
+                }
+                else if (strcmp(func_name, "convert_type") == 0) {
+                    // convert_type(value, "typename") → aether_convert_type(value, "typename")
+                    fprintf(gen->output, "aether_convert_type(");
+                    for (int i = 0; i < expr->child_count; i++) {
+                        if (i > 0) fprintf(gen->output, ", ");
+                        generate_expression(gen, expr->children[i]);
+                    }
+                    fprintf(gen->output, ")");
+                }
+                else {
                     // Regular function call: func_name(arg1, arg2, ...)
                     fprintf(gen->output, "%s(", func_name);
                     for (int i = 0; i < expr->child_count; i++) {
@@ -960,6 +988,7 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "#include \"aether_supervision.h\"");
     print_line(gen, "#include \"aether_tracing.h\"");
     print_line(gen, "#include \"aether_bounds_check.h\"");
+    print_line(gen, "#include \"aether_runtime_types.h\"");
     print_line(gen, "");
     print_line(gen, "extern __thread int current_core_id;");
     print_line(gen, "");
