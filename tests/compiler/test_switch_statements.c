@@ -29,14 +29,14 @@ static ASTNode* parse_code(const char* code) {
 TEST(switch_parse_basic) {
     const char* code = 
         "main() {\n"
-        "    x = 1\n"
+        "    x = 1;\n"
         "    switch (x) {\n"
         "        case 1:\n"
-        "            print(\"one\")\n"
+        "            print(\"one\");\n"
         "        case 2:\n"
-        "            print(\"two\")\n"
+        "            print(\"two\");\n"
         "        default:\n"
-        "            print(\"other\")\n"
+        "            print(\"other\");\n"
         "    }\n"
         "}\n";
     
@@ -47,7 +47,7 @@ TEST(switch_parse_basic) {
     // Find main function
     ASSERT_TRUE(ast->child_count > 0);
     ASTNode* main_func = ast->children[0];
-    ASSERT_EQ(AST_FUNCTION_DEFINITION, main_func->type);
+    ASSERT_EQ(AST_MAIN_FUNCTION, main_func->type);
     
     // Find function body
     ASSERT_TRUE(main_func->child_count > 0);
@@ -81,7 +81,7 @@ TEST(switch_parse_single_case) {
         "main() {\n"
         "    switch (x) {\n"
         "        case 1:\n"
-        "            print(\"one\")\n"
+        "            print(\"one\");\n"
         "    }\n"
         "}\n";
     
@@ -95,7 +95,7 @@ TEST(switch_parse_default_only) {
         "main() {\n"
         "    switch (x) {\n"
         "        default:\n"
-        "            print(\"default\")\n"
+        "            print(\"default\");\n"
         "    }\n"
         "}\n";
     
@@ -109,11 +109,11 @@ TEST(switch_parse_multiple_statements_per_case) {
         "main() {\n"
         "    switch (x) {\n"
         "        case 1:\n"
-        "            y = 10\n"
-        "            z = 20\n"
-        "            print(y + z)\n"
+        "            y = 10;\n"
+        "            z = 20;\n"
+        "            print(y + z);\n"
         "        case 2:\n"
-        "            print(\"two\")\n"
+        "            print(\"two\");\n"
         "    }\n"
         "}\n";
     
@@ -128,7 +128,7 @@ TEST(switch_parse_nested_blocks) {
         "    switch (x) {\n"
         "        case 1:\n"
         "            if (y > 0) {\n"
-        "                print(\"positive\")\n"
+        "                print(\"positive\");\n"
         "            }\n"
         "    }\n"
         "}\n";
@@ -141,14 +141,14 @@ TEST(switch_parse_nested_blocks) {
 TEST(switch_codegen_basic) {
     const char* code = 
         "main() {\n"
-        "    x = 1\n"
+        "    x = 1;\n"
         "    switch (x) {\n"
         "        case 1:\n"
-        "            print(\"one\")\n"
+        "            print(\"one\");\n"
         "        case 2:\n"
-        "            print(\"two\")\n"
+        "            print(\"two\");\n"
         "        default:\n"
-        "            print(\"other\")\n"
+        "            print(\"other\");\n"
         "    }\n"
         "}\n";
     
@@ -159,9 +159,9 @@ TEST(switch_codegen_basic) {
     FILE* out = fopen("test_switch_output.c", "w");
     ASSERT_NOT_NULL(out);
     
-    CodeGenerator* gen = create_codegen(out);
-    generate_code(gen, ast);
-    free_codegen(gen);
+    CodeGenerator* gen = create_code_generator(out);
+    generate_program(gen, ast);
+    free_code_generator(gen);
     fclose(out);
     
     // Verify the output file was created
@@ -185,12 +185,12 @@ TEST(switch_string_cases) {
     // Note: C doesn't support string switch, but we should handle parsing
     const char* code = 
         "main() {\n"
-        "    x = \"hello\"\n"
+        "    x = \"hello\";\n"
         "    switch (x) {\n"
         "        case \"hello\":\n"
-        "            print(\"greeting\")\n"
+        "            print(\"greeting\");\n"
         "        default:\n"
-        "            print(\"unknown\")\n"
+        "            print(\"unknown\");\n"
         "    }\n"
         "}\n";
     
@@ -204,7 +204,7 @@ TEST(switch_expression_in_condition) {
         "main() {\n"
         "    switch (x + y * 2) {\n"
         "        case 10:\n"
-        "            print(\"ten\")\n"
+        "            print(\"ten\");\n"
         "    }\n"
         "}\n";
     
@@ -218,11 +218,11 @@ TEST(switch_break_statements) {
         "main() {\n"
         "    switch (x) {\n"
         "        case 1:\n"
-        "            print(\"one\")\n"
-        "            break\n"
+        "            print(\"one\");\n"
+        "            break;\n"
         "        case 2:\n"
-        "            print(\"two\")\n"
-        "            break\n"
+        "            print(\"two\");\n"
+        "            break;\n"
         "    }\n"
         "}\n";
     
@@ -238,7 +238,7 @@ TEST(switch_fallthrough) {
         "        case 1:\n"
         "        case 2:\n"
         "        case 3:\n"
-        "            print(\"1, 2, or 3\")\n"
+        "            print(\"1, 2, or 3\");\n"
         "    }\n"
         "}\n";
     

@@ -317,9 +317,9 @@ TEST(codegen_pattern_literals) {
     
     FILE* out = fopen("test_pattern_literals.c", "w");
     ASSERT_NOT_NULL(out);
-    CodeGenerator* gen = create_codegen(out);
+    CodeGenerator* gen = create_code_generator(out);
     generate_program(gen, ast);
-    free_codegen(gen);
+    free_code_generator(gen);
     fclose(out);
     
     // Verify generated code contains pattern checks
@@ -347,9 +347,9 @@ TEST(codegen_guards) {
     
     FILE* out = fopen("test_guards.c", "w");
     ASSERT_NOT_NULL(out);
-    CodeGenerator* gen = create_codegen(out);
+    CodeGenerator* gen = create_code_generator(out);
     generate_program(gen, ast);
-    free_codegen(gen);
+    free_code_generator(gen);
     fclose(out);
     
     free_ast_node(ast);
@@ -366,9 +366,9 @@ TEST(codegen_list_patterns) {
     
     FILE* out = fopen("test_list_patterns.c", "w");
     ASSERT_NOT_NULL(out);
-    CodeGenerator* gen = create_codegen(out);
+    CodeGenerator* gen = create_code_generator(out);
     generate_program(gen, ast);
-    free_codegen(gen);
+    free_code_generator(gen);
     fclose(out);
     
     free_ast_node(ast);

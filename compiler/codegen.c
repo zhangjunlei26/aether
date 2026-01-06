@@ -511,7 +511,7 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             break;
             
         case AST_CASE_STATEMENT:
-            if (strcmp(stmt->value, "default") == 0) {
+            if (stmt->value && strcmp(stmt->value, "default") == 0) {
                 print_line(gen, "default:");
             } else {
                 fprintf(gen->output, "case ");
@@ -522,8 +522,10 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             }
             
             indent(gen);
-            if (stmt->child_count > 1) {
-                generate_statement(gen, stmt->children[1]);
+            // Generate all statements in the case block (skip first child which is the case value)
+            int start_idx = (stmt->value && strcmp(stmt->value, "default") == 0) ? 0 : 1;
+            for (int i = start_idx; i < stmt->child_count; i++) {
+                generate_statement(gen, stmt->children[i]);
             }
             unindent(gen);
             break;

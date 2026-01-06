@@ -32,8 +32,8 @@ endif
 
 COMPILER_SRC = compiler/aetherc.c compiler/lexer.c compiler/parser.c compiler/ast.c compiler/typechecker.c compiler/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/type_inference.c compiler/optimizer.c compiler/aether_diagnostics.c
 COMPILER_LIB_SRC = compiler/lexer.c compiler/parser.c compiler/ast.c compiler/typechecker.c compiler/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/type_inference.c compiler/optimizer.c compiler/aether_diagnostics.c
-RUNTIME_SRC = runtime/multicore_scheduler.c runtime/memory.c runtime/aether_arena.c runtime/aether_pool.c runtime/aether_memory_stats.c runtime/aether_tracing.c runtime/aether_bounds_check.c runtime/aether_test.c runtime/aether_arena_optimized.c runtime/aether_runtime_types.c
-STD_SRC = std/string/aether_string.c std/io/aether_io.c std/math/aether_math.c std/net/aether_http.c std/net/aether_net.c std/collections/aether_collections.c std/json/aether_json.c
+RUNTIME_SRC = runtime/multicore_scheduler.c runtime/memory.c runtime/aether_arena.c runtime/aether_pool.c runtime/aether_memory_stats.c runtime/aether_tracing.c runtime/aether_bounds_check.c runtime/aether_test.c runtime/aether_arena_optimized.c runtime/aether_runtime_types.c runtime/aether_cpu_detect.c runtime/aether_batch.c runtime/aether_simd.c
+STD_SRC = std/string/aether_string.c std/math/aether_math.c std/net/aether_http.c std/net/aether_net.c std/collections/aether_collections.c std/json/aether_json.c std/fs/aether_fs.c std/log/aether_log.c
 COLLECTIONS_SRC = std/collections/aether_hashmap.c std/collections/aether_set.c std/collections/aether_vector.c std/collections/aether_pqueue.c
 
 # Object files
@@ -50,14 +50,36 @@ DEPS = $(COMPILER_OBJS:.o=.d) $(RUNTIME_OBJS:.o=.d) $(STD_OBJS:.o=.d) $(COLLECTI
 # Include dependency files
 -include $(DEPS)
 
-# Only include new-style tests that use TEST() macro (exclude old tests with their own main())
+# Test files using TEST() macro system (exclude standalone tests)
 TEST_SRC = tests/test_harness.c \
            tests/test_main.c \
-           tests/test_lexer_comprehensive.c \
-           tests/test_parser_comprehensive.c \
-           tests/test_type_inference_comprehensive.c \
-           tests/test_memory_arena.c \
-           tests/test_memory_pool.c \
+           tests/compiler/test_lexer.c \
+           tests/compiler/test_lexer_comprehensive.c \
+           tests/compiler/test_parser.c \
+           tests/compiler/test_parser_comprehensive.c \
+           tests/compiler/test_typechecker.c \
+           tests/compiler/test_type_inference_comprehensive.c \
+           tests/compiler/test_codegen.c \
+           tests/compiler/test_structs.c \
+           tests/compiler/test_switch_statements.c \
+           tests/compiler/test_pattern_matching_comprehensive.c \
+           tests/memory/test_memory_arena.c \
+           tests/memory/test_memory_pool.c \
+           tests/memory/test_memory_leaks.c \
+           tests/memory/test_memory_stress.c \
+           tests/runtime/test_64bit.c \
+           tests/runtime/test_runtime_collections.c \
+           tests/runtime/test_runtime_strings.c \
+           tests/runtime/test_runtime_math.c \
+           tests/runtime/test_runtime_json.c \
+           tests/runtime/test_runtime_http.c \
+           tests/runtime/test_runtime_net.c
+
+# Standalone test programs with their own main() - build separately
+STANDALONE_TESTS = tests/test_runtime_implementations.c \
+                   tests/test_scheduler_integration.c \
+                   tests/runtime/test_runtime_manual.c \
+                   tests/compiler/test_arrays.c \
            tests/test_memory_stress.c \
            tests/test_memory_leaks.c \
            tests/test_64bit.c \

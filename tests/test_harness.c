@@ -1,6 +1,10 @@
 #include "test_harness.h"
 #include <string.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define MAX_TESTS 1000
 
 // Global test failure handling
@@ -52,9 +56,13 @@ void register_test_with_category(const char* name, TestFunction func, TestCatego
 }
 
 static long get_time_ms(void) {
+#ifdef _WIN32
+    return GetTickCount64();
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+#endif
 }
 
 void run_all_tests(void) {
