@@ -36,7 +36,7 @@ experiments/
 ### Experiment 01: Pthread Baseline
 **Traditional 1:1 OS Threading**
 
-✅ **Implemented**: Full benchmark with timing and memory profiling
+**Implemented**: Full benchmark with timing and memory profiling
 
 **Key Metrics**:
 - Memory: 1-8 MB per actor (OS thread stack)
@@ -72,7 +72,7 @@ Total Memory: 12.8 MB (128 bytes per actor)
 ### Experiment 03: Work-Stealing Scheduler
 **M:N Threading for Multi-core**
 
-📋 **Designed** (implementation planned)
+**Designed** (implementation planned)
 
 **Expected Metrics**:
 - Memory: 1-2 KB per actor
@@ -84,23 +84,23 @@ Total Memory: 12.8 MB (128 bytes per actor)
 
 ---
 
-## 📈 Comparative Analysis
+## Comparative Analysis
 
 | Model | Memory/Actor | Max Actors | Throughput | Multi-core | Blocking I/O |
 |-------|--------------|------------|------------|------------|--------------|
-| **Pthread** | 1-8 MB | 1K-10K | 100K msg/s | ✅ Native | ✅ Yes |
-| **State Machine** | 128 B | 1M+ | **125M msg/s** | ❌ Single | ❌ Needs async |
-| **Work-Stealing** | 1-2 KB | 100K+ | 10-50M msg/s | ✅ Configurable | ⚠️ Limited |
+| **Pthread** | 1-8 MB | 1K-10K | 100K msg/s | Native | Yes |
+| **State Machine** | 128 B | 1M+ | **125M msg/s** | Single | Needs async |
+| **Work-Stealing** | 1-2 KB | 100K+ | 10-50M msg/s | Configurable | Limited |
 
 ### Winner by Category:
-- 🏆 **Throughput**: State Machine (125M msg/s)
-- 🏆 **Memory**: State Machine (128B/actor)
-- 🏆 **Simplicity**: Pthread (standard API)
-- 🏆 **Multi-core**: Work-Stealing (planned)
+- **Throughput**: State Machine (125M msg/s)
+- **Memory**: State Machine (128B/actor)
+- **Simplicity**: Pthread (standard API)
+- **Multi-core**: Work-Stealing (planned)
 
 ---
 
-## 📚 Documentation Quality
+## Documentation Quality
 
 Each experiment includes **research-quality documentation**:
 
@@ -123,25 +123,25 @@ Each experiment includes **research-quality documentation**:
 
 ---
 
-## 🔬 Research Questions Answered
+## Research Questions Answered
 
-✅ **Q1**: Can state machine actors scale to 100K+ concurrent actors?  
+**Q1**: Can state machine actors scale to 100K+ concurrent actors?  
 **A**: YES - Successfully tested with 100K actors (12.8MB memory)
 
-✅ **Q2**: What's the throughput difference vs traditional threading?  
+**Q2**: What's the throughput difference vs traditional threading?  
 **A**: 1,250x improvement (125M vs 100K messages/second)
 
-✅ **Q3**: Is the memory reduction significant?  
+**Q3**: Is the memory reduction significant?  
 **A**: YES - 8,000x-64,000x improvement (128B vs 1-8MB per actor)
 
 ### Still Open:
-- ❓ Multi-core performance of work-stealing scheduler
-- ❓ Overhead of non-blocking I/O wrappers
-- ❓ Viability of hybrid pthread + state machine model
+- Multi-core performance of work-stealing scheduler
+- Overhead of non-blocking I/O wrappers
+- Viability of hybrid pthread + state machine model
 
 ---
 
-## 🚀 Integration Path to Aether Compiler
+## Integration Path to Aether Compiler
 
 This research directly enables:
 

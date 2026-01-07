@@ -1,14 +1,16 @@
 # Aether Programming Language
 
-A high-performance actor-based language with automatic memory management and strong type inference.
+A high-performance actor-based systems programming language with lightweight concurrency, strong type inference, and zero-cost C interoperability.
 
-## Features
+## Key Features
 
-- **Actor-based concurrency**: Lightweight actors with message passing
-- **Type inference**: Optional type annotations with full inference
-- **Memory safety**: Automatic memory management without GC pauses
-- **High performance**: 2.3B messages/sec on commodity hardware
-- **Cross-platform**: Windows, Linux, and macOS support
+- **Actor Concurrency**: Lightweight actors (128 bytes each) with message passing at 732M ops/sec
+- **Zero-Sharing Architecture**: Partitioned scheduler with no lock contention in hot paths
+- **Performance**: 291M messages/sec on 8 cores with near-linear scaling
+- **Type System**: Hindley-Milner inference with optional annotations
+- **Memory Safety**: Arena-based allocation with automatic lifetime management
+- **C Interoperability**: Compiles to native C for zero-cost FFI and embedding
+- **Cross-Platform**: Windows, Linux, and macOS support
 
 ## Quick Start
 
@@ -58,17 +60,66 @@ make test              # Run tests
 - `make test` - Run tests
 - `make` - Build everything
 
-## Building
+## Building from Source
+
+### Quick Build (Development)
 
 ```bash
-# Build from source
-.\build.ps1         # Windows
-make                # Linux/macOS
+# Windows
+gcc compiler/*.c runtime/*.c -I runtime -o aetherc.exe -O2
 
-# Run tests
-.\aether.ps1 test   # Windows  
-make test           # Linux/macOS
+# Linux/macOS
+make
 ```
+
+### Optimized Build (Production)
+
+For production deployments, use aggressive optimization flags:
+
+```bash
+gcc compiler/*.c runtime/aether_message_registry.c runtime/aether_actor_thread.c \
+    -I runtime -o aetherc.exe -O3 -march=native -Wall
+```
+
+**Optimization Flags Explained:**
+- `-O3`: Aggressive optimizations (inlining, loop unrolling, vectorization)
+- `-march=native`: Use CPU-specific instructions (AVX2, SSE4.2, etc.)
+- `-flto`: Link-time optimization for whole-program analysis (optional)
+
+### Profile-Guided Optimization (PGO)
+
+PGO is an **industry-standard** technique used by major projects (Chrome, Firefox, LLVM, PostgreSQL) that provides 10-20% additional performance by optimizing based on actual runtime behavior.
+
+**Why PGO?**
+- Optimizes branch predictions based on real execution patterns
+- Improves function inlining decisions using call frequency data
+- Places hot code together to improve instruction cache utilization
+- Used in production builds of all major browsers and compilers
+
+**3-Stage PGO Build:**
+
+```bash
+# Windows
+.\tools\build_pgo.ps1
+
+# Linux/macOS
+./tools/build_pgo.sh
+```
+
+This runs:
+1. Build with instrumentation (`-fprofile-generate`)
+2. Run benchmarks to collect profile data
+3. Rebuild using profile data (`-fprofile-use`)
+
+**When to use PGO:**
+- Production deployments requiring maximum performance
+- After implementing new hot-path features
+- When benchmarks show performance regressions
+
+**When not needed:**
+- Development builds (adds ~3x build time)
+- Debugging or profiling
+- Rapid iteration during development
 
 ## Quick Example
 

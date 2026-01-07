@@ -1,0 +1,33 @@
+message Increment {
+    amount: int
+}
+
+message GetValue {}
+
+message ValueResult {
+    value: int
+}
+
+actor Counter {
+    state count: int = 0
+    
+    receive {
+        Increment { amount } => {
+            self.count = self.count + amount
+        }
+        
+        GetValue {} => {
+            reply ValueResult { value: self.count }
+        }
+    }
+}
+
+fn main() {
+    let counter = spawn Counter()
+    
+    counter ! Increment { amount: 5 }
+    counter ! Increment { amount: 3 }
+    
+    let result = counter ? GetValue {}
+    print result.value
+}

@@ -1,4 +1,4 @@
-#include "../test_harness.h"
+#include "../runtime/test_harness.h"
 #include "../../runtime/aether_arena.h"
 #include <string.h>
 

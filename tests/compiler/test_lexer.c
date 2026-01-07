@@ -1,4 +1,4 @@
-#include "../test_harness.h"
+#include "../runtime/test_harness.h"
 #include "../../compiler/lexer.h"
 #include "../../compiler/tokens.h"
 #include <string.h>

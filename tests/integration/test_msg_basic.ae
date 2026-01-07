@@ -1,0 +1,13 @@
+message Increment {
+    amount: int
+}
+
+message Response {
+    value: int
+    status: int
+}
+
+main() {
+    msg = Increment { amount: 5 };
+    resp = Response { value: 10, status: 1 };
+}

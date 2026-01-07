@@ -1,4 +1,4 @@
-#include "../test_harness.h"
+#include "../runtime/test_harness.h"
 
 TEST(codegen_for_loop_syntax) {
     ASSERT_TRUE(1);

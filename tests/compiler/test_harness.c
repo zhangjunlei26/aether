@@ -103,7 +103,7 @@ void run_all_tests(void) {
                     passed_count++;
                     long duration = get_time_ms() - start;
                     tests[i].duration_ms = duration;
-                    printf("  %s✓%s %s (%ldms)\n", COLOR_GREEN, COLOR_RESET, tests[i].name, duration);
+                    printf("  %s[PASS]%s %s (%ldms)\n", COLOR_GREEN, COLOR_RESET, tests[i].name, duration);
                 }
             } else {
                 // We jumped here from a failed assertion
@@ -111,7 +111,7 @@ void run_all_tests(void) {
                 failed_count++;
                 long duration = get_time_ms() - start;
                 tests[i].duration_ms = duration;
-                printf("  %s✗%s %s (%ldms)\n", COLOR_RED, COLOR_RESET, tests[i].name, duration);
+                printf("  %s[FAIL]%s %s (%ldms)\n", COLOR_RED, COLOR_RESET, tests[i].name, duration);
             }
             fflush(stdout);
         }

@@ -32,6 +32,10 @@ typedef enum {
     TOKEN_IMPORT,
     TOKEN_EXPORT,
     TOKEN_MODULE,
+    TOKEN_MESSAGE_KEYWORD,  // 'message' keyword for message definitions
+    TOKEN_REPLY,            // 'reply' keyword for sending responses
+    TOKEN_EXCLAIM,          // '!' operator for fire-and-forget
+    TOKEN_QUESTION,         // '?' operator for ask pattern
     
     // Types
     TOKEN_INT,

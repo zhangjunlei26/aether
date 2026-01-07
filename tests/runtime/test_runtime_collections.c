@@ -1,4 +1,4 @@
-#include "../test_harness.h"
+#include "test_harness.h"
 #include "../../std/collections/aether_collections.h"
 #include "../../std/string/aether_string.h"
 

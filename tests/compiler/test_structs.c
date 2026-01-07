@@ -1,12 +1,19 @@
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
-#include "../test_harness.h"
+#include "../runtime/test_harness.h"
 #include "../../compiler/tokens.h"
 #include "../../compiler/lexer.h"
 #include "../../compiler/ast.h"
 #include "../../compiler/parser.h"
 #include "../../compiler/typechecker.h"
+
+// Helper function to create parser with error suppression
+static Parser* create_test_parser(Token** tokens, int token_count) {
+    Parser* parser = create_parser(tokens, token_count);
+    parser->suppress_errors = 1;  // Suppress parse errors during testing
+    return parser;
+}
 
 // Test struct lexing
 void test_struct_keyword() {
@@ -35,6 +42,7 @@ void test_parse_simple_struct() {
     
     // Parse
     Parser* parser = create_parser(tokens, token_count);
+    parser->suppress_errors = 1;  // Suppress parse errors during testing
     ASTNode* struct_def = parse_struct_definition(parser);
     
     assert(struct_def != NULL);

@@ -1,0 +1,19 @@
+message Increment {
+    amount: int
+}
+
+actor Counter {
+    count: int
+}
+
+func spawn_Counter() {
+    c = Counter { count: 0 };
+    return c;
+}
+
+main() {
+    counter = spawn_Counter();
+    msg = Increment { amount: 5 };
+    print("Message ID: ");
+    print(msg._message_id);
+}

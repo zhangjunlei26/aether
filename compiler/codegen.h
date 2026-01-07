@@ -2,6 +2,7 @@
 #define CODEGEN_H
 
 #include "ast.h"
+#include "../runtime/aether_message_registry.h"
 
 typedef struct {
     FILE* output;
@@ -11,6 +12,7 @@ typedef struct {
     char* current_actor;
     char** actor_state_vars;
     int state_var_count;
+    MessageRegistry* message_registry;
 } CodeGenerator;
 
 // Code generation functions

@@ -16,7 +16,7 @@ Each experiment is self-contained with:
 
 ### 01 - Pthread Baseline (1:1 Threading)
 **Model**: One OS thread per actor  
-**Status**: ✅ Reference implementation  
+**Status**: Reference implementation  
 **Location**: `01_pthread_baseline/`
 
 Traditional approach using POSIX threads. Each actor runs on a dedicated OS thread with blocking message receives.
@@ -29,7 +29,7 @@ Traditional approach using POSIX threads. Each actor runs on a dedicated OS thre
 
 ### 02 - State Machine Actors (Async/Cooperative)
 **Model**: Actors as structs, single-threaded scheduler  
-**Status**: ✅ Implemented, benchmarked  
+**Status**: Implemented, benchmarked  
 **Location**: `02_state_machine/`
 
 Actors compiled to state machines stored in structs. Single scheduler thread iterates over active actors, calling step functions.
@@ -44,7 +44,7 @@ Actors compiled to state machines stored in structs. Single scheduler thread ite
 
 ### 03 - Work-Stealing Scheduler (M:N Threading)
 **Model**: Actor queue per worker thread, steal-on-idle  
-**Status**: ✅ Implemented, benchmarked  
+**Status**: Implemented, benchmarked  
 **Location**: `03_work_stealing/`
 
 Hybrid between 1:1 and state machines. Multiple OS worker threads share a pool of lightweight actor tasks. When idle, workers steal from other queues.
@@ -59,7 +59,7 @@ Hybrid between 1:1 and state machines. Multiple OS worker threads share a pool o
 
 ### 04 - Partitioned State Machines (Zero-Sharing Multi-Core)
 **Model**: One scheduler per core, actors statically assigned  
-**Status**: ✅ Implemented, benchmarked  
+**Status**: Implemented, benchmarked  
 **Location**: `04_partitioned/`
 
 Each core runs independent state machine scheduler with no sharing. Actors assigned by `actor_id % num_cores`. No atomics, no work stealing.
@@ -74,7 +74,7 @@ Each core runs independent state machine scheduler with no sharing. Actors assig
 
 ### 05 - SIMD Vectorization (AVX2/AVX-512)
 **Model**: Process 8-16 actors simultaneously with SIMD instructions  
-**Status**: ✅ Implemented, benchmarked  
+**Status**: Implemented, benchmarked  
 **Location**: `05_simd_vectorization/`
 
 Use AVX2 to process 8 actors per CPU instruction, AVX-512 for 16 actors.
@@ -89,7 +89,7 @@ Use AVX2 to process 8 actors per CPU instruction, AVX-512 for 16 actors.
 
 ### 06 - Message Batching
 **Model**: Send multiple messages at once to reduce overhead  
-**Status**: ✅ Implemented, benchmarked  
+**Status**: Implemented, benchmarked  
 **Location**: `06_message_batching/`
 
 Batch message sending reduces function call overhead and improves cache locality.
@@ -104,7 +104,7 @@ Batch message sending reduces function call overhead and improves cache locality
 
 ### 07 - GPU Acceleration (CUDA/OpenCL)
 **Model**: Offload actors to GPU for massive parallelism  
-**Status**: ✅ Code ready, requires CUDA toolkit  
+**Status**: Code ready, requires CUDA toolkit  
 **Location**: `07_gpu/`
 
 Use GPU's thousands of cores for actor processing. Best for 100K+ actors with simple logic.
@@ -146,13 +146,13 @@ python3 analyze_results.py > RESULTS.md
 
 | Model | Memory/Actor | Max Actors | Throughput (Single) | Throughput (8 cores) | CPU Cores | Status |
 |-------|--------------|------------|---------------------|----------------------|-----------|--------|
-| Pthread (01) | 1-8 MB | 1K-10K | 1M msg/s | - | 1 per actor | ✅ Baseline |
-| State Machine (02) | 128 B | 1M+ | 125M msg/s | - | 1 | ✅ Excellent |
-| Work-Stealing (03) | 168 B | 100K+ | 51M msg/s | 42M msg/s | N | ✅ Good |
-| Partitioned (04) | 128 B | 1M+ | 124M msg/s | 291M msg/s | N | ✅ **Winner** |
-| SIMD (05) | 128 B | 1M+ | 372M msg/s | ~1.1B msg/s | 1-N | ✅ Advanced |
-| Batching (06) | 128 B | 1M+ | 397M msg/s | ~950M msg/s | 1-N | ✅ Easy Win |
-| GPU (07) | 128 B | 10M+ | - | 10-100B msg/s | GPU | ⚠️ Specialized |
+| Pthread (01) | 1-8 MB | 1K-10K | 1M msg/s | - | 1 per actor | Baseline |
+| State Machine (02) | 128 B | 1M+ | 125M msg/s | - | 1 | Excellent |
+| Work-Stealing (03) | 168 B | 100K+ | 51M msg/s | 42M msg/s | N | Good |
+| Partitioned (04) | 128 B | 1M+ | 124M msg/s | 291M msg/s | N | **Winner** |
+| SIMD (05) | 128 B | 1M+ | 372M msg/s | ~1.1B msg/s | 1-N | Advanced |
+| Batching (06) | 128 B | 1M+ | 397M msg/s | ~950M msg/s | 1-N | Easy Win |
+| GPU (07) | 128 B | 10M+ | - | 10-100B msg/s | GPU | Specialized |
 
 ## Research Questions
 

@@ -7,6 +7,12 @@
 #include <string.h>
 #include "multicore_scheduler.h"
 
+// Branch prediction hints
+#ifndef likely
+#define likely(x)   __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+#endif
+
 // Cross-platform includes
 #ifdef __linux__
 #define _GNU_SOURCE
@@ -54,7 +60,7 @@ static void pin_to_core(int core_id) {
 }
 
 // Partitioned scheduler thread - NO work stealing
-void* scheduler_thread(void* arg) {
+void* __attribute__((hot)) scheduler_thread(void* arg) {
     Scheduler* sched = (Scheduler*)arg;
     current_core_id = sched->core_id;
     
@@ -62,6 +68,7 @@ void* scheduler_thread(void* arg) {
     pin_to_core(sched->core_id);
     
     int idle_count = 0;
+    int total_iterations = 0;
     
     while (atomic_load(&sched->running)) {
         int work_done = 0;
@@ -84,8 +91,14 @@ void* scheduler_thread(void* arg) {
         // This is the performance-critical loop
         for (int i = 0; i < sched->actor_count; i++) {
             ActorBase* actor = sched->actors[i];
-            if (actor && actor->active) {
-                if (actor->step) {
+            
+            // Prefetch next actor for better pipeline utilization
+            if (i + 1 < sched->actor_count) {
+                __builtin_prefetch(sched->actors[i + 1], 0, 3);
+            }
+            
+            if (likely(actor && actor->active)) {
+                if (likely(actor->step)) {
                     actor->step(actor);
                 }
                 work_done = 1;
@@ -95,6 +108,8 @@ void* scheduler_thread(void* arg) {
         // Partitioned approach: NO work stealing
         // Actors stay on their assigned core for perfect cache locality
         // Result: Zero cache thrashing, zero atomic contention
+        
+        total_iterations++;
         
         if (!work_done) {
             idle_count++;

@@ -1,0 +1,13 @@
+message Increment {
+    amount: int
+}
+
+actor Counter {
+    receive(msg) {
+        print(msg.type);
+    }
+}
+
+fn main() {
+    print(42);
+}

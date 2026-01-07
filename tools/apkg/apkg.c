@@ -1,4 +1,5 @@
 #include "apkg.h"
+#include "toml_parser.h"
 #include <sys/stat.h>
 
 #ifdef _WIN32
@@ -97,12 +98,25 @@ int apkg_init(const char* name) {
 int apkg_install(const char* package) {
     printf("Installing package '%s'...\n", package);
     
-    FILE* manifest = fopen("aether.toml", "r");
-    if (!manifest) {
+    // Parse manifest using TOML parser
+    TomlDocument* doc = toml_parse_file("aether.toml");
+    if (!doc) {
         fprintf(stderr, "Error: No aether.toml found. Run 'apkg init' first.\n");
         return 1;
     }
-    fclose(manifest);
+    
+    // Check if already installed
+    int dep_count = 0;
+    TomlKeyValue* deps = toml_get_section_entries(doc, "dependencies", &dep_count);
+    for (int i = 0; i < dep_count; i++) {
+        if (strcmp(deps[i].key, package) == 0) {
+            printf("Package '%s' already in dependencies (version: %s)\n", package, deps[i].value);
+            toml_free_document(doc);
+            return 0;
+        }
+    }
+    
+    toml_free_document(doc);
     
     // Check if package is in cache
     PackageInfo info = apkg_find_package(package);
@@ -119,18 +133,75 @@ int apkg_install(const char* package) {
         printf("Using cached package: %s\n", info.path);
     }
     
-    // Add to aether.toml dependencies
-    FILE* toml = fopen("aether.toml", "a");
-    if (toml) {
-        fprintf(toml, "\n# Added by apkg install\n");
-        fprintf(toml, "%s = \"latest\"\n", package);
-        fclose(toml);
-        printf("✓ Added %s to dependencies\n", package);
+    // Read package version from downloaded package's aether.toml
+    char pkg_manifest[1024];
+    snprintf(pkg_manifest, sizeof(pkg_manifest), "%s/aether.toml", info.path);
+    TomlDocument* pkg_doc = toml_parse_file(pkg_manifest);
+    const char* pkg_version = "latest";
+    if (pkg_doc) {
+        const char* version = toml_get_value(pkg_doc, "package", "version");
+        if (version) {
+            pkg_version = version;
+        }
     }
     
+    // Add to aether.toml dependencies
+    FILE* toml = fopen("aether.toml", "r");
+    if (!toml) {
+        fprintf(stderr, "Error: Could not read aether.toml\n");
+        if (pkg_doc) toml_free_document(pkg_doc);
+        free(info.name);
+        free(info.path);
+        return 1;
+    }
+    
+    // Read entire file
+    fseek(toml, 0, SEEK_END);
+    long size = ftell(toml);
+    fseek(toml, 0, SEEK_SET);
+    char* content = malloc(size + 1024);
+    fread(content, 1, size, toml);
+    content[size] = '\0';
+    fclose(toml);
+    
+    // Find [dependencies] section or add it
+    char* deps_section = strstr(content, "[dependencies]");
+    if (deps_section) {
+        // Add after [dependencies] section
+        char* next_section = strchr(deps_section + 14, '[');
+        if (next_section) {
+            // Insert before next section
+            size_t pos = next_section - content;
+            char* new_content = malloc(size + 1024);
+            strncpy(new_content, content, pos);
+            new_content[pos] = '\0';
+            sprintf(new_content + strlen(new_content), "%s = \"%s\"\n", package, pkg_version);
+            strcat(new_content, next_section);
+            
+            toml = fopen("aether.toml", "w");
+            fputs(new_content, toml);
+            fclose(toml);
+            free(new_content);
+        } else {
+            // Add at end
+            toml = fopen("aether.toml", "a");
+            fprintf(toml, "%s = \"%s\"\n", package, pkg_version);
+            fclose(toml);
+        }
+    } else {
+        // Add new [dependencies] section
+        toml = fopen("aether.toml", "a");
+        fprintf(toml, "\n[dependencies]\n");
+        fprintf(toml, "%s = \"%s\"\n", package, pkg_version);
+        fclose(toml);
+    }
+    
+    free(content);
+    if (pkg_doc) toml_free_document(pkg_doc);
     free(info.name);
     free(info.path);
     
+    printf("✓ Added %s@%s to dependencies\n", package, pkg_version);
     printf("✓ Package '%s' installed\n", package);
     return 0;
 }
@@ -222,12 +293,58 @@ int apkg_build() {
     }
     fclose(manifest);
     
+    // Create target directory if it doesn't exist
+    #ifdef _WIN32
+        system("if not exist target mkdir target");
+    #else
+        system("mkdir -p target");
+    #endif
+    
     printf("Compiling src/main.ae...\n");
     
-    int result = system("aetherc src/main.ae target/main.c");
+    // Try to compile with aetherc
+    int result = system("aetherc src/main.ae target/main.c 2>&1");
     if (result != 0) {
         fprintf(stderr, "Error: Compilation failed\n");
+        fprintf(stderr, "Make sure 'aetherc' is in your PATH\n");
         return 1;
+    }
+    
+    // Generate lock file for reproducible builds
+    printf("Generating aether.lock...\n");
+    FILE* lock = fopen("aether.lock", "w");
+    if (lock) {
+        fprintf(lock, "# Aether lock file - auto-generated, do not edit\n");
+        fprintf(lock, "# This file ensures reproducible builds\n\n");
+        fprintf(lock, "[metadata]\n");
+        fprintf(lock, "generated = \"%s\"\n", __DATE__);
+        fprintf(lock, "\n");
+        
+        // Parse dependencies from manifest and write resolved versions
+        manifest = fopen("aether.toml", "r");
+        if (manifest) {
+            char line[256];
+            int in_deps = 0;
+            
+            fprintf(lock, "[[package]]\n");
+            
+            while (fgets(line, sizeof(line), manifest)) {
+                if (strstr(line, "[dependencies]")) {
+                    in_deps = 1;
+                    continue;
+                }
+                if (in_deps && line[0] == '[') {
+                    in_deps = 0;
+                }
+                if (in_deps && strchr(line, '=')) {
+                    fprintf(lock, "%s", line);
+                }
+            }
+            fclose(manifest);
+        }
+        
+        fclose(lock);
+        printf("✓ Created aether.lock\n");
     }
     
     printf("✓ Build complete\n");
@@ -504,6 +621,7 @@ int apkg_update() {
 int apkg_run() {
     printf("Running package...\n");
     
+    // Check if we need to build
     if (access("target/main.c", F_OK) != 0) {
         printf("Building first...\n");
         if (apkg_build() != 0) {
@@ -511,9 +629,57 @@ int apkg_run() {
         }
     }
     
-    printf("\nTODO: Execute compiled binary\n");
+    // Compile C to executable if needed
+    #ifdef _WIN32
+        const char* exe_name = "target/main.exe";
+    #else
+        const char* exe_name = "target/main";
+    #endif
     
-    return 0;
+    if (access(exe_name, F_OK) != 0) {
+        printf("Compiling to executable...\n");
+        char build_cmd[1024];
+        #ifdef _WIN32
+            snprintf(build_cmd, sizeof(build_cmd),
+                     "gcc target/main.c -Iruntime -Istd -Lbuild -laether_runtime -o %s 2>nul", exe_name);
+        #else
+            snprintf(build_cmd, sizeof(build_cmd),
+                     "gcc target/main.c -Iruntime -Istd -Lbuild -laether_runtime -o %s 2>/dev/null", exe_name);
+        #endif
+        
+        int build_result = system(build_cmd);
+        if (build_result != 0) {
+            fprintf(stderr, "Error: Failed to compile executable\n");
+            fprintf(stderr, "Trying fallback build without runtime library...\n");
+            
+            #ifdef _WIN32
+                snprintf(build_cmd, sizeof(build_cmd), "gcc target/main.c -o %s", exe_name);
+            #else
+                snprintf(build_cmd, sizeof(build_cmd), "gcc target/main.c -o %s", exe_name);
+            #endif
+            
+            build_result = system(build_cmd);
+            if (build_result != 0) {
+                fprintf(stderr, "Error: Compilation failed\n");
+                return 1;
+            }
+        }
+        printf("✓ Executable created: %s\n", exe_name);
+    }
+    
+    // Execute the binary
+    printf("\n--- Running ---\n\n");
+    
+    #ifdef _WIN32
+        int result = system(exe_name);
+    #else
+        char run_cmd[512];
+        snprintf(run_cmd, sizeof(run_cmd), "./%s", exe_name);
+        int result = system(run_cmd);
+    #endif
+    
+    printf("\n--- Finished (exit code: %d) ---\n", result);
+    return result;
 }
 
 void apkg_print_help() {

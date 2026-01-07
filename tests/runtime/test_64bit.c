@@ -1,4 +1,4 @@
-#include "../test_harness.h"
+#include "test_harness.h"
 #include <stdint.h>
 #include <limits.h>
 

@@ -1,4 +1,4 @@
-#include "../test_harness.h"
+#include "test_harness.h"
 #include "../../std/json/aether_json.h"
 #include "../../std/string/aether_string.h"
 

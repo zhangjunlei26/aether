@@ -36,7 +36,7 @@ function Install-Extension {
         }
     }
     
-    Write-Host "✓ Extension installed successfully!" -ForegroundColor Green
+    Write-Host "[SUCCESS] Extension installed successfully!" -ForegroundColor Green
     Write-Host "Please restart VS Code/Cursor for changes to take effect." -ForegroundColor Yellow
     Write-Host "Note: Make sure aether-lsp.exe is in your PATH for LSP features." -ForegroundColor Cyan
 }

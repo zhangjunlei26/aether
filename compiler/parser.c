@@ -8,6 +8,7 @@ Parser* create_parser(Token** tokens, int token_count) {
     parser->tokens = tokens;
     parser->token_count = token_count;
     parser->current_token = 0;
+    parser->suppress_errors = 0;  // By default, show errors
     return parser;
 }
 
@@ -68,12 +69,23 @@ int match_token(Parser* parser, AeTokenType type) {
 }
 
 void parser_error(Parser* parser, const char* message) {
+    if (parser->suppress_errors) {
+        return;  // Silently return if error suppression is enabled
+    }
+    
     Token* token = peek_token(parser);
     if (token) {
-        fprintf(stderr, "Parse error at line %d, column %d: %s\n", 
+        fprintf(stderr, "Parse error at line %d, column %d: %s", 
                 token->line, token->column, message);
     } else {
-        fprintf(stderr, "Parse error at end of file: %s\n", message);
+        fprintf(stderr, "Parse error at end of file: %s", message);
+    }
+}
+
+// Helper to print warnings and errors (respects suppress_errors flag)
+static void parser_message(Parser* parser, const char* message) {
+    if (!parser->suppress_errors) {
+        fprintf(stderr, "%s", message);
     }
 }
 
@@ -304,7 +316,7 @@ ASTNode* parse_binary_expression(Parser* parser, int precedence) {
     
     while (1) {
         if (++iteration_count > MAX_BINARY_OPS) {
-            fprintf(stderr, "Error: Expression too complex (max %d binary operators)\n", MAX_BINARY_OPS);
+            parser_message(parser, "Error: Expression too complex (max %d binary operators)");
             break;
         }
         
@@ -335,7 +347,7 @@ static ASTNode* parse_postfix_expression(Parser* parser) {
     
     while (1) {
         if (++iteration_count > MAX_POSTFIX_OPS) {
-            fprintf(stderr, "Error: Too many postfix operations (max %d)\n", MAX_POSTFIX_OPS);
+            parser_message(parser, "Error: Too many postfix operations (max 100)");
             break;
         }
         
@@ -410,6 +422,34 @@ static ASTNode* parse_postfix_expression(Parser* parser) {
             continue;
         }
         
+        // Actor V2 - Fire-and-forget operator: actor ! Message { ... }
+        if (op->type == TOKEN_EXCLAIM) {
+            advance_token(parser); // consume '!'
+            
+            ASTNode* message = parse_message_constructor(parser);
+            if (!message) return NULL;
+            
+            ASTNode* send_op = create_ast_node(AST_SEND_FIRE_FORGET, NULL, op->line, op->column);
+            add_child(send_op, expr);     // actor reference
+            add_child(send_op, message);  // message to send
+            expr = send_op;
+            continue;
+        }
+        
+        // Actor V2 - Ask operator: result = actor ? Message { ... }
+        if (op->type == TOKEN_QUESTION) {
+            advance_token(parser); // consume '?'
+            
+            ASTNode* message = parse_message_constructor(parser);
+            if (!message) return NULL;
+            
+            ASTNode* ask_op = create_ast_node(AST_SEND_ASK, NULL, op->line, op->column);
+            add_child(ask_op, expr);     // actor reference
+            add_child(ask_op, message);  // message to send
+            expr = ask_op;
+            continue;
+        }
+        
         break;
     }
     
@@ -420,7 +460,7 @@ ASTNode* parse_unary_expression(Parser* parser) {
     Token* operator = peek_token(parser);
     if (!operator) return NULL;
     
-    if (operator->type == TOKEN_NOT || operator->type == TOKEN_MINUS ||
+    if (operator->type == TOKEN_EXCLAIM || operator->type == TOKEN_MINUS ||
         operator->type == TOKEN_INCREMENT || operator->type == TOKEN_DECREMENT) {
         advance_token(parser);
         ASTNode* operand = parse_unary_expression(parser);
@@ -488,6 +528,9 @@ ASTNode* parse_statement(Parser* parser) {
             
         case TOKEN_RETURN:
             return parse_return_statement(parser);
+            
+        case TOKEN_REPLY:
+            return parse_reply_statement(parser);
             
         case TOKEN_BREAK:
             advance_token(parser);
@@ -687,7 +730,7 @@ ASTNode* parse_switch_statement(Parser* parser) {
     
     while (!match_token(parser, TOKEN_RIGHT_BRACE) && !is_at_end(parser)) {
         if (++iteration_count > MAX_CASES) {
-            fprintf(stderr, "Error: Too many cases in switch statement (max %d)\n", MAX_CASES);
+            parser_message(parser, "Error: Too many cases in switch statement (max 100)");
             return switch_stmt;
         }
         
@@ -695,7 +738,7 @@ ASTNode* parse_switch_statement(Parser* parser) {
         if (case_stmt) {
             add_child(switch_stmt, case_stmt);
         } else {
-            fprintf(stderr, "Parse error: Expected 'case' or 'default' in switch statement\n");
+            fprintf(stderr, "Parse error: Expected 'case' or 'default' in switch statement");
             advance_token(parser);
         }
     }
@@ -714,7 +757,7 @@ ASTNode* parse_case_statement(Parser* parser) {
         
         while (!is_at_end(parser)) {
             if (++iteration_count > MAX_CASE_STMTS) {
-                fprintf(stderr, "Error: Too many statements in case block (max %d)\n", MAX_CASE_STMTS);
+                parser_message(parser, "Error: Too many statements in case block (max %d)");
                 break;
             }
             
@@ -744,7 +787,7 @@ ASTNode* parse_case_statement(Parser* parser) {
         
         while (!is_at_end(parser)) {
             if (++iteration_count > MAX_CASE_STMTS) {
-                fprintf(stderr, "Error: Too many statements in case block (max %d)\n", MAX_CASE_STMTS);
+                parser_message(parser, "Error: Too many statements in case block (max %d)");
                 break;
             }
             
@@ -792,7 +835,7 @@ ASTNode* parse_match_statement(Parser* parser) {
     // Parse match arms
     while (!match_token(parser, TOKEN_RIGHT_BRACE) && !is_at_end(parser)) {
         if (++iteration_count > MAX_CASES) {
-            fprintf(stderr, "Error: Too many match arms (max %d)\n", MAX_CASES);
+            parser_message(parser, "Error: Too many match arms (max 1000)");
             return match_stmt;
         }
         
@@ -800,7 +843,7 @@ ASTNode* parse_match_statement(Parser* parser) {
         if (match_arm) {
             add_child(match_stmt, match_arm);
         } else {
-            fprintf(stderr, "Parse error: Expected match arm in match statement\n");
+            parser_message(parser, "Parse error: Expected match arm in match statement");
             advance_token(parser);
         }
     }
@@ -1014,6 +1057,168 @@ ASTNode* parse_defer_statement(Parser* parser) {
     return defer_node;
 }
 
+// Actor V2 - Message Definition Parsing
+// Syntax: message MessageName { field1: type1, field2: type2 }
+ASTNode* parse_message_definition(Parser* parser) {
+    Token* message_token = peek_token(parser);
+    advance_token(parser); // consume 'message'
+    
+    Token* name = expect_token(parser, TOKEN_IDENTIFIER);
+    if (!name) return NULL;
+    
+    expect_token(parser, TOKEN_LEFT_BRACE);
+    
+    ASTNode* msg_def = create_ast_node(AST_MESSAGE_DEFINITION, name->value, message_token->line, message_token->column);
+    
+    // Parse fields: name: type
+    while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
+        if (is_at_end(parser)) {
+            parser_message(parser, "Error: Unexpected end of file in message definition");
+            return NULL;
+        }
+        
+        Token* field_name = expect_token(parser, TOKEN_IDENTIFIER);
+        if (!field_name) break;
+        
+        expect_token(parser, TOKEN_COLON);
+        
+        Type* field_type = parse_type(parser);
+        if (!field_type) {
+            parser_message(parser, "Error: Expected type for message field");
+            break;
+        }
+        
+        ASTNode* field = create_ast_node(AST_MESSAGE_FIELD, field_name->value, field_name->line, field_name->column);
+        field->node_type = field_type;
+        add_child(msg_def, field);
+        
+        // Optional comma
+        if (peek_token(parser) && peek_token(parser)->type == TOKEN_COMMA) {
+            advance_token(parser);
+        }
+    }
+    
+    return msg_def;
+}
+
+// Parse message pattern in receive block
+// Syntax: MessageName { field1, field2 } or MessageName { field1: var1, field2 }
+ASTNode* parse_message_pattern(Parser* parser) {
+    Token* msg_name = expect_token(parser, TOKEN_IDENTIFIER);
+    if (!msg_name) return NULL;
+    
+    ASTNode* pattern = create_ast_node(AST_MESSAGE_PATTERN, msg_name->value, msg_name->line, msg_name->column);
+    
+    // Check for field destructuring
+    if (match_token(parser, TOKEN_LEFT_BRACE)) {
+        // Parse pattern fields
+        while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
+            if (is_at_end(parser)) {
+                parser_message(parser, "Error: Unexpected end in message pattern");
+                return NULL;
+            }
+            
+            Token* field_name = expect_token(parser, TOKEN_IDENTIFIER);
+            if (!field_name) break;
+            
+            ASTNode* field_pattern = create_ast_node(AST_PATTERN_FIELD, field_name->value, field_name->line, field_name->column);
+            
+            // Check for optional binding: field: variable
+            if (match_token(parser, TOKEN_COLON)) {
+                Token* var_name = expect_token(parser, TOKEN_IDENTIFIER);
+                if (var_name) {
+                    ASTNode* var_node = create_ast_node(AST_PATTERN_VARIABLE, var_name->value, var_name->line, var_name->column);
+                    add_child(field_pattern, var_node);
+                }
+            }
+            
+            add_child(pattern, field_pattern);
+            
+            if (peek_token(parser) && peek_token(parser)->type == TOKEN_COMMA) {
+                advance_token(parser);
+            }
+        }
+    }
+    
+    return pattern;
+}
+
+// Parse reply statement
+// Syntax: reply MessageName { field1: expr1, field2: expr2 }
+ASTNode* parse_reply_statement(Parser* parser) {
+    Token* reply_token = peek_token(parser);
+    advance_token(parser); // consume 'reply'
+    
+    Token* msg_name = expect_token(parser, TOKEN_IDENTIFIER);
+    if (!msg_name) return NULL;
+    
+    ASTNode* reply_stmt = create_ast_node(AST_REPLY_STATEMENT, msg_name->value, reply_token->line, reply_token->column);
+    
+    // Parse message constructor
+    if (match_token(parser, TOKEN_LEFT_BRACE)) {
+        while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
+            if (is_at_end(parser)) {
+                parser_message(parser, "Error: Unexpected end in reply statement");
+                return NULL;
+            }
+            
+            Token* field_name = expect_token(parser, TOKEN_IDENTIFIER);
+            if (!field_name) break;
+            
+            expect_token(parser, TOKEN_COLON);
+            
+            ASTNode* field_expr = parse_expression(parser);
+            if (!field_expr) break;
+            
+            ASTNode* field_init = create_ast_node(AST_FIELD_INIT, field_name->value, field_name->line, field_name->column);
+            add_child(field_init, field_expr);
+            add_child(reply_stmt, field_init);
+            
+            if (peek_token(parser) && peek_token(parser)->type == TOKEN_COMMA) {
+                advance_token(parser);
+            }
+        }
+    }
+    
+    return reply_stmt;
+}
+
+// Parse message constructor (for send operations)
+// Syntax: MessageName { field1: expr1, field2: expr2 }
+ASTNode* parse_message_constructor(Parser* parser) {
+    Token* msg_name = expect_token(parser, TOKEN_IDENTIFIER);
+    if (!msg_name) return NULL;
+    
+    ASTNode* constructor = create_ast_node(AST_MESSAGE_CONSTRUCTOR, msg_name->value, msg_name->line, msg_name->column);
+    
+    if (match_token(parser, TOKEN_LEFT_BRACE)) {
+        while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
+            if (is_at_end(parser)) {
+                parser_message(parser, "Error: Unexpected end in message constructor");
+                return NULL;
+            }
+            
+            Token* field_name = expect_token(parser, TOKEN_IDENTIFIER);
+            if (!field_name) break;
+            
+            expect_token(parser, TOKEN_COLON);
+            
+            ASTNode* field_expr = parse_expression(parser);
+            if (!field_expr) break;
+            
+            ASTNode* field_init = create_ast_node(AST_FIELD_INIT, field_name->value, field_name->line, field_name->column);
+            add_child(field_init, field_expr);
+            add_child(constructor, field_init);
+            
+            if (peek_token(parser) && peek_token(parser)->type == TOKEN_COMMA) {
+                advance_token(parser);
+            }
+        }
+    }
+    
+    return constructor;
+}
+
 ASTNode* parse_print_statement(Parser* parser) {
     advance_token(parser); // print
     expect_token(parser, TOKEN_LEFT_PAREN);
@@ -1110,12 +1315,12 @@ ASTNode* parse_actor_definition(Parser* parser) {
     
     while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
         if (++iteration_count > MAX_ACTOR_BODY) {
-            fprintf(stderr, "Error: Too many statements in actor definition (max %d)\n", MAX_ACTOR_BODY);
+            parser_message(parser, "Error: Too many statements in actor definition (max %d)");
             break;
         }
         
         if (is_at_end(parser)) {
-            fprintf(stderr, "Error: Unexpected end of file in actor definition\n");
+            parser_message(parser, "Error: Unexpected end of file in actor definition");
             break;
         }
         
@@ -1126,11 +1331,22 @@ ASTNode* parse_actor_definition(Parser* parser) {
             
             if (next_tok && (next_tok->type == TOKEN_INT || next_tok->type == TOKEN_FLOAT || 
                             next_tok->type == TOKEN_STRING || next_tok->type == TOKEN_BOOL)) {
-                // Explicit type: state int count = 0;
-                state_decl = parse_variable_declaration(parser);
+                // Explicit type: state int count = 0
+                state_decl = parse_variable_declaration_with_semicolon(parser, false);
             } else if (next_tok && next_tok->type == TOKEN_IDENTIFIER) {
-                // Python-style: state count = 0
-                state_decl = parse_python_style_declaration(parser);
+                // Python-style: state count = 0 (no semicolon required in actor)
+                Token* name = expect_token(parser, TOKEN_IDENTIFIER);
+                if (name) {
+                    state_decl = create_ast_node(AST_VARIABLE_DECLARATION, name->value, name->line, name->column);
+                    state_decl->node_type = create_type(TYPE_UNKNOWN);
+                    
+                    if (match_token(parser, TOKEN_ASSIGN)) {
+                        ASTNode* value = parse_expression(parser);
+                        if (value) {
+                            add_child(state_decl, value);
+                        }
+                    }
+                }
             }
             
             if (state_decl) {
@@ -1148,7 +1364,7 @@ ASTNode* parse_actor_definition(Parser* parser) {
                 add_child(actor, stmt);
             } else {
                 // If we can't parse a statement, advance to avoid infinite loop
-                fprintf(stderr, "Warning: Skipping unexpected token in actor body\n");
+                fprintf(stderr, "Warning: Skipping unexpected token in actor body");
                 advance_token(parser);
             }
         }
@@ -1158,16 +1374,89 @@ ASTNode* parse_actor_definition(Parser* parser) {
 }
 
 ASTNode* parse_receive_statement(Parser* parser) {
-    expect_token(parser, TOKEN_LEFT_PAREN);
-    Token* param = expect_token(parser, TOKEN_IDENTIFIER);
-    if (!param) return NULL;
-    expect_token(parser, TOKEN_RIGHT_PAREN);
+    // Note: TOKEN_RECEIVE has already been consumed by the caller
+    Token* current = peek_token(parser);
+    if (!current) return NULL;
     
-    ASTNode* body = parse_block(parser);
-    if (!body) return NULL;
+    // Check for V1 syntax: receive(msg) { ... }
+    if (current->type == TOKEN_LEFT_PAREN) {
+        // V1 syntax - backward compatibility
+        expect_token(parser, TOKEN_LEFT_PAREN);
+        Token* param = expect_token(parser, TOKEN_IDENTIFIER);
+        if (!param) return NULL;
+        expect_token(parser, TOKEN_RIGHT_PAREN);
+        
+        ASTNode* body = parse_block(parser);
+        if (!body) return NULL;
+        
+        ASTNode* receive_stmt = create_ast_node(AST_RECEIVE_STATEMENT, param->value, param->line, param->column);
+        add_child(receive_stmt, body);
+        
+        return receive_stmt;
+    }
     
-    ASTNode* receive_stmt = create_ast_node(AST_RECEIVE_STATEMENT, param->value, param->line, param->column);
-    add_child(receive_stmt, body);
+    // V2 syntax: receive { Pattern -> block, ... }
+    if (current->type != TOKEN_LEFT_BRACE) {
+        parser_error(parser, "Expected '(' or '{' after 'receive'");
+        return NULL;
+    }
+    
+    expect_token(parser, TOKEN_LEFT_BRACE);
+    
+    ASTNode* receive_stmt = create_ast_node(AST_RECEIVE_STATEMENT, NULL, current->line, current->column);
+    
+    // Parse receive arms (pattern matching)
+    while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
+        if (is_at_end(parser)) {
+            parser_message(parser, "Error: Unexpected end in receive statement");
+            return NULL;
+        }
+        
+        // Parse pattern (message pattern or wildcard)
+        ASTNode* pattern = NULL;
+        Token* pattern_token = peek_token(parser);
+        
+        if (pattern_token && pattern_token->type == TOKEN_IDENTIFIER && 
+            strcmp(pattern_token->value, "_") == 0) {
+            // Wildcard pattern: _
+            advance_token(parser);
+            pattern = create_ast_node(AST_WILDCARD_PATTERN, "_", pattern_token->line, pattern_token->column);
+        } else {
+            // Message pattern: MessageName { fields }
+            pattern = parse_message_pattern(parser);
+            if (!pattern) break;
+        }
+        
+        expect_token(parser, TOKEN_ARROW);
+        
+        // Parse arm body
+        ASTNode* arm_body = NULL;
+        Token* body_start = peek_token(parser);
+        
+        if (body_start && body_start->type == TOKEN_LEFT_BRACE) {
+            arm_body = parse_block(parser);
+        } else {
+            // Single expression or statement
+            ASTNode* stmt = parse_statement(parser);
+            if (stmt) {
+                arm_body = create_ast_node(AST_BLOCK, NULL, body_start->line, body_start->column);
+                add_child(arm_body, stmt);
+            }
+        }
+        
+        if (!arm_body) break;
+        
+        // Create receive arm node
+        ASTNode* arm = create_ast_node(AST_RECEIVE_ARM, NULL, pattern_token->line, pattern_token->column);
+        add_child(arm, pattern);
+        add_child(arm, arm_body);
+        add_child(receive_stmt, arm);
+        
+        // Optional comma between arms
+        if (peek_token(parser) && peek_token(parser)->type == TOKEN_COMMA) {
+            advance_token(parser);
+        }
+    }
     
     return receive_stmt;
 }
@@ -1499,6 +1788,9 @@ ASTNode* parse_program(Parser* parser) {
             case TOKEN_ACTOR:
                 node = parse_actor_definition(parser);
                 break;
+            case TOKEN_MESSAGE_KEYWORD:
+                node = parse_message_definition(parser);
+                break;
             case TOKEN_FUNC:
                 // 'func' keyword is optional but still supported
                 advance_token(parser);
@@ -1535,7 +1827,7 @@ ASTNode* parse_program(Parser* parser) {
     }
     
     if (safety_counter >= MAX_ITERATIONS) {
-        fprintf(stderr, "ERROR: Parser safety limit reached - possible infinite loop\n");
+        parser_message(parser, "Error: Parser safety limit reached - possible infinite loop");
         return NULL;
     }
     

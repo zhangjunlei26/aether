@@ -9,6 +9,7 @@ typedef struct {
     Token** tokens;
     int token_count;
     int current_token;
+    int suppress_errors;  // Flag to suppress error messages (for testing)
 } Parser;
 
 // Parser functions
@@ -50,6 +51,12 @@ ASTNode* parse_spawn_actor_statement(Parser* parser);
 ASTNode* parse_block(Parser* parser);
 ASTNode* parse_receive_statement(Parser* parser);
 ASTNode* parse_defer_statement(Parser* parser);
+
+// Actor V2 parsing functions
+ASTNode* parse_message_definition(Parser* parser);
+ASTNode* parse_message_pattern(Parser* parser);
+ASTNode* parse_reply_statement(Parser* parser);
+ASTNode* parse_message_constructor(Parser* parser);
 
 // Utility functions
 Token* peek_token(Parser* parser);

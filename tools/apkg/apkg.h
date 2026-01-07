@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "toml_parser.h"
 
 typedef struct {
     char* name;

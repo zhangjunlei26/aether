@@ -1,4 +1,4 @@
-#include "../test_harness.h"
+#include "../runtime/test_harness.h"
 #include "../../compiler/lexer.h"
 #include "../../compiler/parser.h"
 #include "../../compiler/codegen.h"
@@ -20,6 +20,7 @@ static ASTNode* parse_code(const char* code) {
         tokens[count++] = tok;
     }
     Parser* parser = create_parser(tokens, count);
+    parser->suppress_errors = 1;  // Suppress parse errors during testing
     ASTNode* ast = parse_program(parser);
     free_parser(parser);
     free(tokens);

@@ -33,7 +33,7 @@ endif
 COMPILER_SRC = compiler/aetherc.c compiler/lexer.c compiler/parser.c compiler/ast.c compiler/typechecker.c compiler/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/type_inference.c compiler/optimizer.c compiler/aether_diagnostics.c
 COMPILER_LIB_SRC = compiler/lexer.c compiler/parser.c compiler/ast.c compiler/typechecker.c compiler/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/type_inference.c compiler/optimizer.c compiler/aether_diagnostics.c
 RUNTIME_SRC = runtime/multicore_scheduler.c runtime/memory.c runtime/aether_arena.c runtime/aether_pool.c runtime/aether_memory_stats.c runtime/aether_tracing.c runtime/aether_bounds_check.c runtime/aether_test.c runtime/aether_arena_optimized.c runtime/aether_runtime_types.c runtime/aether_cpu_detect.c runtime/aether_batch.c runtime/aether_simd.c
-STD_SRC = std/string/aether_string.c std/math/aether_math.c std/net/aether_http.c std/net/aether_net.c std/collections/aether_collections.c std/json/aether_json.c std/fs/aether_fs.c std/log/aether_log.c
+STD_SRC = std/string/aether_string.c std/math/aether_math.c std/net/aether_http.c std/net/aether_http_server.c std/net/aether_net.c std/collections/aether_collections.c std/json/aether_json.c std/fs/aether_fs.c std/log/aether_log.c
 COLLECTIONS_SRC = std/collections/aether_hashmap.c std/collections/aether_set.c std/collections/aether_vector.c std/collections/aether_pqueue.c
 
 # Object files
@@ -190,7 +190,7 @@ apkg:
 	@echo "==================================="
 	@echo "Building Aether Package Manager ($(DETECTED_OS))"
 	@echo "==================================="
-	$(CC) $(CFLAGS) tools/apkg/main.c tools/apkg/apkg.c $(LDFLAGS) -o build/apkg$(EXE_EXT)
+	$(CC) $(CFLAGS) tools/apkg/main.c tools/apkg/apkg.c tools/apkg/toml_parser.c $(LDFLAGS) -o build/apkg$(EXE_EXT)
 	@echo "✓ Package Manager built successfully: build/apkg$(EXE_EXT)"
 
 profiler:

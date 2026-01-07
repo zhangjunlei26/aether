@@ -1,4 +1,4 @@
-#include "../test_harness.h"
+#include "../runtime/test_harness.h"
 
 TEST(parser_basic_expressions) {
     ASSERT_TRUE(1);

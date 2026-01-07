@@ -156,6 +156,8 @@ Token* read_identifier() {
     if (strcmp(buffer, "import") == 0) return create_token(TOKEN_IMPORT, buffer, current_line, current_column);
     if (strcmp(buffer, "export") == 0) return create_token(TOKEN_EXPORT, buffer, current_line, current_column);
     if (strcmp(buffer, "module") == 0) return create_token(TOKEN_MODULE, buffer, current_line, current_column);
+    if (strcmp(buffer, "message") == 0) return create_token(TOKEN_MESSAGE_KEYWORD, buffer, current_line, current_column);
+    if (strcmp(buffer, "reply") == 0) return create_token(TOKEN_REPLY, buffer, current_line, current_column);
     if (strcmp(buffer, "int") == 0) return create_token(TOKEN_INT, buffer, current_line, current_column);
     if (strcmp(buffer, "float") == 0) return create_token(TOKEN_FLOAT, buffer, current_line, current_column);
     if (strcmp(buffer, "bool") == 0) return create_token(TOKEN_BOOL, buffer, current_line, current_column);
@@ -234,7 +236,9 @@ Token* next_token() {
                 advance();
                 return create_token(TOKEN_NOT_EQUALS, "!=", current_line, current_column);
             }
-            return create_token(TOKEN_NOT, "!", current_line, current_column);
+            // In Actor V2, ! is the fire-and-forget operator
+            // Also used as logical NOT - context determines usage
+            return create_token(TOKEN_EXCLAIM, "!", current_line, current_column);
         case '<':
             advance();
             if (peek() == '=') {
@@ -273,6 +277,7 @@ Token* next_token() {
         case ',': advance(); return create_token(TOKEN_COMMA, ",", current_line, current_column);
         case '.': advance(); return create_token(TOKEN_DOT, ".", current_line, current_column);
         case ':': advance(); return create_token(TOKEN_COLON, ":", current_line, current_column);
+        case '?': advance(); return create_token(TOKEN_QUESTION, "?", current_line, current_column);
         default:
             advance();
             return create_token(TOKEN_ERROR, &c, current_line, current_column);
@@ -328,6 +333,11 @@ const char* token_type_to_string(AeTokenType type) {
         case TOKEN_SELF: return "SELF";
         case TOKEN_STATE: return "STATE";
         case TOKEN_STRUCT: return "STRUCT";
+        case TOKEN_IMPORT: return "IMPORT";
+        case TOKEN_EXPORT: return "EXPORT";
+        case TOKEN_MODULE: return "MODULE";
+        case TOKEN_MESSAGE_KEYWORD: return "MESSAGE_KEYWORD";
+        case TOKEN_REPLY: return "REPLY";
         case TOKEN_INT: return "INT";
         case TOKEN_FLOAT: return "FLOAT";
         case TOKEN_BOOL: return "BOOL";
@@ -368,6 +378,8 @@ const char* token_type_to_string(AeTokenType type) {
         case TOKEN_COLON: return "COLON";
         case TOKEN_ARROW: return "ARROW";
         case TOKEN_PIPE: return "PIPE";
+        case TOKEN_EXCLAIM: return "EXCLAIM";
+        case TOKEN_QUESTION: return "QUESTION";
         case TOKEN_PRINT: return "PRINT";
         case TOKEN_EOF: return "EOF";
         case TOKEN_ERROR: return "ERROR";
