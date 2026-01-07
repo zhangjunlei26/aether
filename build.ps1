@@ -99,16 +99,20 @@ if (-not $gccPath) {
 # Source files
 $compilerSources = @(
     "compiler\aetherc.c",
-    "compiler\lexer.c",
-    "compiler\parser.c",
+    "compiler\frontend\lexer.c",
+    "compiler\frontend\parser.c",
     "compiler\ast.c",
-    "compiler\typechecker.c",
-    "compiler\codegen.c",
+    "compiler\analysis\typechecker.c",
+    "compiler\backend\codegen.c",
     "compiler\aether_error.c",
     "compiler\aether_module.c",
-    "compiler\type_inference.c",
-    "compiler\optimizer.c",
+    "compiler\analysis\type_inference.c",
+    "compiler\backend\optimizer.c",
     "compiler\aether_diagnostics.c"
+)
+
+$runtimeSources = @(
+    "runtime\actors\aether_message_registry.c"
 )
 
 $stdSources = @(
@@ -128,7 +132,7 @@ $collectionsSources = @(
     "std\collections\aether_pqueue.c"
 )
 
-$allSources = $compilerSources + $stdSources + $collectionsSources
+$allSources = $compilerSources + $runtimeSources + $stdSources + $collectionsSources
 
 $CFLAGS = "-Icompiler -Iruntime -Istd -Istd\string -Istd\io -Istd\math -Istd\net -Istd\collections -Istd\json -Wall -Wextra -Wno-unused-parameter -Wno-unused-function"
 $LDFLAGS = "-lpthread -lws2_32"
@@ -161,7 +165,7 @@ elseif ($Parallel) {
     Write-Host ""
     
     # Create obj directories
-    $objDirs = @("compiler", "runtime", "std\string", "std\io", "std\math", "std\net", "std\collections", "std\json")
+    $objDirs = @("compiler", "compiler\frontend", "compiler\backend", "compiler\analysis", "runtime", "runtime\actors", "runtime\scheduler", "runtime\memory", "runtime\simd", "runtime\utils", "std\string", "std\io", "std\math", "std\net", "std\collections", "std\json")
     foreach ($dir in $objDirs) {
         $path = "build\obj\$dir"
         if (-not (Test-Path $path)) {

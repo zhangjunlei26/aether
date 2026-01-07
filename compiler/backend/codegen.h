@@ -1,8 +1,8 @@
 #ifndef CODEGEN_H
 #define CODEGEN_H
 
-#include "ast.h"
-#include "../runtime/aether_message_registry.h"
+#include "../ast.h"
+#include "../../runtime/actors/aether_message_registry.h"
 
 typedef struct {
     FILE* output;

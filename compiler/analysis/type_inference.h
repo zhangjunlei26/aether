@@ -1,7 +1,7 @@
 #ifndef TYPE_INFERENCE_H
 #define TYPE_INFERENCE_H
 
-#include "ast.h"
+#include "../ast.h"
 #include "typechecker.h"
 
 // Type constraint: "node N must have type T"

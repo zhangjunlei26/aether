@@ -1,7 +1,7 @@
 #ifndef TYPECHECKER_H
 #define TYPECHECKER_H
 
-#include "ast.h"
+#include "../ast.h"
 
 typedef struct Symbol {
     char* name;

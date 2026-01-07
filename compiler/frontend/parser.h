@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include "tokens.h"
-#include "ast.h"
+#include "../ast.h"
 
 typedef struct {
     Token** tokens;

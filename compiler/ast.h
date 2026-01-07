@@ -1,7 +1,7 @@
 #ifndef AST_H
 #define AST_H
 
-#include "tokens.h"
+#include "frontend/tokens.h"
 
 typedef enum {
     // Program structure

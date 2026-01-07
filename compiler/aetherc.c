@@ -11,12 +11,12 @@
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
-#include "tokens.h"
+#include "frontend/tokens.h"
 #include "ast.h"
-#include "parser.h"
-#include "typechecker.h"
-#include "optimizer.h"
-#include "codegen.h"
+#include "frontend/parser.h"
+#include "analysis/typechecker.h"
+#include "backend/optimizer.h"
+#include "backend/codegen.h"
 
 // Compiler limits
 #define MAX_TOKENS 10000
