@@ -6,11 +6,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include "multicore_scheduler.h"
+#include "../utils/aether_cpu_detect.h"
 
 // Branch prediction hints
 #ifndef likely
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
+#endif
+
+// MWAIT intrinsics for x86
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#define HAS_X86_MWAIT 1
+#else
+#define HAS_X86_MWAIT 0
 #endif
 
 // Cross-platform includes
@@ -114,10 +123,60 @@ void* __attribute__((hot)) scheduler_thread(void* arg) {
         if (!work_done) {
             idle_count++;
             
-            // Exponential backoff for idle cores
-            if (idle_count > 100) {
-                sleep_us(1);  // Brief sleep to reduce CPU usage
-                idle_count = 50;
+            // Adaptive idle strategy - progressive backoff
+            // Phase 1: Spin (0-100 iters) - minimal latency, ~1μs
+            // Phase 2: Pause (100-1000 iters) - power saving, ~10μs
+            // Phase 3: MWAIT (>1000 iters) - deep sleep, sub-μs wake on cache line write
+            // Phase 4: OS sleep (>10000 iters) - full context switch
+            
+            if (idle_count < 100) {
+                // Phase 1: Active spin for low latency
+                // Compiler will optimize this appropriately
+            } else if (idle_count < 1000) {
+                // Phase 2: CPU pause instruction (x86) or yield
+                #if HAS_X86_MWAIT
+                _mm_pause();  // Reduces power, hints to CPU we're spinning
+                #else
+                #ifdef __linux__
+                sched_yield();
+                #endif
+                #endif
+            } else if (idle_count < 10000) {
+                // Phase 3: MONITOR/MWAIT for cache-line based wakeup
+                // Only use if CPU supports it (auto-detected)
+                #if HAS_X86_MWAIT
+                static int mwait_available = -1;
+                if (mwait_available == -1) {
+                    mwait_available = cpu_has_mwait();
+                }
+                
+                if (mwait_available) {
+                    // Monitor the tail pointer of incoming queue
+                    // Wakes instantly when another core writes to it
+                    void* monitor_addr = (void*)&sched->incoming_queue.tail;
+                    _mm_monitor(monitor_addr, 0, 0);
+                    
+                    // Only sleep if no work arrived during monitor setup
+                    int tail_after = atomic_load_explicit(&sched->incoming_queue.tail, 
+                                                          memory_order_acquire);
+                    if (tail_after == atomic_load_explicit(&sched->incoming_queue.head, 
+                                                            memory_order_relaxed)) {
+                        _mm_mwait(0, 0);  // C0.1 state - sub-microsecond wake
+                    }
+                } else {
+                    // Fallback: short sleep
+                    sleep_us(1);
+                }
+                #else
+                // Non-x86: use short sleep
+                sleep_us(1);
+                #endif
+                
+                idle_count = 500;  // Reset to Phase 2 after MWAIT
+            } else {
+                // Phase 4: Deep sleep for very idle cores
+                sleep_us(10);  // 10μs sleep
+                idle_count = 5000;  // Reset to Phase 3
             }
         } else {
             idle_count = 0;

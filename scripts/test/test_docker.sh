@@ -28,7 +28,7 @@ echo "SUCCESS: Docker daemon running"
 # Build Docker image
 echo ""
 echo "[3/5] Building Docker image..."
-docker build -t aether:test -f Dockerfile . --quiet
+docker build -t aether:test -f docker/Dockerfile . --quiet
 echo "SUCCESS: Docker image built"
 
 # Test make

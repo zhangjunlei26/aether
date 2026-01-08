@@ -3,7 +3,7 @@
 
 #include <stdatomic.h>
 #include <stdlib.h>
-#include "actor_state_machine.h"
+#include "../actors/actor_state_machine.h"
 
 #define QUEUE_SIZE 1024
 

@@ -3,7 +3,7 @@
 
 #include <pthread.h>
 #include <stdatomic.h>
-#include "actor_state_machine.h"
+#include "../actors/actor_state_machine.h"
 #include "lockfree_queue.h"
 
 #define MAX_ACTORS_PER_CORE 10000

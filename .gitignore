@@ -3,12 +3,14 @@
 /build/*.o
 /build/*.obj
 /build/*.a
+/build/*.d
 /build/hello_actors.c
 /target/
 *.exe
 *.o
 *.obj
 *.a
+*.d
 *.so
 *.dll
 *.dylib

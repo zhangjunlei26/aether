@@ -4,13 +4,13 @@ services:
   # Main Aether compiler build and test environment
   aether-build:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     image: aether:latest
     container_name: aether-compiler
     volumes:
-      - .:/aether
-      - ./examples:/work/examples
+      - ..:/aether
+      - ../examples:/work/examples
     working_dir: /aether
     command: /bin/bash
     stdin_open: true
@@ -19,12 +19,12 @@ services:
   # Development environment with all tools
   aether-dev:
     build:
-      context: .
-      dockerfile: Dockerfile.dev
+      context: ..
+      dockerfile: docker/Dockerfile.dev
     image: aether-dev:latest
     container_name: aether-dev
     volumes:
-      - .:/aether
+      - ..:/aether
     working_dir: /aether
     environment:
       - CC=gcc
@@ -36,12 +36,12 @@ services:
   # Test runner
   aether-test:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     image: aether:latest
     container_name: aether-test
     volumes:
-      - .:/aether
+      - ..:/aether
     working_dir: /aether
     command: make test
     depends_on:

@@ -136,8 +136,8 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
     switch (expr->type) {
         case AST_LITERAL:
             if (expr->node_type && expr->node_type->kind == TYPE_STRING) {
-                // String literal: generate aether_string_from_literal() call
-                fprintf(gen->output, "aether_string_from_literal(\"");
+                // String literal: just use C string directly
+                fprintf(gen->output, "\"");
                 // Escape string characters
                 const char* str = expr->value;
                 while (*str) {
@@ -151,7 +151,7 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                     }
                     str++;
                 }
-                fprintf(gen->output, "\")");
+                fprintf(gen->output, "\"");
             } else {
                 fprintf(gen->output, "%s", expr->value);
             }
@@ -631,38 +631,17 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             break;
             
         case AST_PRINT_STATEMENT:
-            // Generate type-appropriate printf calls
-            for (int i = 0; i < stmt->child_count; i++) {
-                ASTNode* expr = stmt->children[i];
-                if (expr->node_type) {
-                    switch (expr->node_type->kind) {
-                        case TYPE_INT:
-                            fprintf(gen->output, "printf(\"%%d\\n\", ");
-                            generate_expression(gen, expr);
-                            fprintf(gen->output, ");\n");
-                            break;
-                        case TYPE_FLOAT:
-                            fprintf(gen->output, "printf(\"%%f\\n\", ");
-                            generate_expression(gen, expr);
-                            fprintf(gen->output, ");\n");
-                            break;
-                        case TYPE_BOOL:
-                            fprintf(gen->output, "printf(\"%%s\\n\", ");
-                            generate_expression(gen, expr);
-                            fprintf(gen->output, " ? \"true\" : \"false\");\n");
-                            break;
-                        case TYPE_STRING:
-                            fprintf(gen->output, "printf(\"%%s\\n\", ");
-                            generate_expression(gen, expr);
-                            fprintf(gen->output, "->data);\n");  // AetherString* has data field
-                            break;
-                        default:
-                            fprintf(gen->output, "printf(\"[value]\\n\");\n");
-                            break;
-                    }
-                } else {
-                    fprintf(gen->output, "printf(\"[unknown]\\n\");\n");
+            // Generate printf call with all arguments
+            if (stmt->child_count > 0) {
+                fprintf(gen->output, "printf(");
+                // First argument is the format string
+                generate_expression(gen, stmt->children[0]);
+                // Rest are the values
+                for (int i = 1; i < stmt->child_count; i++) {
+                    fprintf(gen->output, ", ");
+                    generate_expression(gen, stmt->children[i]);
                 }
+                fprintf(gen->output, ");\n");
             }
             break;
             
@@ -1193,21 +1172,33 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "#include <stdlib.h>");
     print_line(gen, "#include <string.h>");
     print_line(gen, "#include <stdbool.h>");
-    print_line(gen, "#include <stdatomic.h>");
-    print_line(gen, "");
-    print_line(gen, "// Aether runtime libraries");
-    print_line(gen, "#include \"actor_state_machine.h\"");
-    print_line(gen, "#include \"multicore_scheduler.h\"");
-    print_line(gen, "#include \"aether_cpu_detect.h\"");
-    print_line(gen, "#include \"aether_string.h\"");
-    print_line(gen, "#include \"aether_io.h\"");
-    print_line(gen, "#include \"aether_math.h\"");
-    print_line(gen, "#include \"aether_supervision.h\"");
-    print_line(gen, "#include \"aether_tracing.h\"");
-    print_line(gen, "#include \"aether_bounds_check.h\"");
-    print_line(gen, "#include \"aether_runtime_types.h\"");
-    print_line(gen, "");
-    print_line(gen, "extern __thread int current_core_id;");
+    
+    // Only include actor runtime if program uses actors
+    bool has_actors = false;
+    for (int i = 0; i < program->child_count; i++) {
+        if (program->children[i] && program->children[i]->type == AST_ACTOR_DEFINITION) {
+            has_actors = true;
+            break;
+        }
+    }
+    
+    if (has_actors) {
+        print_line(gen, "#include <stdatomic.h>");
+        print_line(gen, "");
+        print_line(gen, "// Aether runtime libraries");
+        print_line(gen, "#include \"actor_state_machine.h\"");
+        print_line(gen, "#include \"multicore_scheduler.h\"");
+        print_line(gen, "#include \"aether_cpu_detect.h\"");
+        print_line(gen, "#include \"aether_string.h\"");
+        print_line(gen, "#include \"aether_io.h\"");
+        print_line(gen, "#include \"aether_math.h\"");
+        print_line(gen, "#include \"aether_supervision.h\"");
+        print_line(gen, "#include \"aether_tracing.h\"");
+        print_line(gen, "#include \"aether_bounds_check.h\"");
+        print_line(gen, "#include \"aether_runtime_types.h\"");
+        print_line(gen, "");
+        print_line(gen, "extern __thread int current_core_id;");
+    }
     print_line(gen, "");
     
     for (int i = 0; i < program->child_count; i++) {

@@ -1,61 +1,43 @@
 #ifndef AETHER_RUNTIME_H
 #define AETHER_RUNTIME_H
 
-#include <stddef.h>
+#include <pthread.h>
 #include <stdint.h>
 
-// Performance: Proven by experiments 01-07
-// - Partitioned scheduler: 291M msg/sec (8 cores)
-// - SIMD (AVX2): 3× speedup
-// - Message batching: 1.78× speedup
-// - Combined: ~2.3B msg/sec
-
-// Core runtime types
-typedef struct ActorRef ActorRef;
-typedef struct Message Message;
-typedef uint64_t ActorID;
-
-// Error codes
-#define AETHER_SUCCESS 0
-#define AETHER_ERROR_OUT_OF_MEMORY 1
-#define AETHER_ERROR_INVALID_PARAM 2
-
 // Runtime configuration flags
-#define AETHER_FLAG_ENABLE_SIMD    (1 << 0)  // Enable AVX2 vectorization
-#define AETHER_FLAG_ENABLE_BATCH   (1 << 1)  // Enable message batching
-#define AETHER_FLAG_PIN_CORES      (1 << 2)  // Pin threads to CPU cores
+#define AETHER_FLAG_AUTO_DETECT      (1 << 0)  // Auto-detect CPU features (recommended)
+#define AETHER_FLAG_LOCKFREE_MAILBOX (1 << 1)  // Use lock-free SPSC mailboxes
+#define AETHER_FLAG_LOCKFREE_POOLS   (1 << 2)  // Use lock-free TLS message pools
+#define AETHER_FLAG_ENABLE_SIMD      (1 << 3)  // Enable AVX2 vectorization
+#define AETHER_FLAG_ENABLE_MWAIT     (1 << 4)  // Enable MWAIT for idle
+#define AETHER_FLAG_VERBOSE          (1 << 5)  // Print configuration on init
 
-// Initialize runtime with specified number of cores
-// flags: Bitwise OR of AETHER_FLAG_* constants
-// Returns: AETHER_SUCCESS or error code
-int aether_runtime_init(int num_cores, int flags);
-
-// Shutdown runtime and cleanup resources
-void aether_runtime_shutdown(void);
-
-// Get runtime statistics
+// Runtime configuration structure
 typedef struct {
-    uint64_t messages_processed;
-    uint64_t actors_active;
-    double throughput_msg_per_sec;
-    int simd_enabled;
-    int batch_enabled;
-} AetherRuntimeStats;
+    int num_cores;
+    int flags;
+    int use_lockfree_mailbox;
+    int use_lockfree_pools;
+    int use_mwait;
+    int use_simd;
+} AetherRuntimeConfig;
 
-void aether_runtime_get_stats(AetherRuntimeStats* stats);
+// Runtime initialization
+void aether_runtime_init(int num_cores, int flags);
+void aether_runtime_shutdown();
 
-// Memory management
-void* aether_malloc(size_t size);
-void* aether_calloc(size_t count, size_t size);
-void* aether_realloc(void* ptr, size_t size);
-void aether_free(void* ptr);
+// Configuration queries
+const AetherRuntimeConfig* aether_runtime_get_config();
+int aether_runtime_has_feature(int feature_flag);
+void aether_runtime_print_config();
 
-// Memory pool management
-int aether_memory_init(size_t initial_pool_size);
-void aether_memory_cleanup();
+// Legacy compatibility
+static inline void aether_init() {
+    aether_runtime_init(0, AETHER_FLAG_AUTO_DETECT);
+}
 
-// Actor messaging (defined in scheduler)
-void actor_send(ActorID target, Message msg);
+static inline void aether_cleanup() {
+    aether_runtime_shutdown();
+}
 
-#endif // AETHER_RUNTIME_H
-
+#endif

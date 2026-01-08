@@ -2,20 +2,29 @@
 #define AETHER_ACTOR_H
 
 #include "actor_state_machine.h"
+#include "lockfree_mailbox.h"
 #include <pthread.h>
 #include <stdint.h>
 
 // Cache line size for alignment (typically 64 bytes)
 #define CACHE_LINE_SIZE 64
 
+// Unified mailbox type - can be either simple or lock-free
+typedef union {
+    Mailbox simple;
+    LockFreeMailbox lockfree;
+} UnifiedMailbox;
+
 // Message pool for zero-copy optimization
+// When used as TLS (thread-local storage), no mutex needed
 #define MESSAGE_POOL_SIZE 1024
 typedef struct MessagePool {
     void* buffers[MESSAGE_POOL_SIZE];
     int head;
     int tail;
     int count;
-    pthread_mutex_t lock;
+    int is_thread_local;  // If true, no mutex needed
+    pthread_mutex_t lock; // Only used for shared pools
 } __attribute__((aligned(CACHE_LINE_SIZE))) MessagePool;
 
 typedef struct Actor Actor;
@@ -36,8 +45,9 @@ typedef struct PendingRequest {
 typedef struct Actor {
     // Hot fields (accessed every message) - first cache line
     int active;                   // 4 bytes
-    int id;                       // 4 bytes  
-    Mailbox mailbox;              // mailbox struct
+    int id;                       // 4 bytes
+    int use_lockfree;             // 4 bytes - which mailbox type to use
+    UnifiedMailbox mailbox;       // union of simple/lockfree mailbox
     void (*process_message)(Actor* self, void* message, int message_size);
     
     // Warm fields (accessed occasionally) - second cache line

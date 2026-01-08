@@ -5,7 +5,7 @@ ifeq ($(OS),Windows_NT)
     DETECTED_OS := Windows
     EXE_EXT := .exe
     PATH_SEP := \\
-    MKDIR := if not exist build mkdir build
+    MKDIR := if not exist
     RM := del /Q
     RM_DIR := rd /S /Q
 else
@@ -32,7 +32,7 @@ endif
 
 COMPILER_SRC = compiler/aetherc.c compiler/frontend/lexer.c compiler/frontend/parser.c compiler/ast.c compiler/analysis/typechecker.c compiler/backend/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/analysis/type_inference.c compiler/backend/optimizer.c compiler/aether_diagnostics.c runtime/actors/aether_message_registry.c
 COMPILER_LIB_SRC = compiler/frontend/lexer.c compiler/frontend/parser.c compiler/ast.c compiler/analysis/typechecker.c compiler/backend/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/analysis/type_inference.c compiler/backend/optimizer.c compiler/aether_diagnostics.c runtime/actors/aether_message_registry.c
-RUNTIME_SRC = runtime/scheduler/multicore_scheduler.c runtime/memory/memory.c runtime/memory/aether_arena.c runtime/memory/aether_pool.c runtime/memory/aether_memory_stats.c runtime/utils/aether_tracing.c runtime/utils/aether_bounds_check.c runtime/utils/aether_test.c runtime/memory/aether_arena_optimized.c runtime/aether_runtime_types.c runtime/utils/aether_cpu_detect.c runtime/memory/aether_batch.c runtime/simd/aether_simd_vectorized.c
+RUNTIME_SRC = runtime/scheduler/multicore_scheduler.c runtime/memory/memory.c runtime/memory/aether_arena.c runtime/memory/aether_pool.c runtime/memory/aether_memory_stats.c runtime/utils/aether_tracing.c runtime/utils/aether_bounds_check.c runtime/utils/aether_test.c runtime/memory/aether_arena_optimized.c runtime/aether_runtime_types.c runtime/utils/aether_cpu_detect.c runtime/memory/aether_batch.c runtime/utils/aether_simd_vectorized.c runtime/aether_runtime.c
 STD_SRC = std/string/aether_string.c std/math/aether_math.c std/net/aether_http.c std/net/aether_http_server.c std/net/aether_net.c std/collections/aether_collections.c std/json/aether_json.c std/fs/aether_fs.c std/log/aether_log.c
 COLLECTIONS_SRC = std/collections/aether_hashmap.c std/collections/aether_set.c std/collections/aether_vector.c std/collections/aether_pqueue.c
 
@@ -94,11 +94,38 @@ STANDALONE_TESTS = tests/test_runtime_implementations.c \
 all: compiler
 
 # Create object directories
-$(OBJ_DIR)/compiler $(OBJ_DIR)/compiler/frontend $(OBJ_DIR)/compiler/backend $(OBJ_DIR)/compiler/analysis $(OBJ_DIR)/runtime $(OBJ_DIR)/runtime/actors $(OBJ_DIR)/runtime/scheduler $(OBJ_DIR)/runtime/memory $(OBJ_DIR)/runtime/simd $(OBJ_DIR)/runtime/utils $(OBJ_DIR)/std/string $(OBJ_DIR)/std/io $(OBJ_DIR)/std/math $(OBJ_DIR)/std/net $(OBJ_DIR)/std/collections $(OBJ_DIR)/std/json $(OBJ_DIR)/tests $(OBJ_DIR)/tests/compiler $(OBJ_DIR)/tests/memory $(OBJ_DIR)/tests/runtime:
+$(OBJ_DIR)/compiler $(OBJ_DIR)/compiler/frontend $(OBJ_DIR)/compiler/backend $(OBJ_DIR)/compiler/analysis $(OBJ_DIR)/runtime $(OBJ_DIR)/runtime/actors $(OBJ_DIR)/runtime/scheduler $(OBJ_DIR)/runtime/memory $(OBJ_DIR)/runtime/simd $(OBJ_DIR)/runtime/utils $(OBJ_DIR)/std $(OBJ_DIR)/std/string $(OBJ_DIR)/std/io $(OBJ_DIR)/std/math $(OBJ_DIR)/std/net $(OBJ_DIR)/std/fs $(OBJ_DIR)/std/log $(OBJ_DIR)/std/collections $(OBJ_DIR)/std/json $(OBJ_DIR)/tests $(OBJ_DIR)/tests/compiler $(OBJ_DIR)/tests/memory $(OBJ_DIR)/tests/runtime:
+ifeq ($(OS),Windows_NT)
+	@if not exist "$(OBJ_DIR)" mkdir "$(OBJ_DIR)"
+	@if not exist "$(OBJ_DIR)\compiler" mkdir "$(OBJ_DIR)\compiler"
+	@if not exist "$(OBJ_DIR)\compiler\frontend" mkdir "$(OBJ_DIR)\compiler\frontend"
+	@if not exist "$(OBJ_DIR)\compiler\backend" mkdir "$(OBJ_DIR)\compiler\backend"
+	@if not exist "$(OBJ_DIR)\compiler\analysis" mkdir "$(OBJ_DIR)\compiler\analysis"
+	@if not exist "$(OBJ_DIR)\runtime" mkdir "$(OBJ_DIR)\runtime"
+	@if not exist "$(OBJ_DIR)\runtime\actors" mkdir "$(OBJ_DIR)\runtime\actors"
+	@if not exist "$(OBJ_DIR)\runtime\scheduler" mkdir "$(OBJ_DIR)\runtime\scheduler"
+	@if not exist "$(OBJ_DIR)\runtime\memory" mkdir "$(OBJ_DIR)\runtime\memory"
+	@if not exist "$(OBJ_DIR)\runtime\simd" mkdir "$(OBJ_DIR)\runtime\simd"
+	@if not exist "$(OBJ_DIR)\runtime\utils" mkdir "$(OBJ_DIR)\runtime\utils"
+	@if not exist "$(OBJ_DIR)\std" mkdir "$(OBJ_DIR)\std"
+	@if not exist "$(OBJ_DIR)\std\string" mkdir "$(OBJ_DIR)\std\string"
+	@if not exist "$(OBJ_DIR)\std\io" mkdir "$(OBJ_DIR)\std\io"
+	@if not exist "$(OBJ_DIR)\std\math" mkdir "$(OBJ_DIR)\std\math"
+	@if not exist "$(OBJ_DIR)\std\net" mkdir "$(OBJ_DIR)\std\net"
+	@if not exist "$(OBJ_DIR)\std\fs" mkdir "$(OBJ_DIR)\std\fs"
+	@if not exist "$(OBJ_DIR)\std\log" mkdir "$(OBJ_DIR)\std\log"
+	@if not exist "$(OBJ_DIR)\std\collections" mkdir "$(OBJ_DIR)\std\collections"
+	@if not exist "$(OBJ_DIR)\std\json" mkdir "$(OBJ_DIR)\std\json"
+	@if not exist "$(OBJ_DIR)\tests" mkdir "$(OBJ_DIR)\tests"
+	@if not exist "$(OBJ_DIR)\tests\compiler" mkdir "$(OBJ_DIR)\tests\compiler"
+	@if not exist "$(OBJ_DIR)\tests\memory" mkdir "$(OBJ_DIR)\tests\memory"
+	@if not exist "$(OBJ_DIR)\tests\runtime" mkdir "$(OBJ_DIR)\tests\runtime"
+else
 	@$(MKDIR) $@
+endif
 
 # Pattern rule for object files
-$(OBJ_DIR)/%.o: %.c | $(OBJ_DIR)/compiler $(OBJ_DIR)/runtime $(OBJ_DIR)/std/string $(OBJ_DIR)/std/io $(OBJ_DIR)/std/math $(OBJ_DIR)/std/net $(OBJ_DIR)/std/collections $(OBJ_DIR)/std/json $(OBJ_DIR)/tests $(OBJ_DIR)/tests/compiler $(OBJ_DIR)/tests/memory $(OBJ_DIR)/tests/runtime
+$(OBJ_DIR)/%.o: %.c | $(OBJ_DIR)/compiler $(OBJ_DIR)/runtime $(OBJ_DIR)/std $(OBJ_DIR)/std/string $(OBJ_DIR)/std/io $(OBJ_DIR)/std/math $(OBJ_DIR)/std/net $(OBJ_DIR)/std/fs $(OBJ_DIR)/std/log $(OBJ_DIR)/std/collections $(OBJ_DIR)/std/json $(OBJ_DIR)/tests $(OBJ_DIR)/tests/compiler $(OBJ_DIR)/tests/memory $(OBJ_DIR)/tests/runtime
 	@echo "Compiling $<..."
 	@$(CC) $(CFLAGS) -c $< -o $@
 
@@ -106,11 +133,15 @@ $(OBJ_DIR)/%.o: %.c | $(OBJ_DIR)/compiler $(OBJ_DIR)/runtime $(OBJ_DIR)/std/stri
 compiler: $(COMPILER_OBJS) $(STD_OBJS) $(COLLECTIONS_OBJS)
 	@echo "Linking compiler..."
 	@$(CC) $(COMPILER_OBJS) $(STD_OBJS) $(COLLECTIONS_OBJS) -o build/aetherc$(EXE_EXT) $(LDFLAGS)
-	@echo "✓ Compiler built successfully"
+	@echo "Compiler built successfully"
 
 # Fast compiler target (monolithic, for clean builds)
 compiler-fast:
-	@$(MKDIR)
+ifeq ($(OS),Windows_NT)
+	@if not exist "build" mkdir "build"
+else
+	@$(MKDIR) build
+endif
 	$(CC) $(CFLAGS) $(COMPILER_SRC) $(STD_SRC) $(COLLECTIONS_SRC) -o build/aetherc$(EXE_EXT) $(LDFLAGS)
 
 test: $(TEST_OBJS) $(COMPILER_LIB_OBJS) $(RUNTIME_OBJS) $(STD_OBJS) $(COLLECTIONS_OBJS)
@@ -193,6 +224,17 @@ apkg:
 	$(CC) $(CFLAGS) tools/apkg/main.c tools/apkg/apkg.c tools/apkg/toml_parser.c $(LDFLAGS) -o build/apkg$(EXE_EXT)
 	@echo "✓ Package Manager built successfully: build/apkg$(EXE_EXT)"
 
+ae: compiler
+	@echo "==================================="
+	@echo "Building ae command-line tool ($(DETECTED_OS))"
+	@echo "==================================="
+	$(CC) -O2 tools/ae.c -o build/ae$(EXE_EXT) -lm
+	@echo "✓ Built successfully: build/ae$(EXE_EXT)"
+	@echo ""
+	@echo "Usage:"
+	@echo "  ./build/ae$(EXE_EXT) run file.ae"
+	@echo "  ./build/ae$(EXE_EXT) build file.ae"
+
 profiler:
 	@echo "==================================="
 	@echo "Building Aether Profiler Dashboard ($(DETECTED_OS))"
@@ -264,6 +306,47 @@ else
 	@echo "For Windows/macOS, manually copy build/aetherc-release$(EXE_EXT) to your PATH"
 endif
 
+# Run an Aether program (compile + execute)
+run: compiler
+ifndef FILE
+	@echo "Error: FILE not specified"
+	@echo "Usage: make run FILE=examples/basic/hello_world.ae"
+	@exit 1
+endif
+	@echo "Compiling $(FILE) to C..."
+	@./build/aetherc$(EXE_EXT) $(FILE) build/output.c
+	@echo "Building executable..."
+	@$(CC) $(CFLAGS) build/output.c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) -o build/output$(EXE_EXT) $(LDFLAGS)
+	@echo "Running..."
+	@./build/output$(EXE_EXT)
+
+# Compile an Aether program to executable
+compile: compiler
+ifndef FILE
+	@echo "Error: FILE not specified"
+	@echo "Usage: make compile FILE=myprogram.ae [OUTPUT=myprogram]"
+	@exit 1
+endif
+ifndef OUTPUT
+	OUTPUT := $(basename $(notdir $(FILE)))
+endif
+	@echo "Compiling $(FILE) to C..."
+	@./build/aetherc$(EXE_EXT) $(FILE) build/$(OUTPUT).c
+	@echo "Building executable..."
+	@$(CC) $(CFLAGS) build/$(OUTPUT).c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) -o build/$(OUTPUT)$(EXE_EXT) $(LDFLAGS)
+	@echo "✓ Built: build/$(OUTPUT)$(EXE_EXT)"
+
+# Interactive REPL (requires linenoise or equivalent)
+repl: compiler
+	@echo "Starting Aether REPL..."
+	@if [ -f tools/aether_repl.c ]; then \
+		$(CC) $(CFLAGS) tools/aether_repl.c $(COMPILER_SRC) $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) -o build/aether_repl$(EXE_EXT) $(LDFLAGS); \
+		./build/aether_repl$(EXE_EXT); \
+	else \
+		echo "Error: REPL not implemented yet"; \
+		echo "You can run programs with: make run FILE=yourfile.ae"; \
+	fi
+
 # Build statistics
 stats:
 	@echo "==================================="
@@ -324,17 +407,34 @@ clean:
 help:
 	@echo "Aether Build System ($(DETECTED_OS))"
 	@echo ""
+	@echo "Quick Start:"
+	@echo "  make ae             - Build 'ae' CLI tool (recommended)"
+	@echo "  ./build/ae run file.ae      - Run a program (Go-style)"
+	@echo "  ./build/ae build file.ae    - Build executable"
+	@echo ""
+	@echo "Or use Make directly:"
+	@echo "  make                - Build compiler"
+	@echo "  make run FILE=...   - Compile and run an Aether program"
+	@echo "  make compile FILE=...- Compile Aether program to executable"
+	@echo "  make test           - Run test suite"
+	@echo ""
 	@echo "Build Targets:"
-	@echo "  make                - Build compiler (incremental)"
+	@echo "  make compiler       - Build compiler (incremental)"
 	@echo "  make compiler-fast  - Build compiler (monolithic, faster for clean)"
 	@echo "  make -j8            - Parallel build with 8 jobs (2-4x faster)"
 	@echo "  make release        - Optimized release build (-O3 -flto)"
 	@echo "  make stdlib         - Build precompiled stdlib archive"
 	@echo ""
+	@echo "Run Targets:"
+	@echo "  make run FILE=path/to/file.ae    - Compile and execute program"
+	@echo "  make compile FILE=file.ae        - Compile to executable"
+	@echo "  make repl                        - Start interactive REPL"
+	@echo ""
 	@echo "Test Targets:"
 	@echo "  make test           - Run tests (incremental)"
 	@echo "  make test-fast      - Run tests (monolithic)"
 	@echo "  make test-valgrind  - Run tests with Valgrind (memory leak detection)"
+	@echo "  make ae             - Build ae CLI tool (Go-style interface)"
 	@echo "  make test-asan      - Run tests with AddressSanitizer"
 	@echo "  make test-memory    - Run tests with memory tracking enabled"
 	@echo "  make self-test      - Test compiler on complex examples"
@@ -352,6 +452,11 @@ help:
 	@echo "  make clean          - Remove build artifacts"
 	@echo "  make help           - Show this help message"
 	@echo ""
+	@echo "Examples:"
+	@echo "  make run FILE=examples/basic/hello_world.ae"
+	@echo "  make compile FILE=myapp.ae OUTPUT=myapp"
+	@echo "  make -j8 test       - Build and test with 8 parallel jobs"
+	@echo ""
 	@echo "Platform: $(DETECTED_OS)"
 	@echo "Compiler: $(CC)"
 
@@ -359,4 +464,4 @@ test-build: $(TEST_OBJS) $(COMPILER_LIB_OBJS) $(RUNTIME_OBJS) $(STD_OBJS) $(COLL
 	@echo "Building test runner..."
 	@$(CC) $(TEST_OBJS) $(COMPILER_LIB_OBJS) $(RUNTIME_OBJS) $(STD_OBJS) $(COLLECTIONS_OBJS) -o build/test_runner$(EXE_EXT) $(LDFLAGS)
 
-.PHONY: all compiler lsp apkg profiler test test-build test-valgrind test-asan test-memory test-manual-runtime benchmark examples clean help self-test release install stats stdlib
+.PHONY: all compiler lsp apkg ae profiler test test-build test-valgrind test-asan test-memory test-manual-runtime benchmark examples run compile repl clean help self-test release install stats stdlib

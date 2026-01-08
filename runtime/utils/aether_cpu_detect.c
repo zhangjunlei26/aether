@@ -16,8 +16,12 @@ typedef struct {
     int avx2_supported;
     int avx512f_supported;
     int fma_supported;
+    int sse42_supported;
+    int mwait_supported;
+    int monitor_supported;
     char cpu_brand[49];
     int num_cores;
+    int cache_line_size;
 } CPUInfo;
 
 static CPUInfo g_cpu_info = {0};
@@ -64,9 +68,18 @@ void cpu_detect_features(CPUInfo* info) {
         // ECX flags
         info->avx_supported = (ecx & (1 << 28)) != 0;  // AVX
         info->fma_supported = (ecx & (1 << 12)) != 0;  // FMA3
+        info->sse42_supported = (ecx & (1 << 20)) != 0;  // SSE4.2
+        info->monitor_supported = (ecx & (1 << 3)) != 0;  // MONITOR/MWAIT
+        info->mwait_supported = info->monitor_supported;  // Same flag
         
         // Logical processor count
         info->num_cores = (ebx >> 16) & 0xFF;
+        
+        // Cache line size (bits 8-15 of EBX, in 8-byte units)
+        info->cache_line_size = ((ebx >> 8) & 0xFF) * 8;
+        if (info->cache_line_size == 0) {
+            info->cache_line_size = 64;  // Default to 64 bytes
+        }
     }
     
     // Extended features (leaf 7)
@@ -98,6 +111,16 @@ int cpu_has_avx512() {
     return cpu_get_info()->avx512f_supported;
 }
 
+// Check if MONITOR/MWAIT is available
+int cpu_has_mwait() {
+    return cpu_get_info()->mwait_supported;
+}
+
+// Check if SSE4.2 is available
+int cpu_has_sse42() {
+    return cpu_get_info()->sse42_supported;
+}
+
 // Print CPU capabilities
 void cpu_print_info() {
     const CPUInfo* info = cpu_get_info();
@@ -107,20 +130,31 @@ void cpu_print_info() {
     printf("Logical cores: %d\n\n", info->num_cores);
     
     printf("SIMD Support:\n");
+    printf("  SSE4.2:  %s\n", info->sse42_supported ? "YES" : "NO");
     printf("  AVX:     %s\n", info->avx_supported ? "YES" : "NO");
     printf("  AVX2:    %s", info->avx2_supported ? "YES" : "NO");
     if (info->avx2_supported) {
-        printf(" ← 3× speedup for actor processing");
+        printf(" -> 3x speedup for actor processing");
     }
     printf("\n");
     
     printf("  AVX-512: %s", info->avx512f_supported ? "YES" : "NO");
     if (info->avx512f_supported) {
-        printf(" ← 6× speedup potential");
+        printf(" -> 6x speedup potential");
     }
     printf("\n");
     
     printf("  FMA3:    %s\n", info->fma_supported ? "YES" : "NO");
+    
+    printf("\nPower Management:\n");
+    printf("  MWAIT:   %s", info->mwait_supported ? "YES" : "NO");
+    if (info->mwait_supported) {
+        printf(" -> Sub-microsecond idle wake latency");
+    }
+    printf("\n");
+    
+    printf("\nCache:\n");
+    printf("  Line size: %d bytes\n", info->cache_line_size);
     
     printf("\nRecommendation:\n");
     if (info->avx2_supported) {

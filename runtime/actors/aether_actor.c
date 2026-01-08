@@ -1,4 +1,5 @@
 #include "aether_actor.h"
+#include "../aether_runtime.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -10,6 +11,20 @@
 // Global message pool (per-thread in production)
 static __thread MessagePool* tls_message_pool = NULL;
 
+// Initialize thread-local message pool (call once per thread)
+void __attribute__((constructor)) init_thread_local_pool() {
+    if (!tls_message_pool) {
+        tls_message_pool = message_pool_create_tls();  // Create lock-free TLS pool
+    }
+}
+
+void __attribute__((destructor)) cleanup_thread_local_pool() {
+    if (tls_message_pool) {
+        message_pool_destroy(tls_message_pool);
+        tls_message_pool = NULL;
+    }
+}
+
 MessagePool* message_pool_create() {
     MessagePool* pool = (MessagePool*)aligned_alloc(CACHE_LINE_SIZE, sizeof(MessagePool));
     if (unlikely(!pool)) return NULL;
@@ -17,6 +32,7 @@ MessagePool* message_pool_create() {
     pool->head = 0;
     pool->tail = 0;
     pool->count = 0;
+    pool->is_thread_local = 0;  // Assume shared by default
     pthread_mutex_init(&pool->lock, NULL);
     
     // Pre-allocate buffers
@@ -24,6 +40,15 @@ MessagePool* message_pool_create() {
         pool->buffers[i] = aligned_alloc(CACHE_LINE_SIZE, 256); // 256-byte messages
     }
     
+    return pool;
+}
+
+// Create thread-local pool (no mutex needed)
+static MessagePool* message_pool_create_tls() {
+    MessagePool* pool = message_pool_create();
+    if (pool) {
+        pool->is_thread_local = 1;  // Mark as thread-local
+    }
     return pool;
 }
 
@@ -39,8 +64,29 @@ void message_pool_destroy(MessagePool* pool) {
 }
 
 void* __attribute__((hot)) message_pool_alloc(MessagePool* pool, int size) {
-    if (unlikely(!pool || size > 256)) return malloc(size);
+    // Use TLS pool if no explicit pool provided
+    if (!pool) {
+        if (!tls_message_pool) {
+            tls_message_pool = message_pool_create_tls();
+        }
+        pool = tls_message_pool;
+    }
     
+    if (unlikely(size > 256)) return malloc(size);
+    
+    // Lock-free path for TLS pools
+    if (pool->is_thread_local) {
+        if (unlikely(pool->count == 0)) {
+            return aligned_alloc(CACHE_LINE_SIZE, size);
+        }
+        
+        void* buffer = pool->buffers[pool->head];
+        pool->head = (pool->head + 1) % MESSAGE_POOL_SIZE;
+        pool->count--;
+        return buffer;
+    }
+    
+    // Shared pool path (with mutex)
     pthread_mutex_lock(&pool->lock);
     
     if (unlikely(pool->count == 0)) {
@@ -62,6 +108,20 @@ void __attribute__((hot)) message_pool_free(MessagePool* pool, void* ptr) {
         return;
     }
     
+    // Lock-free path for TLS pools
+    if (pool->is_thread_local) {
+        if (unlikely(pool->count >= MESSAGE_POOL_SIZE)) {
+            free(ptr);
+            return;
+        }
+        
+        pool->buffers[pool->tail] = ptr;
+        pool->tail = (pool->tail + 1) % MESSAGE_POOL_SIZE;
+        pool->count++;
+        return;
+    }
+    
+    // Shared pool path (with mutex)
     pthread_mutex_lock(&pool->lock);
     
     if (unlikely(pool->count >= MESSAGE_POOL_SIZE)) {
@@ -82,7 +142,16 @@ static void* actor_thread_loop(void* arg) {
     
     while (likely(actor->active)) {
         Message msg;
-        if (likely(mailbox_receive(&actor->mailbox, &msg))) {
+        int received;
+        
+        // Use appropriate mailbox type
+        if (actor->use_lockfree) {
+            received = lockfree_mailbox_receive(&actor->mailbox.lockfree, &msg);
+        } else {
+            received = mailbox_receive(&actor->mailbox.simple, &msg);
+        }
+        
+        if (likely(received)) {
             if (likely(actor->process_message)) {
                 actor->process_message(actor, &msg, sizeof(Message));
             }
@@ -103,7 +172,18 @@ Actor* aether_actor_create(void (*process_fn)(Actor*, void*, int)) {
     
     actor->id = rand();
     actor->active = 0;
-    mailbox_init(&actor->mailbox);
+    
+    // Check runtime config for mailbox type
+    const AetherRuntimeConfig* config = aether_runtime_get_config();
+    actor->use_lockfree = config->use_lockfree_mailbox;
+    
+    // Initialize appropriate mailbox type
+    if (actor->use_lockfree) {
+        lockfree_mailbox_init(&actor->mailbox.lockfree);
+    } else {
+        mailbox_init(&actor->mailbox.simple);
+    }
+    
     actor->pending_requests = NULL;
     actor->next_request_id = 1;
     pthread_mutex_init(&actor->request_mutex, NULL);
@@ -167,7 +247,13 @@ void aether_send_message(Actor* target, void* message, int message_size) {
         memcpy(msg.payload_ptr, message, message_size);
     }
     
-    mailbox_send(&target->mailbox, msg);
+    // Use appropriate mailbox type
+    if (target->use_lockfree) {
+        lockfree_mailbox_send(&target->mailbox.lockfree, msg);
+    } else {
+        mailbox_send(&target->mailbox.simple, msg);
+    }
+    
     target->active = 1;  // Wake actor if dormant
 }
 

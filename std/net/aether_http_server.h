@@ -2,7 +2,7 @@
 #define AETHER_HTTP_SERVER_H
 
 #include "../string/aether_string.h"
-#include "../../runtime/multicore_scheduler.h"
+#include "../../runtime/scheduler/multicore_scheduler.h"
 
 // HTTP Request
 typedef struct {
