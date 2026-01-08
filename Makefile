@@ -336,6 +336,13 @@ endif
 	@$(CC) $(CFLAGS) build/$(OUTPUT).c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) -o build/$(OUTPUT)$(EXE_EXT) $(LDFLAGS)
 	@echo "✓ Built: build/$(OUTPUT)$(EXE_EXT)"
 
+# Benchmark computed goto dispatch
+bench-dispatch: 
+	@echo "Building computed goto benchmark..."
+	@$(CC) -O3 experiments/concurrency/bench_computed_goto.c -o build/bench_computed_goto$(EXE_EXT)
+	@echo "Running benchmark..."
+	@./build/bench_computed_goto$(EXE_EXT)
+
 # Interactive REPL (requires linenoise or equivalent)
 repl: compiler
 	@echo "Starting Aether REPL..."
