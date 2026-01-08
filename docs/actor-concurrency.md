@@ -4,7 +4,7 @@ Understanding the actor runtime, concurrency model, and message passing system.
 
 ## Performance
 
-**Proven through rigorous experimentation (Experiments 01-07):**
+**Proven through rigorous performance benchmarking:**
 
 - **Partitioned Scheduler:** 291M msg/sec on 8 cores (2.3× linear scaling)
 - **SIMD (AVX2):** 3× speedup for uniform actor types

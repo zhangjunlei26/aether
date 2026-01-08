@@ -1,8 +1,14 @@
-# Concurrency Experiments
+# Performance Optimizations
 
-Performance optimization experiments for Aether's actor runtime system.
+Production-ready performance optimizations for Aether's actor runtime system.
 
-## Completed Experiments
+## Directory Structure
+
+- `benchmarks/` - Performance benchmarks for all optimizations
+- `01_pthread_baseline/` through `07_gpu/` - Early architecture explorations (historical)
+- See `../../runtime/actors/` for production implementations
+
+## Implemented Optimizations
 
 ### 1. Lock-Free Mailbox (VERIFIED: +80% improvement)
 **Status:** Implemented in runtime  
@@ -48,9 +54,7 @@ Performance optimization experiments for Aether's actor runtime system.
 **Reason:** Simple benchmarks have predictable branches; PGO overhead exceeds benefits  
 **Benchmarks:** pgo_workload.c, bench_pgo.c
 
-## Experimental Optimizations (Under Investigation)
-
-### SIMD Message Batching (IMPLEMENTED: 1.52x improvement)
+### 7. SIMD Message Batching (IMPLEMENTED: 1.52x improvement)
 **Status:** Implemented in runtime  
 **Result:** 627 M msg/sec vs 413 M msg/sec (scalar processing)  
 **Speedup:** 1.52x for batch message processing  
@@ -59,7 +63,7 @@ Performance optimization experiments for Aether's actor runtime system.
 **Technique:** AVX2 SIMD instructions process 8 messages simultaneously  
 **Note:** Requires compute-heavy message handlers to justify SIMD overhead
 
-### Message Coalescing (IMPLEMENTED: 16.25x improvement)
+### 8. Message Coalescing (IMPLEMENTED: 16.25x improvement)
 **Status:** Implemented in runtime  
 **Result:** 1,394 M msg/sec vs 85 M msg/sec (single messages)  
 **Speedup:** 16.25x by batching 16 messages together  
@@ -68,11 +72,11 @@ Performance optimization experiments for Aether's actor runtime system.
 **Technique:** Combine multiple small messages to reduce atomic queue operations by 94%  
 **Note:** Highly effective for high-throughput scenarios, requires careful API design
 
-## Benchmark Suite
+## Benchmarks
 
-All benchmark executables and source code are located in the `benchmarks/` subdirectory.
+All benchmarks are in `benchmarks/` subdirectory.
 
-### Performance Benchmarks
+### Optimization Benchmarks
 - `bench_lockfree_mailbox.c` - Lock-free vs mutex mailbox comparison
 - `bench_computed_goto.c` - Dispatch mechanism comparison (switch/function pointer/goto)
 - `bench_type_pools.c` - Type-specific memory pools vs malloc/free
@@ -105,48 +109,49 @@ All optimization implementations are production-ready and integrated into the ru
 
 See `examples/advanced/high_throughput_actor.c` for usage example.
 
-## Historical Experiments (Archive)
+## Historical Work (Directories 01-07)
 
-### Early Exploration (Directories 01-07)
-These directories contain initial multi-core architecture explorations:
-- `01_pthread_baseline/` - Baseline pthread implementation
-- `02_state_machine/` - State machine architecture
-- `03_work_stealing/` - Work-stealing scheduler experiments
-- `04_partitioned/` - Partitioned queue experiments
-- `05_simd_vectorization/` - SIMD optimization tests
-- `06_message_batching/` - Batch processing experiments
-- `07_gpu/` - GPU acceleration exploration
+Early multi-core architecture explorations that informed the final runtime design.  
+All production code is in `../../runtime/`.
 
-Final implementations are in the main runtime/ directory.
+Directories:
+- `01_pthread_baseline/` - Initial pthread baseline
+- `02_state_machine/` - State machine prototypes  
+- `03_work_stealing/` - Work-stealing scheduler tests
+- `04_partitioned/` - Partitioned queue tests
+- `05_simd_vectorization/` - Early SIMD experiments
+- `06_message_batching/` - Batch processing prototypes
+- `07_gpu/` - GPU acceleration exploration (not pursued)
 
 ## Running Benchmarks
 
-All benchmarks can be run via Makefile targets:
+From the `benchmarks/` directory:
 
 ```bash
-# Lock-free mailbox benchmark
-make bench-lockfree
+cd benchmarks
 
-# Computed goto dispatch benchmark
-make bench-dispatch
+# Compile and run any benchmark
+gcc -O3 -march=native -mavx2 -o bench_simd_batch bench_simd_batch.c
+./bench_simd_batch
 
-# Prefetch investigation
-make bench-prefetch
-
-# PGO comparison (requires profile generation first)
-make pgo-benchmark
+# Or use the pattern:
+gcc -O3 -march=native -o bench_<name> bench_<name>.c
 ```
 
-## Results Summary
+Each benchmark is standalone and includes its own timing and validation.
 
-Detailed results are documented in:
-- `RESULTS.md` - Multi-core mailbox performance data
-- `docs/EXTREME_OPTIMIZATIONS.md` - Complete optimization analysis
+## Key Results
 
-## Key Findings
+Best optimizations:
+1. **Message Coalescing** - 16.25x improvement (biggest win)
+2. **Zero-Copy Messages** - 10.42x for large messages  
+3. **Type-Specific Pools** - 6.91x faster allocation
+4. **Lock-Free Mailbox** - 1.8x under contention
+5. **SIMD Batching** - 1.52x for compute-heavy handlers
 
-1. **Lock-free data structures win** - 1.8x improvement for concurrent mailbox operations
-2. **Computed goto is faster** - 14% improvement over switch for dispatch
-3. **Hardware is smart** - Manual prefetch and PGO hurt performance on simple code
-4. **Always benchmark** - Not all optimizations improve performance
+Rejected optimizations (negative results):
+- Manual prefetch hints: -16% performance loss
+- Profile-guided optimization: -19% performance loss
+
+**Key lesson:** Hardware is smart. Simple optimizations beat complex ones.
 

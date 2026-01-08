@@ -372,7 +372,7 @@ Aether implements several verified performance optimizations based on empirical 
 - Manual prefetch hints: -16% (hardware prefetcher is already optimal)
 - Profile-guided optimization: -19% (branch prediction overhead exceeds benefits)
 
-See [experiments/concurrency/README.md](../experiments/concurrency/README.md) for detailed benchmarks.
+See [experiments/concurrency/](../experiments/concurrency/) for detailed performance benchmarks.
 
 ### Performance Characteristics
 
