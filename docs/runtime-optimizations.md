@@ -218,10 +218,9 @@ Each optimization is measured against a naive implementation:
 
 Current scheduler performance metrics:
 
-- Single-core: 5,733 msg/sec
-- 2-core: 19,770 msg/sec
-- 4-core: 6.45M msg/sec
-- Cross-core: 625,000 msg/sec
+- 4-core (baseline): 83M msg/sec
+- 4-core (with sender batching): 173M msg/sec
+- Batching speedup: 2.1x measured
 - Latency: Sub-millisecond (median)
 
 ### Scalability

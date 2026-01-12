@@ -25,7 +25,7 @@ The runtime implements concurrent programming techniques for actor-based message
 **Scheduler:**
 - Partitioned multi-core scheduler (actors bound to cores)
 - Lock-free SPSC queues for cross-core messaging
-- Message coalescing for 15x throughput improvement
+- Message coalescing and sender-side batching (2.1x measured improvement)
 - Progressive backoff (spin, pause, yield) for power efficiency
 
 **Synchronization:**
@@ -39,8 +39,8 @@ The runtime implements concurrent programming techniques for actor-based message
 - Backpressure handling for queue overflow
 
 **Performance:**
-- 625,000 cross-core messages/sec
-- 6.45M messages/sec on 4 cores
+- 173M messages/sec on 4 cores (with sender-side batching)
+- 83M messages/sec baseline (without batching)
 - Sub-millisecond message latency
 
 See [docs/runtime-optimizations.md](docs/runtime-optimizations.md) for implementation details and benchmarking methodology.

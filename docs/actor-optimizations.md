@@ -84,10 +84,9 @@ Current scheduler metrics:
 
 | Metric | Performance |
 |--------|-------------|
-| Single-core throughput | 5,733 msg/sec |
-| 2-core throughput | 19,770 msg/sec |
-| 4-core throughput | 6.45M msg/sec |
-| Cross-core messaging | 625,000 msg/sec |
+| 4-core (baseline) | 83M msg/sec |
+| 4-core (with batching) | 173M msg/sec |
+| Batching speedup | 2.1x measured |
 | Message latency | Sub-millisecond |
 
 The scheduler exhibits near-linear scaling for independent actors due to partitioned design and lock-free cross-core messaging.

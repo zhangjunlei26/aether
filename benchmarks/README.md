@@ -14,8 +14,9 @@ benchmarks/
 
 ## Core Runtime Performance
 
-**Single-core**: 50M msg/sec (ring benchmark, 1000 actors)
-**Multicore**: 98M msg/sec (4 cores, partitioned scheduler with work stealing)
+**4-core (baseline)**: 83M msg/sec (without sender batching)
+**4-core (optimized)**: 173M msg/sec (with sender-side batching)
+**Speedup**: 2.1x measured improvement from batching
 
 ## Implemented Optimizations (optimizations/)
 

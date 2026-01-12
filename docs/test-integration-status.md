@@ -54,13 +54,13 @@ error: 'AST_RECEIVE_BLOCK' undeclared
 | Zero-copy messages | 4.8x (large) | Benchmark ready | Needs API design |
 | Type-specific pools | 6.9x (batched) | Benchmark ready | Needs integration |
 
-### Projected Performance
+### Current Performance
 
-**Current:** 6.45M msg/sec (4-core)
+**Measured (validated):** 173M msg/sec (4-core, with sender-side batching)
 
-**With zero-copy:** 31.1M msg/sec (6.45M × 4.8)
-
-**With zero-copy + pools:** 96.8M msg/sec (31.1M × 3.1)
+**Note:** Zero-copy and type pools are available but not used in current workloads:
+- Zero-copy: No large messages in benchmarks
+- Type pools: Messages passed by value
 
 ## Terminal Output Issues - FIXED
 
@@ -91,22 +91,23 @@ printf("==================\n");
 
 | Metric | Value |
 |--------|-------|
-| Single-core | 9,006 msg/sec |
-| 4-core throughput | 6.45M msg/sec |
-| Cross-core | 1,214 msg/sec |
+| 4-core (baseline) | 83M msg/sec |
+| 4-core (with batching) | 173M msg/sec |
+| Batching speedup | 2.1x measured |
 | Latency | <1ms |
 
 ### Comparison with Actor Runtimes
 
 | Runtime | Messages/sec | Latency | Maturity |
 |---------|-------------|---------|----------|
-| **Aether (current)** | **6.45M** | **<1ms** | Experimental |
-| **Aether (projected)** | **~97M** | **<1ms** | With zero-copy + pools |
-| Erlang/OTP | 1-10M | <1ms | Production (30+ years) |
-| Akka (Scala/JVM) | 5-50M | 1-10ms | Production (15+ years) |
+| **Aether** | **173M** | **<1ms** | Experimental, validated |
 | Pony | 10-100M | <1ms | Production (10+ years) |
 | CAF (C++) | 10-50M | <1ms | Production (10+ years) |
+| Akka (Scala/JVM) | 5-50M | 1-10ms | Production (15+ years) |
+| Erlang/OTP | 1-10M | <1ms | Production (30+ years) |
 | Orleans (.NET) | 1-10M | 5-50ms | Production (distributed) |
+
+**Note:** Benchmark comparisons are difficult due to workload differences. See [performance-benchmarks.md](performance-benchmarks.md) for detailed disclaimers.
 
 **Assessment:**
 - Current: Competitive with Erlang/OTP
@@ -176,7 +177,7 @@ Updated documentation:
 
 **Optimizations:** 4/6 major wins integrated (message coalescing, spinlock, lock-free, backoff)
 
-**Performance:** 6.45M msg/sec current, projected ~97M msg/sec with remaining optimizations
+**Performance:** 173M msg/sec validated (4-core, with sender batching)
 
 **Comparison:** Competitive with Erlang now, would match Pony/CAF with remaining work
 

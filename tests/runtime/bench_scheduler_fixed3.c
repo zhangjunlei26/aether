@@ -94,12 +94,12 @@ void bench_single_core_throughput() {
     }
     
     // Wait for processing
-    while (atomic_load(&actor->count_visible) < MSGS && (get_time_ms() - start) < 5000) {
+    while (actor->count < MSGS && (get_time_ms() - start) < 5000) {
         sleep_ms(1);
     }
     
     long end = get_time_ms();
-    int processed = atomic_load(&actor->count_visible);
+    int processed = actor->count;
     double elapsed = (end - start) / 1000.0;
     
     scheduler_stop();
@@ -124,8 +124,7 @@ void bench_multi_core_throughput(int cores) {
         actors[i]->id = i + 1;
         actors[i]->active = 0;
         actors[i]->step = (void (*)(void*))bench_actor_step;
-        actors[i]->count_local = 0;
-        atomic_store(&actors[i]->count_visible, 0);
+        atomic_store(&actors[i]->count, 0);
         mailbox_init(&actors[i]->mailbox);
         scheduler_register_actor((ActorBase*)actors[i], i);
     }
@@ -147,7 +146,7 @@ void bench_multi_core_throughput(int cores) {
     while (1) {
         int total_processed = 0;
         for (int i = 0; i < cores; i++) {
-            total_processed += atomic_load(&actors[i]->count_visible);
+            total_processed += actors[i]->count;
         }
         if (total_processed >= total_target || (get_time_ms() - start) > 5000) {
             break;
@@ -158,7 +157,7 @@ void bench_multi_core_throughput(int cores) {
     long end = get_time_ms();
     int total_processed = 0;
     for (int i = 0; i < cores; i++) {
-        total_processed += atomic_load(&actors[i]->count_visible);
+        total_processed += actors[i]->count;
     }
     double elapsed = (end - start) / 1000.0;
     
@@ -189,15 +188,13 @@ void bench_cross_core_overhead() {
     actor0->id = 1;
     actor0->active = 0;
     actor0->step = (void (*)(void*))bench_actor_step;
-    actor0->count_local = 0;
-    atomic_store(&actor0->count_visible, 0);
+    atomic_store(&actor0->count, 0);
     mailbox_init(&actor0->mailbox);
     
     actor1->id = 2;
     actor1->active = 0;
     actor1->step = (void (*)(void*))bench_actor_step;
-actor1->count_local = 0;
-    atomic_store(&actor1->count_visible, 0);
+    atomic_store(&actor1->count, 0);
     mailbox_init(&actor1->mailbox);
     
     scheduler_register_actor((ActorBase*)actor0, 0);
@@ -212,12 +209,12 @@ actor1->count_local = 0;
         scheduler_send_remote((ActorBase*)actor1, msg, 0);  // From core 0 to core 3
     }
     
-    while (atomic_load(&actor1->count_visible) < MSGS && (get_time_ms() - start) < 5000) {
+    while (actor1->count < MSGS && (get_time_ms() - start) < 5000) {
         sleep_ms(1);
     }
     
     long end = get_time_ms();
-    int processed = atomic_load(&actor1->count_visible);
+    int processed = actor1->count;
     double elapsed = (end - start) / 1000.0;
     
     scheduler_stop();
@@ -251,8 +248,7 @@ void bench_scalability() {
             actors[i]->id = i + 1;
             actors[i]->active = 0;
             actors[i]->step = (void (*)(void*))bench_actor_step;
-            actors[i]->count_local = 0;
-            atomic_store(&actors[i]->count_visible, 0);
+            atomic_store(&actors[i]->count, 0);
             mailbox_init(&actors[i]->mailbox);
             scheduler_register_actor((ActorBase*)actors[i], i);
         }
@@ -272,7 +268,7 @@ void bench_scalability() {
         while (1) {
             int total_processed = 0;
             for (int i = 0; i < cores; i++) {
-                total_processed += atomic_load(&actors[i]->count_visible);
+                total_processed += actors[i]->count;
             }
             if (total_processed >= total_target || (get_time_ms() - start) > 5000) {
                 break;
@@ -283,7 +279,7 @@ void bench_scalability() {
         long end = get_time_ms();
         int total_processed = 0;
         for (int i = 0; i < cores; i++) {
-            total_processed += atomic_load(&actors[i]->count_visible);
+            total_processed += actors[i]->count;
         }
         double elapsed = (end - start) / 1000.0;
         double throughput = total_processed / elapsed;
@@ -329,7 +325,7 @@ void bench_latency() {
     int successful = 0;
     
     for (int i = 0; i < SAMPLES; i++) {
-        int before = atomic_load(&actor->count_visible);
+        int before = actor->count;
         long start = get_time_ms();
         
         Message msg = {1, 0, i, NULL};
@@ -337,12 +333,12 @@ void bench_latency() {
         
         // Wait for this specific message to be processed
         long timeout = start + 100;
-        while (atomic_load(&actor->count_visible) <= before && get_time_ms() < timeout) {
+        while (actor->count <= before && get_time_ms() < timeout) {
             // Tight loop for accuracy
         }
         
         long end = get_time_ms();
-        if (atomic_load(&actor->count_visible) > before) {
+        if (actor->count > before) {
             total_latency += (end - start);
             successful++;
         }
@@ -370,8 +366,7 @@ void bench_contention() {
     target->id = 100;
     target->active = 0;
     target->step = (void (*)(void*))bench_actor_step;
-    target->count_local = 0;
-    atomic_store(&target->count_visible, 0);
+    target->count = 0;
     mailbox_init(&target->mailbox);
     
     scheduler_register_actor((ActorBase*)target, 0);
@@ -390,12 +385,12 @@ void bench_contention() {
     }
     
     const int TOTAL = SENDERS * MSGS_PER_SENDER;
-    while (atomic_load(&target->count_visible) < TOTAL && (get_time_ms() - start) < 10000) {
+    while (target->count < TOTAL && (get_time_ms() - start) < 10000) {
         sleep_ms(1);
     }
     
     long end = get_time_ms();
-    int processed = atomic_load(&target->count_visible);
+    int processed = target->count;
     double elapsed = (end - start) / 1000.0;
     
     scheduler_stop();
@@ -446,12 +441,12 @@ void bench_burst_patterns() {
     }
     
     // Wait for all to process
-    while (atomic_load(&actor->count_visible) < total_sent && (get_time_ms() - start) < 10000) {
+    while (actor->count < total_sent && (get_time_ms() - start) < 10000) {
         sleep_ms(10);
     }
     
     long end = get_time_ms();
-    int processed = atomic_load(&actor->count_visible);
+    int processed = actor->count;
     double elapsed = (end - start) / 1000.0;
     
     scheduler_stop();
@@ -492,12 +487,12 @@ void bench_mailbox_saturation() {
         scheduler_send_remote((ActorBase*)actor, msg, -1);
     }
     
-    while (atomic_load(&actor->count_visible) < MSGS && (get_time_ms() - start) < 10000) {
+    while (actor->count < MSGS && (get_time_ms() - start) < 10000) {
         sleep_ms(10);
     }
     
     long end = get_time_ms();
-    int processed = atomic_load(&actor->count_visible);
+    int processed = actor->count;
     double elapsed = (end - start) / 1000.0;
     int dropped = MSGS - processed;
     
@@ -547,8 +542,5 @@ int main() {
     
     return 0;
 }
-
-
-
 
 

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Test</title>
+</head>
+<body>
+    <h1>Debug Test</h1>
+    <pre id="output">Loading...</pre>
+    
+    <script>
+        const output = document.getElementById('output');
+        
+        fetch('/results.json')
+            .then(response => {
+                output.textContent = 'Status: ' + response.status + '\n';
+                return response.text();
+            })
+            .then(text => {
+                output.textContent += 'Response:\n' + text;
+            })
+            .catch(err => {
+                output.textContent = 'Error: ' + err.message;
+            });
+    </script>
+</body>
+</html>

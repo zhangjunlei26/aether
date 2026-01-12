@@ -8,6 +8,7 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../utils/aether_runtime_profile.h"
 
 #define ZEROCOPY_THRESHOLD 256  // Messages larger than this use zero-copy
 
@@ -49,20 +50,24 @@ typedef struct {
 // Note: Manual prefetch removed - benchmarks showed 16% performance loss
 // Hardware prefetcher handles sequential ring buffer access more efficiently
 static inline int __attribute__((hot)) mailbox_send(Mailbox* __restrict__ mbox, Message msg) {
+    PROFILE_START();
     if (__builtin_expect(mbox->count >= MAILBOX_SIZE, 0)) return 0; // Full (unlikely)
     
     mbox->messages[mbox->tail] = msg;
     mbox->tail = (mbox->tail + 1) & MAILBOX_MASK;  // Fast power-of-2 masking
     mbox->count++;
+    PROFILE_END_MAILBOX_SEND(0);  // Core ID determined at runtime in real usage
     return 1;
 }
 
 static inline int __attribute__((hot)) mailbox_receive(Mailbox* __restrict__ mbox, Message* __restrict__ out_msg) {
+    PROFILE_START();
     if (__builtin_expect(mbox->count == 0, 0)) return 0; // Empty (unlikely)
     
     *out_msg = mbox->messages[mbox->head];
     mbox->head = (mbox->head + 1) & MAILBOX_MASK;  // Fast power-of-2 masking
     mbox->count--;
+    PROFILE_END_MAILBOX_RECEIVE(0);
     return 1;
 }
 

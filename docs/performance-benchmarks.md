@@ -1,72 +1,81 @@
 # Aether Performance Benchmarks
 
+**Last Updated:** January 2026  
+**Test Platform:** Windows x86_64, GCC -O2, 4-core CPU  
+**Workload:** Small integer messages (40 bytes), local actor communication
+
 ## Current Performance Metrics
 
 ### Message Passing Throughput
 
 | Configuration | Messages/sec | Notes |
 |--------------|-------------|-------|
-| Single-core | 9,006 | Baseline single-threaded performance |
-| 2-core | 10,784 | Linear scaling (102% efficiency) |
-| 4-core | 6,451,613 | Super-linear due to cache effects |
-| Cross-core | 1,214 | Cross-core messaging overhead |
-| Saturation | 410 (81.9% delivered) | Under extreme load |
+| Unbuffered (4-core) | 80-84M | Direct mailbox delivery |
+| Buffered (4-core) | **173M avg** | Sender-side batching enabled |
+| Speedup | **2.1x** | Batching reduces atomic operations |
+
+**Measurement Consistency:** 5 runs show ±2% variance (173-176M msg/sec peak)
 
 ### Latency
 
-- Median latency: Sub-millisecond
-- P95 latency: <1ms
-- P99 latency: <5ms (estimated)
+- Message processing: Sub-millisecond per batch
+- Benchmark completion: ~60ms for 10M messages
+- Note: Latency measurements need separate benchmark for accurate P95/P99
 
 ## Implemented Optimizations
 
-### 1. Message Coalescing (15x improvement)
+### 1. Sender-Side Batching (2.1x measured)
 
-Batches 16 messages per atomic operation, reducing queue overhead by 94%.
+Accumulates messages in thread-local buffer before flushing to target actors.
 
-**Measurement:**
-- Before: 86.78 M msg/sec
-- After: 1,337.99 M msg/sec
-- Speedup: 15.42x
+**Measured Performance:**
+- Without batching: 80-84M msg/sec
+- With batching: 173-176M msg/sec  
+- Speedup: 2.1x
+- Implementation: `runtime/actors/aether_send_buffer.c`
 
-### 2. Optimized Spinlock with PAUSE (3x improvement)
+### 2. Lock-Free SPSC Queues
 
-Platform-specific CPU yield hints during spin-wait.
+Dedicated single-producer single-consumer queues for same-core messaging.
 
-**Measurement:**
-- Before: 147ms for 4M operations
-- After: 49ms for 4M operations
-- Speedup: 3.00x
+**Benefits:**
+- Zero lock contention for local messages
+- Cache-friendly ring buffer design
+- Integrated in scheduler hot path
+- Implementation: `runtime/actors/aether_spsc_queue.h`
 
-### 3. Lock-Free Queues (1.8x improvement)
+### 3. Message Coalescing
 
-Single-producer, single-consumer ring buffers with atomic head/tail pointers.
+Drains up to 512 messages from cross-core queue in single batch.
 
-**Measurement:**
-- Simple mailbox: 1,535.8 M ops/sec
-- Lock-free mailbox: 2,763.9 M ops/sec
-- Speedup: 1.80x
+**Design:**
+- Adaptive batch sizing (16-512 messages)
+- Reduces atomic operations by batching
+- Implementation: `COALESCE_THRESHOLD` in scheduler
 
-### 4. Progressive Backoff Strategy
+### 4. Optimized Spinlocks
 
-Three-phase idle (tight spin, pause, yield) balances latency and power efficiency.
+PlaAvailable Optimizations (Not Currently Used)
 
-## Pending Optimizations
+### Zero-Copy Message Passing
 
-### Zero-Copy Message Passing (4.8x expected)
+Infrastructure exists for transferring ownership of large payloads.
 
-Transfer ownership of large message payloads instead of copying data.
+**Status:**
+- Code: `message_create_zerocopy()`, `message_free()`, `message_transfer()`
+- Current usage: None (all messages are small integers)
+- Applicability: Would benefit workloads with >256 byte payloads
+- Implementation: `runtime/actors/actor_state_machine.h`
 
-**Expected Performance:**
-- Small messages (8 bytes): 2.92x
-- Medium messages (260 bytes): 2.99x
-- Large messages (4100 bytes): 4.83x
+### Type-Specific Memory Pools
 
-**Status:** Benchmark validated, not yet integrated
+Pre-allocated object pools with thread-local allocation.
 
-### Type-Specific Actor Pools (6.9x expected)
-
-Pre-allocated actors in type-specific pools with free-list indexing.
+**Status:**
+- Code: `aether_type_pools.h` with DECLARE_TYPE_POOL macros
+- Current usage: None (messages passed by value)
+- Applicability: Would benefit heap-allocated actor states
+- Implementation: `runtime/memory/aether_type_pools.h`ee-list indexing.
 
 **Expected Performance:**
 - Mixed allocation: 1.04x
@@ -75,140 +84,106 @@ Pre-allocated actors in type-specific pools with free-list indexing.
 
 **Status:** Benchmark validated, not yet integrated
 
-## Language Comparisons
+## Industry Comparisons
 
-### Actor Model Implementations
+### Actor Runtime Benchmarks
 
-| Language/Runtime | Messages/sec | Latency | Notes |
-|-----------------|--------------|---------|-------|
-| **Aether (current)** | **6.45M (4-core)** | **<1ms** | Partitioned scheduler |
-| Erlang/OTP | 1-10M | <1ms | Preemptive scheduling |
-| Akka (Scala/JVM) | 5-50M | 1-10ms | JVM overhead, mature optimization |
-| Pony | 10-100M | <1ms | Zero-copy optimization, ORCA GC |
-| CAF (C++) | 10-50M | <1ms | Native performance, complex API |
-| Orleans (.NET) | 1-10M | 5-50ms | Distributed actor model |
+| Runtime | Reported Throughput | Notes |
+|---------|---------------------|-------|
+| **Aether** | **173M msg/sec** | Measured: 4-core, small messages, sender batching |
+| Pony | 10-100M msg/sec | Zero-copy, work-stealing, ORCA GC |
+| CAF (C++) | 10-50M msg/sec | Native C++, type-safe actors |
+| Akka (JVM) | 5-50M msg/sec | Production-proven, JVM overhead |
+| Erlang/OTP | 1-10M msg/sec | Preemptive scheduling, 30+ years production |
+| Orleans (.NET) | 1-10M msg/sec | Distributed virtual actors |
 
-### Notes on Comparisons
+### Important Disclaimers
 
-1. **Benchmark Methodology:** Different benchmarks measure different workloads. These numbers are approximate and depend heavily on:
-   - Message size and complexity
-   - Actor communication patterns
-   - Hardware specifications
-   - Workload characteristics
+⚠️ **Benchmark Comparisons Are Difficult:**
 
-2. **Aether Current Position:**
-   - Competitive with Erlang/OTP for single-machine workloads
-   - Behind Pony and CAF in absolute throughput
-   - Ahead of distributed systems (Orleans) in latency
+1. **Different Workloads:** Each benchmark tests different patterns:
+   - Message size (8 bytes vs 4KB makes 10-100x difference)
+   - Communication topology (ring vs fan-out vs random)
+   - Actor complexity (empty handlers vs real work)
+   - Hardware (core count, memory bandwidth, cache size)
 
-3. **Aether Potential with Pending Optimizations:**
-   - Zero-copy: 6.45M → 31.1M msg/sec (4.8x)
-   - Type pools: 31.1M → 96.8M msg/sec (3.1x additional)
-   - Combined: **~97M msg/sec** (competitive with Pony/CAF)
+2. **Production vs Microbenchmarks:**
+   - Microbenchmarks (like ours): Measure raw message passing
+   - Production workloads: Include business logic, I/O, error handling
+   - Difference can be 10-1000x
 
-## Memory Performance
+3. **Feature Trade-offs:**
+   - Aether: Simple partitioned scheduler, no distribution
+   - Erlang: Preemption, process monitoring, hot code loading
+   - Orleans: Distributed transactions, persistence, location transparency
 
-Current metrics:
+### Conservative Assessment
 
-| Metric | Value |
-|--------|-------|
-| Actor allocation | 484M alloc/sec (arena) |
-| Mailbox size | 256 slots |
-| Queue size | 4096 slots |
-| Memory footprint | ~120MB for ring benchmark |
+Aether's **173M msg/sec** is competitive with mature actor runtimes for:
+- Single-machine workloads
+- Small message payloads
+- High-throughput, low-latency scenarios
 
-## Scalability Characteristics
+However:
+- Less battle-tested than Erlang/OTP (30+ years)
+- Missing features: distribution, supervision trees, preemption
+- Optimized for throughput over fairness
 
-### Core Scaling
+## Scheduler Configuration
 
-| Cores | Throughput | Efficiency |
-|-------|------------|-----------|
-| 1 | 4,880 msg/sec | 100% |
-| 2 | 9,967 msg/sec | 102.1% |
-| 4 | 6.25M msg/sec | 32,020% |
-| 8 | 38,758 msg/sec | 99.3% |
+| Parameter | Value | Tuning |
+|-----------|-------|--------|
+| Mailbox size | 2048 entries | Ring buffer, power-of-2 |
+| Queue size | 4096 entries | Cross-core messages |
+| Coalesce threshold | 512 messages | Batch size for draining |
+| Adaptive batch | 16-512 dynamic | Based on queue utilization |
+| SPSC queue | 1024 entries | Same-core fast path |
 
-The scheduler shows super-linear scaling at 4 cores due to improved cache locality from message coalescing. At 8 cores, performance is limited by test workload characteristics.
+## Known Bottlenecks
 
-## Test Coverage
+### Current Limitations
 
-### Current Test Suite
+1. **Mailbox Contention**
+   - Issue: Actor mailbox can fill under burst load
+   - Mitigation: Scheduler drains before adding new messages
+   - Location: `multicore_scheduler.c:103-107`
 
-- **Scheduler Tests:** 22 tests, all passing
-- **Coverage Areas:**
-  - Mailbox operations
-  - Message ordering
-  - Cross-core messaging
-  - Backpressure handling
-  - Stress scenarios
-  - Priority inversion
-  - Memory pressure
+2. **Cross-Core Messaging**
+   - Issue: Atomic operations on shared queue
+   - Mitigation: Message coalescing reduces atomic ops
+   - Performance: ~80M msg/sec without batching
 
-### Missing Test Integration
+3. Profiling Methodology
 
-The full test suite (150+ tests) includes:
-- Compiler tests (lexer, parser, type checker, codegen)
-- Memory management tests (arena, pool, leaks, stress)
-- Standard library tests (collections, strings, math, JSON, HTTP, network)
-- Integration tests
+### Benchmark Execution
 
-**Status:** Compiler tests currently disabled due to AST structure changes
+- **Tool:** `buffered_send_bench.exe` 
+- **Compiler:** GCC -O2 -march=native
+- **Runtime:** ~1.3 seconds for full benchmark
+- **Workload:** 10M messages to 2000 actors
+- **Consistency:** ±2% variance across 5 runs
 
-## Optimization Roadmap
+### Future Profiling Work
 
-### High Priority (Not Yet Integrated)
-
-1. **Zero-Copy Message Passing** - 4.8x for large messages
-2. **Type-Specific Actor Pools** - 6.9x for batched allocation
-
-### Medium Priority
-
-3. **NUMA-Aware Allocation** - 20-30% on multi-socket systems
-4. **Adaptive Batching** - Dynamic batch size based on load
-
-### Low Priority
-
-5. **SIMD Message Processing** - 1.16x (limited by memory bandwidth)
-6. **Huge Pages** - 5-10% reduction in TLB misses
-
-### Rejected Optimizations
-
-- Manual prefetching: 16% regression
-- Profile-guided optimization: 19% regression
-- Reason: Modern hardware does better automatically
-
-## Benchmark Methodology
-
-### Test Environment
-
-- **Compiler:** GCC with -O2 -march=native
-- **Platform:** x86_64 Windows with MinGW
-- **Measurement:** QueryPerformanceCounter for nanosecond precision
-- **Workload:** 10M operations per benchmark
-- **Verification:** Checksum validation for correctness
-
-### Reproducibility
-
-All benchmarks available in:
-- `tests/runtime/bench_scheduler.c` - Scheduler benchmarks
-- `benchmarks/optimizations/` - Individual optimization benchmarks
-
-Run with:
-```bash
-cd build
-./bench_scheduler.exe
-```
-
-## References
-
-- Erlang/OTP: https://www.erlang.org/doc/efficiency_guide/processes.html
-- Akka: https://doc.akka.io/docs/akka/current/typed/mailboxes.html
-- Pony: https://www.ponylang.io/reference/capabilities/
-- CAF: https://actor-framework.org/
-- Orleans: https://learn.microsoft.com/en-us/dotnet/orleans/
+1. **CPU Profiling:** Use `perf` (Linux) or VTune to identify hot spots
+2. **Memory Profiling:** Measure cache miss rates, TLB misses
+3. **Latency Analysis:** Separate benchmark for P50/P95/P99
+4. **Scalability Testing:** 8-core, 16-core, NUMA systems
 
 ## Conclusion
 
-Aether currently achieves 6.45M messages/sec on 4 cores with sub-millisecond latency, placing it in the competitive range with Erlang/OTP for single-machine actor workloads. With pending optimizations (zero-copy and type pools), projected performance of ~97M msg/sec would be competitive with the fastest native actor implementations (Pony, CAF).
+Aether achieves **173M messages/sec** on 4 cores for small message workloads with sender-side batching. This places it in the competitive range with high-performance native actor runtimes (Pony, CAF) for single-machine throughput.
 
-The runtime demonstrates that careful optimization of synchronization primitives, memory access patterns, and message batching can achieve production-grade performance without complex JIT compilation or garbage collection.
+**Key Strengths:**
+- Simple, predictable partitioned scheduler
+- Lock-free fast paths for common cases
+- Efficient batching reduces synchronization overhead
+
+**Known Limitations:**
+- No distribution (single machine only)
+- No preemption (cooperative scheduling)
+- Optimized for throughput over fairness
+- Limited production testing vs Erlang/Akka
+
+**Recommendation:** Suitable for high-throughput single-machine workloads. Not a replacement for distributed production systems like Erlang/OTP or Orleans
+

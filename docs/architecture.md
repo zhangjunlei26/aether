@@ -299,9 +299,9 @@ spawn() → INITIALIZING → READY → RUNNING ⇄ WAITING → TERMINATED
 - Amortizes scheduling overhead
 
 **Performance**:
-- Single-core: 50M msg/sec
-- Multicore: 98M msg/sec (4 cores, 2x speedup)
-- Scaling efficiency: 50% (competitive with established runtimes)
+- 4-core baseline: 83M msg/sec (without sender batching)
+- 4-core optimized: 173M msg/sec (with sender-side batching)
+- Batching speedup: 2.1x measured improvement
 
 **Key Files**:
 - `runtime/scheduler/multicore_scheduler.c` - Implementation
