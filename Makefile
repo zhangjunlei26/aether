@@ -410,11 +410,11 @@ pgo-clean:
 	@$(RM) build/pgo_workload$(EXE_EXT) build/bench_pgo_baseline$(EXE_EXT) build/bench_pgo_optimized$(EXE_EXT) 2>nul || true
 	@echo "✓ PGO data cleaned"
 
-# Interactive REPL (requires linenoise or equivalent)
+# Interactive REPL (requires readline library)
 repl: compiler
 	@echo "Starting Aether REPL..."
 	@if [ -f tools/aether_repl.c ]; then \
-		$(CC) $(CFLAGS) tools/aether_repl.c $(COMPILER_SRC) $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) -o build/aether_repl$(EXE_EXT) $(LDFLAGS); \
+		$(CC) $(CFLAGS) -I/opt/homebrew/include tools/aether_repl.c -o build/aether_repl$(EXE_EXT) -L/opt/homebrew/lib -lreadline; \
 		./build/aether_repl$(EXE_EXT); \
 	else \
 		echo "Error: REPL not implemented yet"; \
