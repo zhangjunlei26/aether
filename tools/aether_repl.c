@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -49,6 +50,65 @@ void add_line(InputBuffer* buf, const char* line) {
     }
     buf->lines[buf->count] = strdup(line);
     buf->count++;
+}
+
+char* extract_variable_name(const char* assignment) {
+    // Extract variable name from assignment like "x = 4" or "int x = 4"
+    const char* eq = strchr(assignment, '=');
+    if (!eq) return NULL;
+
+    // Work backwards from '=' to find variable name
+    const char* end = eq - 1;
+    while (end > assignment && (*end == ' ' || *end == '\t')) end--;
+
+    const char* start = end;
+    while (start > assignment && (isalnum(*start) || *start == '_')) start--;
+
+    // Move forward if we're not at the beginning and landed on a non-identifier char
+    if (start != assignment || !isalnum(*start)) {
+        start++;
+    }
+
+    if (start > end) return NULL;
+
+    size_t len = end - start + 1;
+    char* name = (char*)malloc(len + 1);
+    strncpy(name, start, len);
+    name[len] = '\0';
+
+    return name;
+}
+
+void update_or_add_line(InputBuffer* buf, const char* line) {
+    // Check if this is an assignment
+    if (!strchr(line, '=')) {
+        add_line(buf, line);
+        return;
+    }
+
+    char* var_name = extract_variable_name(line);
+    if (!var_name) {
+        add_line(buf, line);
+        return;
+    }
+
+    // Look for existing definition of this variable
+    for (int i = 0; i < buf->count; i++) {
+        char* existing_var = extract_variable_name(buf->lines[i]);
+        if (existing_var && strcmp(existing_var, var_name) == 0) {
+            // Found existing definition - replace it
+            free(buf->lines[i]);
+            buf->lines[i] = strdup(line);
+            free(existing_var);
+            free(var_name);
+            return;
+        }
+        free(existing_var);
+    }
+
+    // No existing definition found - add new one
+    free(var_name);
+    add_line(buf, line);
 }
 
 void clear_buffer(InputBuffer* buf) {
@@ -176,22 +236,37 @@ bool compile_and_run(REPLState* state, const char* code, bool is_expression, Inp
         fprintf(temp_file, "    %s\n", session_buf->lines[i]);
     }
 
-    // Now add current code
-    if (is_expression) {
-        // Check if it's an assignment
-        if (is_assignment(code)) {
-            // Just write the assignment, don't print
-            fprintf(temp_file, "    %s\n", code);
-        } else {
-            // It's an expression, wrap in result and print
-            fprintf(temp_file, "    result = %s\n", code);
-            fprintf(temp_file, "    print(result)\n");
-            fprintf(temp_file, "    print(\"\\n\")\n");
+    // Now add current code (only if it's not already in session buffer)
+    bool code_in_session = false;
+    for (int i = 0; i < session_buf->count; i++) {
+        if (strcmp(session_buf->lines[i], code) == 0) {
+            code_in_session = true;
+            break;
         }
-    } else {
-        // Statement/definition
-        fprintf(temp_file, "    %s\n", code);
-        fprintf(temp_file, "    print(\"OK\\n\")\n");
+    }
+
+    if (!code_in_session) {
+        if (is_expression) {
+            // Check if it's an assignment
+            if (is_assignment(code)) {
+                // Just write the assignment, don't print
+                fprintf(temp_file, "    %s\n", code);
+            }
+            // Check if it's a print function call (returns void)
+            else if (strstr(code, "print(") != NULL) {
+                // Don't wrap in result, just call it directly
+                fprintf(temp_file, "    %s\n", code);
+            } else {
+                // It's an expression, wrap in result and print
+                fprintf(temp_file, "    result = %s\n", code);
+                fprintf(temp_file, "    print(result)\n");
+                fprintf(temp_file, "    print(\"\\n\")\n");
+            }
+        } else {
+            // Statement/definition
+            fprintf(temp_file, "    %s\n", code);
+            fprintf(temp_file, "    print(\"OK\\n\")\n");
+        }
     }
 
     fprintf(temp_file, "}\n");
@@ -224,7 +299,7 @@ bool compile_and_run(REPLState* state, const char* code, bool is_expression, Inp
     // Compile C to executable
     char gcc_cmd[512];
     snprintf(gcc_cmd, sizeof(gcc_cmd),
-             "gcc %s runtime/aether_runtime.c -o %s 2>&1", c_file, state->output_file);
+             "gcc %s runtime/aether_runtime.c runtime/utils/aether_cpu_detect.c -o %s 2>&1", c_file, state->output_file);
 
     FILE* gcc_proc = popen(gcc_cmd, "r");
     if (!gcc_proc) {
@@ -457,13 +532,13 @@ int main(int argc, char** argv) {
         if (is_expr) {
             // Check if it's an assignment - add to session
             if (is_assignment(line)) {
-                add_line(&session_buffer, line);
+                update_or_add_line(&session_buffer, line);
             }
             // Compile and run
             compile_and_run(&state, line, true, &session_buffer);
         } else {
             // It's a statement/definition
-            add_line(&session_buffer, line);
+            update_or_add_line(&session_buffer, line);
             compile_and_run(&state, line, false, &session_buffer);
         }
 

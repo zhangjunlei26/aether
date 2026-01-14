@@ -245,6 +245,46 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                     }
                     fprintf(gen->output, ")");
                 }
+                // Special handling for print() function
+                else if (strcmp(func_name, "print") == 0) {
+                    // print(value) needs to determine type and use correct format
+                    if (expr->child_count == 1 && expr->children[0]->node_type) {
+                        ASTNode* arg = expr->children[0];
+                        Type* arg_type = arg->node_type;
+
+                        // Determine the correct printf format based on type
+                        if (arg_type->kind == TYPE_INT) {
+                            fprintf(gen->output, "printf(\"%%d\", ");
+                            generate_expression(gen, arg);
+                            fprintf(gen->output, ")");
+                        } else if (arg_type->kind == TYPE_FLOAT) {
+                            fprintf(gen->output, "printf(\"%%f\", ");
+                            generate_expression(gen, arg);
+                            fprintf(gen->output, ")");
+                        } else if (arg_type->kind == TYPE_STRING) {
+                            fprintf(gen->output, "printf(\"%%s\", ");
+                            generate_expression(gen, arg);
+                            fprintf(gen->output, ")");
+                        } else if (arg_type->kind == TYPE_BOOL) {
+                            fprintf(gen->output, "printf(\"%%s\", ");
+                            generate_expression(gen, arg);
+                            fprintf(gen->output, " ? \"true\" : \"false\")");
+                        } else {
+                            // Fallback for unknown types - just call printf
+                            fprintf(gen->output, "printf(");
+                            generate_expression(gen, arg);
+                            fprintf(gen->output, ")");
+                        }
+                    } else {
+                        // Multiple arguments or no type info - treat first as format string
+                        fprintf(gen->output, "printf(");
+                        for (int i = 0; i < expr->child_count; i++) {
+                            if (i > 0) fprintf(gen->output, ", ");
+                            generate_expression(gen, expr->children[i]);
+                        }
+                        fprintf(gen->output, ")");
+                    }
+                }
                 else {
                     // Regular function call: func_name(arg1, arg2, ...)
                     fprintf(gen->output, "%s(", func_name);
@@ -634,15 +674,47 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
         case AST_PRINT_STATEMENT:
             // Generate printf call with all arguments
             if (stmt->child_count > 0) {
-                fprintf(gen->output, "printf(");
-                // First argument is the format string
-                generate_expression(gen, stmt->children[0]);
-                // Rest are the values
-                for (int i = 1; i < stmt->child_count; i++) {
-                    fprintf(gen->output, ", ");
-                    generate_expression(gen, stmt->children[i]);
+                ASTNode* first_arg = stmt->children[0];
+
+                // Check if we have a single typed argument (not a string literal)
+                if (stmt->child_count == 1 && first_arg->node_type &&
+                    !(first_arg->type == AST_LITERAL && first_arg->node_type->kind == TYPE_STRING)) {
+
+                    Type* arg_type = first_arg->node_type;
+
+                    // Generate printf with appropriate format string based on type
+                    if (arg_type->kind == TYPE_INT) {
+                        fprintf(gen->output, "printf(\"%%d\", ");
+                        generate_expression(gen, first_arg);
+                        fprintf(gen->output, ");\n");
+                    } else if (arg_type->kind == TYPE_FLOAT) {
+                        fprintf(gen->output, "printf(\"%%f\", ");
+                        generate_expression(gen, first_arg);
+                        fprintf(gen->output, ");\n");
+                    } else if (arg_type->kind == TYPE_STRING) {
+                        fprintf(gen->output, "printf(\"%%s\", ");
+                        generate_expression(gen, first_arg);
+                        fprintf(gen->output, ");\n");
+                    } else if (arg_type->kind == TYPE_BOOL) {
+                        fprintf(gen->output, "printf(\"%%s\", ");
+                        generate_expression(gen, first_arg);
+                        fprintf(gen->output, " ? \"true\" : \"false\");\n");
+                    } else {
+                        // Unknown type - try printf directly
+                        fprintf(gen->output, "printf(");
+                        generate_expression(gen, first_arg);
+                        fprintf(gen->output, ");\n");
+                    }
+                } else {
+                    // String literal or multiple arguments - first is format string
+                    fprintf(gen->output, "printf(");
+                    generate_expression(gen, stmt->children[0]);
+                    for (int i = 1; i < stmt->child_count; i++) {
+                        fprintf(gen->output, ", ");
+                        generate_expression(gen, stmt->children[i]);
+                    }
+                    fprintf(gen->output, ");\n");
                 }
-                fprintf(gen->output, ");\n");
             }
             break;
             
