@@ -111,9 +111,7 @@ void test_rapid_init_shutdown() {
         sleep_ms(10);
         scheduler_stop();
         scheduler_wait();
-        
-        free(schedulers[0].actors);
-        free(schedulers[1].actors);
+        scheduler_cleanup();
     }
 }
 
@@ -126,9 +124,7 @@ void test_zero_message_workload() {
     
     scheduler_stop();
     scheduler_wait();
-    
-    free(schedulers[0].actors);
-    free(schedulers[1].actors);
+    scheduler_cleanup();
 }
 
 void test_single_message() {
@@ -153,11 +149,11 @@ void test_single_message() {
     
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     ASSERT_EQ(1, count);
     
     free(actor);
-    free(schedulers[0].actors);
 }
 
 void test_many_actors_single_core() {
@@ -193,6 +189,7 @@ void test_many_actors_single_core() {
     
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     ASSERT_EQ(NUM_ACTORS, total);
     
@@ -200,7 +197,6 @@ void test_many_actors_single_core() {
         free(actors[i]);
     }
     free(actors);
-    free(schedulers[0].actors);
 }
 
 void test_burst_then_idle() {
@@ -239,13 +235,12 @@ void test_burst_then_idle() {
     
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     ASSERT_TRUE(count1 >= 95);  // Allow some loss
     ASSERT_TRUE(count2 >= 190);
     
     free(actor);
-    free(schedulers[0].actors);
-    free(schedulers[1].actors);
 }
 
 void test_max_cores() {
@@ -282,12 +277,12 @@ void test_max_cores() {
     
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     ASSERT_TRUE(total >= max * 9);  // At least 90% delivered
     
     for (int i = 0; i < max; i++) {
         free(actors[i]);
-        free(schedulers[i].actors);
     }
     free(actors);
 }
@@ -327,12 +322,12 @@ void test_alternating_load() {
     
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     ASSERT_TRUE(total >= 180);  // At least 90% of 200
     
     for (int i = 0; i < 4; i++) {
         free(actors[i]);
-        free(schedulers[i].actors);
     }
     free(actors);
 }
@@ -359,11 +354,10 @@ void test_immediate_shutdown() {
     // Immediate shutdown without waiting
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     // Just verify no crash
     free(actor);
-    free(schedulers[0].actors);
-    free(schedulers[1].actors);
 }
 
 void test_concurrent_sends_same_actor() {
@@ -394,12 +388,12 @@ void test_concurrent_sends_same_actor() {
 
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
 
     ASSERT_TRUE(count >= 450);  // At least 90%
 
     free(actor);
     for (int i = 0; i < 4; i++) {
-        free(schedulers[i].actors);
     }
 }
 
@@ -442,13 +436,12 @@ void test_priority_inversion() {
     
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     ASSERT_TRUE(fast_count >= 8);  // Fast actor should process most messages
     
     free(slow);
     free(fast);
-    free(schedulers[0].actors);
-    free(schedulers[1].actors);
 }
 
 void test_message_ordering_under_load() {
@@ -479,12 +472,12 @@ void test_message_ordering_under_load() {
     
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     ASSERT_TRUE(count >= 450);  // Most messages delivered
     ASSERT_TRUE(oo == 0);  // Perfect ordering
     
     free(actor);
-    free(schedulers[0].actors);
     schedulers[0].actors = NULL;
 }
 
@@ -522,6 +515,7 @@ void test_cascading_messages() {
     
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     ASSERT_TRUE(total >= 10);  // At least first hop delivered (relaxed assertion)
     
@@ -530,7 +524,6 @@ void test_cascading_messages() {
     }
     for (int i = 0; i < 2; i++) {
         if (schedulers[i].actors) {
-            free(schedulers[i].actors);
             schedulers[i].actors = NULL;
         }
     }
@@ -571,6 +564,7 @@ void test_memory_pressure() {
     
     scheduler_stop();
     scheduler_wait();
+    scheduler_cleanup();
     
     ASSERT_TRUE(total >= 900);  // At least 90% delivered under pressure
     
@@ -580,7 +574,6 @@ void test_memory_pressure() {
     free(actors);
     for (int i = 0; i < 2; i++) {
         if (schedulers[i].actors) {
-            free(schedulers[i].actors);
             schedulers[i].actors = NULL;
         }
     }

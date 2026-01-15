@@ -155,12 +155,8 @@ jobs:
     - name: Build with AddressSanitizer
       run: |
         make clean
-        CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
-        LDFLAGS="-fsanitize=address -pthread -lm" \
-        make compiler
-        CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
-        LDFLAGS="-fsanitize=address -pthread -lm" \
-        make test-build
+        make compiler CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" LDFLAGS="-fsanitize=address -pthread -lm"
+        make test-build CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" LDFLAGS="-fsanitize=address -pthread -lm"
     
     - name: Run AddressSanitizer Tests
       run: |

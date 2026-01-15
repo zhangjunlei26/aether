@@ -320,8 +320,12 @@ void scheduler_cleanup() {
     // Free allocated scheduler resources
     for (int i = 0; i < num_cores; i++) {
         if (schedulers[i].actors != NULL) {
-            free(schedulers[i].actors);
+            aether_numa_free(schedulers[i].actors, schedulers[i].capacity * sizeof(ActorBase*));
             schedulers[i].actors = NULL;
+        }
+        if (schedulers[i].actor_pool != NULL) {
+            aether_numa_free(schedulers[i].actor_pool, sizeof(ActorPool));
+            schedulers[i].actor_pool = NULL;
         }
     }
     num_cores = 0;
