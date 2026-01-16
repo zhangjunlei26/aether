@@ -132,10 +132,12 @@ static JsonValue* parse_object(const char** json) {
         if (**json != '"') break;
         JsonValue* key_val = parse_string(json);
         if (!key_val) break;
-        
+
         AetherString* key = key_val->data.string_value;
-        aether_string_retain(key);
-        aether_json_free(key_val);
+        // Don't retain - the map will own the key
+        // aether_string_retain(key);  // REMOVED - causes leak
+        // Free the JsonValue wrapper but not the string (map will own it)
+        free(key_val);  // Don't use aether_json_free which would release the string
         
         skip_whitespace(json);
         if (**json == ':') (*json)++;

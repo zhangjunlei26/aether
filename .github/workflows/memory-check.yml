@@ -95,25 +95,38 @@ jobs:
     - name: Build with AddressSanitizer
       run: |
         make clean
-        make CFLAGS="-fsanitize=address -fsanitize=leak -fno-omit-frame-pointer -O1 -g" \
-             LDFLAGS="-fsanitize=address -fsanitize=leak -pthread -lm"
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+          # Linux supports LeakSanitizer
+          make compiler CFLAGS="-fsanitize=address -fsanitize=leak -fno-omit-frame-pointer -O1 -g" \
+                        LDFLAGS="-fsanitize=address -fsanitize=leak -pthread -lm"
+          make test-build CFLAGS="-fsanitize=address -fsanitize=leak -fno-omit-frame-pointer -O1 -g" \
+                          LDFLAGS="-fsanitize=address -fsanitize=leak -pthread -lm"
+        else
+          # macOS doesn't support LeakSanitizer
+          make compiler CFLAGS="-fsanitize=address -fno-omit-frame-pointer -O1 -g" \
+                        LDFLAGS="-fsanitize=address -pthread -lm"
+          make test-build CFLAGS="-fsanitize=address -fno-omit-frame-pointer -O1 -g" \
+                          LDFLAGS="-fsanitize=address -pthread -lm"
+        fi
 
     - name: Run tests with ASAN
       env:
         ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1
         LSAN_OPTIONS: report_objects=1
       run: |
-        make test
+        ./build/test_runner
 
     - name: Build with UndefinedBehaviorSanitizer
       run: |
         make clean
-        make CFLAGS="-fsanitize=undefined -fno-omit-frame-pointer -O1 -g" \
-             LDFLAGS="-fsanitize=undefined -pthread -lm"
+        make compiler CFLAGS="-fsanitize=undefined -fno-omit-frame-pointer -O1 -g" \
+                      LDFLAGS="-fsanitize=undefined -pthread -lm"
+        make test-build CFLAGS="-fsanitize=undefined -fno-omit-frame-pointer -O1 -g" \
+                        LDFLAGS="-fsanitize=undefined -pthread -lm"
 
     - name: Run tests with UBSAN
       run: |
-        make test
+        ./build/test_runner
 
   memory-profiling:
     name: Memory Usage Profiling
