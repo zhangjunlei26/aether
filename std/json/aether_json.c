@@ -365,7 +365,7 @@ JsonValue* aether_json_create_string(AetherString* val) {
     JsonValue* value = (JsonValue*)malloc(sizeof(JsonValue));
     value->type = JSON_STRING;
     value->data.string_value = val;
-    aether_string_retain(val);
+    // Don't retain - we're taking ownership of the string
     return value;
 }
 
