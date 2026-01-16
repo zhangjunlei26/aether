@@ -35,7 +35,14 @@ LDFLAGS = -pthread -lm
 BUILD_DIR = build
 OBJ_DIR = $(BUILD_DIR)/obj
 
+# Windows-specific libraries (check both OS variable and uname for MSYS2)
 ifeq ($(OS),Windows_NT)
+    LDFLAGS += -lws2_32
+else ifneq ($(findstring MINGW,$(DETECTED_OS)),)
+    LDFLAGS += -lws2_32
+else ifneq ($(findstring MSYS,$(DETECTED_OS)),)
+    LDFLAGS += -lws2_32
+else ifneq ($(findstring CYGWIN,$(DETECTED_OS)),)
     LDFLAGS += -lws2_32
 endif
 
@@ -132,7 +139,13 @@ test: $(TEST_OBJS) $(COMPILER_LIB_OBJS) $(RUNTIME_OBJS) $(STD_OBJS) $(COLLECTION
 	@echo "==================================="
 	@echo "Running Tests"
 	@echo "==================================="
+ifneq ($(findstring MINGW,$(DETECTED_OS)),)
+	@bash -c './build/test_runner$(EXE_EXT); exit $$?'
+else ifneq ($(findstring MSYS,$(DETECTED_OS)),)
+	@bash -c './build/test_runner$(EXE_EXT); exit $$?'
+else
 	./build/test_runner$(EXE_EXT)
+endif
 
 # Fast test target (monolithic)
 test-fast: compiler-fast

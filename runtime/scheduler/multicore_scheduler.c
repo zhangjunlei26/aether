@@ -309,7 +309,9 @@ void scheduler_stop() {
 
 void scheduler_wait() {
     for (int i = 0; i < num_cores; i++) {
-        pthread_join(schedulers[i].thread, NULL);
+        // Silently ignore join errors on Windows (threads may already be cleaned up)
+        int result = pthread_join(schedulers[i].thread, NULL);
+        (void)result;  // Suppress unused warning
     }
 
     // Cleanup NUMA resources
