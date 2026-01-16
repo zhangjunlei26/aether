@@ -563,6 +563,13 @@ help:
 	@echo "  make check          - Quick check (build + tests, ~30s)"
 	@echo "  make check-full     - Full CI/CD check (includes memory checks, ~2min)"
 	@echo ""
+	@echo "CI/CD Targets:"
+	@echo "  make ci             - Run full CI suite (native)"
+	@echo "  make docker-ci      - Run CI in Docker (with Valgrind)"
+	@echo "  make docker-build-ci- Build Docker CI image"
+	@echo "  make valgrind-check - Run Valgrind memory leak detection (Linux only)"
+	@echo "  ./scripts/run-ci-local.sh - Full CI with Docker (recommended)"
+	@echo ""
 	@echo "Tool Targets:"
 	@echo "  make lsp            - Build LSP server"
 	@echo "  make apkg           - Build package manager"
@@ -588,7 +595,45 @@ test-build: $(TEST_OBJS) $(COMPILER_LIB_OBJS) $(RUNTIME_OBJS) $(STD_OBJS) $(COLL
 	@echo "Building test runner..."
 	@$(CC) $(TEST_OBJS) $(COMPILER_LIB_OBJS) $(RUNTIME_OBJS) $(STD_OBJS) $(COLLECTIONS_OBJS) -o build/test_runner$(EXE_EXT) $(LDFLAGS)
 
-.PHONY: all compiler lsp apkg ae profiler test test-build test-valgrind test-asan test-memory test-manual-runtime benchmark benchmark-ui examples run compile repl clean help self-test release install stats stdlib check quick-check check-full
+# Docker CI/CD targets
+docker-build-ci:
+	@echo "Building Docker CI image..."
+	docker build -f docker/Dockerfile.ci -t aether-ci:latest .
+
+docker-ci: docker-build-ci
+	@echo "Running CI tests in Docker..."
+	docker run --rm -v $(PWD):/aether -w /aether aether-ci make ci
+
+ci: clean
+	@echo "==================================="
+	@echo "Running Full CI Suite"
+	@echo "==================================="
+	@echo "Building compiler..."
+	@$(MAKE) compiler CFLAGS="-O2 -Wall -Wextra -Werror"
+	@echo ""
+	@echo "Building tests..."
+	@$(MAKE) test-build CFLAGS="-O0 -g"
+	@echo ""
+	@echo "Running tests..."
+	@./build/test_runner$(EXE_EXT)
+	@echo ""
+	@echo "✓ CI passed"
+
+valgrind-check: clean
+	@echo "==================================="
+	@echo "Running Valgrind Memory Check"
+	@echo "==================================="
+	@$(MAKE) compiler CFLAGS="-O0 -g"
+	@$(MAKE) test-build CFLAGS="-O0 -g"
+	@valgrind --leak-check=full \
+		--show-leak-kinds=all \
+		--track-origins=yes \
+		--error-exitcode=1 \
+		--suppressions=.valgrind-suppressions \
+		./build/test_runner$(EXE_EXT) || (echo "Memory leaks detected!" && exit 1)
+	@echo "✓ No memory leaks detected"
+
+.PHONY: all compiler lsp apkg ae profiler test test-build test-valgrind test-asan test-memory test-manual-runtime benchmark benchmark-ui examples run compile repl clean help self-test release install stats stdlib check quick-check check-full ci docker-ci docker-build-ci valgrind-check
 
 # Cross-language benchmark UI
 benchmark-ui:

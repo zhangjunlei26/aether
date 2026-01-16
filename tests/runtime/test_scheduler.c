@@ -126,14 +126,7 @@ void test_scheduler_init_cleanup(void) {
     ASSERT_EQ(0, schedulers[1].actor_count);
     
     // Cleanup
-    for (int i = 0; i < 2; i++) {
-        if (schedulers[i].actor_pool) {
-            free(schedulers[i].actor_pool);
-            schedulers[i].actor_pool = NULL;
-        }
-        // Freed by scheduler_cleanup()
-        schedulers[i].actors = NULL;
-    }
+    scheduler_cleanup();
 }
 
 void test_scheduler_basic_messaging(void) {
