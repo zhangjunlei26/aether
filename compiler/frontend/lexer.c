@@ -292,6 +292,7 @@ Token* create_token(AeTokenType type, const char* value, int line, int column) {
     if (value) {
         token->value = malloc(strlen(value) + 1);
         strcpy(token->value, value);
+        free((void*)value);  // Free the input buffer after copying
     } else {
         token->value = NULL;
     }
