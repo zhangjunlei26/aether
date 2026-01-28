@@ -12,10 +12,105 @@ cd "$(dirname "$0")"
 # Add common tool paths
 export PATH="$HOME/.cargo/bin:$PATH"
 
+# Auto-detect Java 17+ for Scala (portable across macOS/Linux)
+detect_java() {
+    # Check if JAVA_HOME is already set and valid
+    if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+        local version=$("$JAVA_HOME/bin/java" -version 2>&1 | awk -F '"' '/version/ {print $2}' | cut -d. -f1)
+        if [ "$version" -ge 17 ] 2>/dev/null; then
+            export PATH="$JAVA_HOME/bin:$PATH"
+            return 0
+        fi
+    fi
+
+    # Try to find Java 17+ in common locations
+    for java_path in \
+        "/opt/homebrew/opt/openjdk@17" \
+        "/opt/homebrew/opt/openjdk@21" \
+        "/opt/homebrew/opt/openjdk" \
+        "/usr/lib/jvm/java-17-openjdk" \
+        "/usr/lib/jvm/java-21-openjdk" \
+        "/usr/lib/jvm/java-17" \
+        "/usr/lib/jvm/java-21" \
+        "/usr/lib/jvm/default-java" \
+        "/Library/Java/JavaVirtualMachines/openjdk-17.jdk/Contents/Home" \
+        "/Library/Java/JavaVirtualMachines/openjdk-21.jdk/Contents/Home"; do
+
+        if [ -d "$java_path" ] && [ -x "$java_path/bin/java" ]; then
+            local version=$("$java_path/bin/java" -version 2>&1 | awk -F '"' '/version/ {print $2}' | cut -d. -f1)
+            if [ "$version" -ge 17 ] 2>/dev/null; then
+                export JAVA_HOME="$java_path"
+                export PATH="$JAVA_HOME/bin:$PATH"
+                return 0
+            fi
+        fi
+    done
+
+    # Last resort: check if system java is 17+
+    if command -v java >/dev/null 2>&1; then
+        local version=$(java -version 2>&1 | awk -F '"' '/version/ {print $2}' | cut -d. -f1)
+        if [ "$version" -ge 17 ] 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+if ! detect_java; then
+    echo "Warning: Java 17+ not found. Scala benchmark will be skipped."
+    echo "Install Java 17+ for full benchmark suite."
+fi
+
+# Load benchmark configuration from JSON
+CONFIG_FILE="benchmark_config.json"
+if [ -f "$CONFIG_FILE" ]; then
+    # Parse JSON using python (available on macOS/Linux)
+    BENCHMARK_MESSAGES=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['messages'])" 2>/dev/null || echo "10000000")
+    BENCHMARK_TIMEOUT=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['timeout_seconds'])" 2>/dev/null || echo "60")
+else
+    BENCHMARK_MESSAGES=10000000
+    BENCHMARK_TIMEOUT=60
+fi
+
+# Apply configuration to all source files dynamically
+apply_config() {
+    local file=$1
+    local pattern=$2
+    local replacement=$3
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/$pattern/$replacement/g" "$file"
+    else
+        sed -i "s/$pattern/$replacement/g" "$file"
+    fi
+}
+
 echo "============================================"
 echo "  Running Cross-Language Benchmarks"
+echo "  Messages: $BENCHMARK_MESSAGES"
 echo "============================================"
 echo ""
+
+# Update all language implementations with current config
+if [ "$BENCHMARK_MESSAGES" != "10000000" ]; then
+    echo "Applying custom message count: $BENCHMARK_MESSAGES"
+    apply_config "aether/ping_pong.ae" "total_messages = [0-9]*" "total_messages = $BENCHMARK_MESSAGES"
+    apply_config "c/ping_pong.c" "#define MESSAGES [0-9]*" "#define MESSAGES $BENCHMARK_MESSAGES"
+    apply_config "cpp/ping_pong.cpp" "constexpr size_t MESSAGES = [0-9]*" "constexpr size_t MESSAGES = $BENCHMARK_MESSAGES"
+    apply_config "go/ping_pong.go" "const messages = [0-9]*" "const messages = $BENCHMARK_MESSAGES"
+    apply_config "rust/src/main.rs" "const MESSAGES: usize = [0-9_]*" "const MESSAGES: usize = $BENCHMARK_MESSAGES"
+    apply_config "java/PingPong.java" "private static final int MESSAGES = [0-9]*" "private static final int MESSAGES = $BENCHMARK_MESSAGES"
+    apply_config "zig/ping_pong.zig" "const messages = [0-9]*" "const messages = $BENCHMARK_MESSAGES"
+    apply_config "elixir/ping_pong.exs" "@messages [0-9]*" "@messages $BENCHMARK_MESSAGES"
+    apply_config "erlang/ping_pong.erl" "-define(MESSAGES, [0-9]*)." "-define(MESSAGES, $BENCHMARK_MESSAGES)."
+    apply_config "pony/ping_pong.pony" "if _count < [0-9_]* then" "if _count < $BENCHMARK_MESSAGES then"
+    apply_config "pony/ping_pong.pony" "let ns_per_msg = elapsed_ns.f64.. / [0-9_]*.0" "let ns_per_msg = elapsed_ns.f64() / ${BENCHMARK_MESSAGES}.0"
+    apply_config "scala/ping_pong.scala" "val maxCount = [0-9]*L" "val maxCount = ${BENCHMARK_MESSAGES}L"
+    apply_config "scala/ping_pong.scala" 'println."Messages: [0-9]*' "println(\"Messages: $BENCHMARK_MESSAGES"
+    apply_config "scala/ping_pong.scala" "val cyclesPerMsg = .elapsed.toDouble / [0-9_]*.0. . 3.0" "val cyclesPerMsg = (elapsed.toDouble / ${BENCHMARK_MESSAGES}.0) * 3.0"
+    apply_config "scala/ping_pong.scala" "val throughput = [0-9_]*.0 / elapsedSec / 1e6" "val throughput = ${BENCHMARK_MESSAGES}.0 / elapsedSec / 1e6"
+    echo ""
+fi
 
 RESULTS_FILE="visualize/results_ping_pong.json"
 FIRST_RESULT=true
@@ -169,7 +264,7 @@ if command -v cargo &> /dev/null; then
       "msg_per_sec": $RUST_MSG_PER_SEC,
       "cycles_per_msg": $RUST_CYCLES,
       "memory_mb": $RUST_MEMORY_MB,
-      "notes": "Tokio mpsc channels"
+      "notes": "std::sync::mpsc::sync_channel"
     }
 EOF
         echo "✓ Rust: ${RUST_THROUGHPUT}M msg/sec (${RUST_MEMORY_MB}MB)"
@@ -309,8 +404,8 @@ fi
 # 9. Pony (if available)
 if command -v ponyc &> /dev/null; then
     echo "Building Pony ping-pong..."
-    if [ -f "pony/ping_pong.pony" ] && (cd pony && ponyc ping_pong.pony 2>&1); then
-        PONY_OUTPUT=$(cd pony && ./ping_pong 2>&1 || true)
+    if [ -f "pony/ping_pong.pony" ] && (cd pony && ponyc . &>/dev/null); then
+        PONY_OUTPUT=$(cd pony && ./pony 2>&1 || true)
         PONY_CYCLES=$(echo "$PONY_OUTPUT" | grep "Cycles/msg" | awk '{print $2}')
         PONY_THROUGHPUT=$(echo "$PONY_OUTPUT" | grep "Throughput" | awk '{print $2}')
         
@@ -327,7 +422,7 @@ if command -v ponyc &> /dev/null; then
       "notes": "Actor model language"
     }
 EOF
-            echo "✓ Pony: ${PONY_THROUGHPUT}M msg/sec"
+            echo "✓ Pony: $(printf "%.2f" $PONY_THROUGHPUT)M msg/sec"
         else
             echo "✗ Pony: Benchmark failed (no valid output)"
         fi
@@ -339,10 +434,10 @@ else
 fi
 
 # 10. Scala (if available)
-if command -v scala &> /dev/null && command -v scalac &> /dev/null; then
+if command -v sbt &> /dev/null; then
     echo "Building Scala ping-pong..."
-    if [ -f "scala/ping_pong.scala" ] && (cd scala && scalac ping_pong.scala 2>&1); then
-        SCALA_OUTPUT=$(cd scala && scala PingPong 2>&1 || true)
+    if [ -f "scala/ping_pong.scala" ] && (cd scala && sbt compile &>/dev/null && sbt "runMain PingPongBenchmark" 2>&1 > /tmp/scala_output.txt); then
+        SCALA_OUTPUT=$(cat /tmp/scala_output.txt 2>&1 || true)
         SCALA_CYCLES=$(echo "$SCALA_OUTPUT" | grep "Cycles/msg" | awk '{print $2}')
         SCALA_THROUGHPUT=$(echo "$SCALA_OUTPUT" | grep "Throughput" | awk '{print $2}')
         
@@ -356,10 +451,10 @@ if command -v scala &> /dev/null && command -v scalac &> /dev/null; then
       "runtime": "JVM (Scala)",
       "msg_per_sec": $SCALA_MSG_PER_SEC,
       "cycles_per_msg": ${SCALA_CYCLES:-0},
-      "notes": "Scala futures"
+      "notes": "Akka actors"
     }
 EOF
-            echo "✓ Scala: ${SCALA_THROUGHPUT}M msg/sec"
+            echo "✓ Scala: $(printf "%.2f" $SCALA_THROUGHPUT)M msg/sec"
         else
             echo "✗ Scala: Benchmark failed (no valid output)"
         fi

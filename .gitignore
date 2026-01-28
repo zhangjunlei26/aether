@@ -23,6 +23,7 @@ package-lock.json
 benchmarks/cross-language/*/ping_pong
 benchmarks/cross-language/*/ping_pong.exe
 benchmarks/cross-language/*/*.beam
+benchmarks/cross-language/*/*.class
 benchmarks/cross-language/*/erl_crash.dump
 benchmarks/cross-language/zig/.zig-cache/
 benchmarks/cross-language/zig/zig-out/
@@ -30,6 +31,18 @@ benchmarks/cross-language/visualize/server
 benchmarks/cross-language/visualize/server.exe
 benchmarks/cross-language/visualize/results_*.json
 zig_minimal
+
+# Rust build artifacts
+benchmarks/cross-language/rust/target/
+benchmarks/cross-language/rust/Cargo.lock
+
+# Scala build artifacts
+benchmarks/cross-language/scala/target/
+benchmarks/cross-language/scala/project/target/
+benchmarks/cross-language/scala/project/project/
+
+# Pony build artifacts (compiled binary)
+benchmarks/cross-language/pony/pony
 
 # Editor
 .vscode/

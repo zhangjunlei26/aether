@@ -60,25 +60,41 @@ void ping_thread() {
         chan_a.cv.notify_one();
 
         // Wait for B
-        std::unique_lock<std::mutex> lock(chan_b.mtx);
-        chan_b.cv.wait(lock, []{ return chan_b.ready; });
-        chan_b.ready = false;
+        int received_value;
+        {
+            std::unique_lock<std::mutex> lock(chan_b.mtx);
+            chan_b.cv.wait(lock, []{ return chan_b.ready; });
+            received_value = chan_b.value;
+            chan_b.ready = false;
+        }
+
+        // VALIDATE: Must receive echo of what we sent
+        if (received_value != i) {
+            std::cerr << "ERROR: Ping sent " << i << " but got back " << received_value << std::endl;
+        }
     }
 }
 
 void pong_thread() {
     for (int i = 0; i < MESSAGES; i++) {
         // Wait for A
+        int received_value;
         {
             std::unique_lock<std::mutex> lock(chan_a.mtx);
             chan_a.cv.wait(lock, []{ return chan_a.ready; });
+            received_value = chan_a.value;
             chan_a.ready = false;
         }
 
-        // Send to B
+        // VALIDATE: Must receive expected sequence
+        if (received_value != i) {
+            std::cerr << "ERROR: Pong expected " << i << " but got " << received_value << std::endl;
+        }
+
+        // Send to B - echo back what we received
         {
             std::unique_lock<std::mutex> lock(chan_b.mtx);
-            chan_b.value = i;
+            chan_b.value = received_value;
             chan_b.ready = true;
         }
         chan_b.cv.notify_one();

@@ -31,26 +31,38 @@ fn pingThread(_: *anyopaque) u8 {
         while (!chan_b.ready) {
             chan_b.cond.wait(&chan_b.mutex);
         }
+        const received = chan_b.value;
         chan_b.ready = false;
         chan_b.mutex.unlock();
+
+        // Validate received value matches what was sent
+        if (received != i) {
+            std.debug.print("Ping validation error: expected {}, got {}\n", .{i, received});
+        }
     }
     return 0;
 }
 
 fn pongThread(_: *anyopaque) u8 {
-    var i: i32 = 0;
-    while (i < MESSAGES) : (i += 1) {
+    var expected: i32 = 0;
+    while (expected < MESSAGES) : (expected += 1) {
         // Wait for A
         chan_a.mutex.lock();
         while (!chan_a.ready) {
             chan_a.cond.wait(&chan_a.mutex);
         }
+        const received = chan_a.value;
         chan_a.ready = false;
         chan_a.mutex.unlock();
 
-        // Send to B
+        // Validate received value matches expected sequence
+        if (received != expected) {
+            std.debug.print("Pong validation error: expected {}, got {}\n", .{expected, received});
+        }
+
+        // Send back the EXACT value received to B
         chan_b.mutex.lock();
-        chan_b.value = i;
+        chan_b.value = received;
         chan_b.ready = true;
         chan_b.cond.signal();
         chan_b.mutex.unlock();

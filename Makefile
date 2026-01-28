@@ -628,8 +628,4 @@ valgrind-check: clean
 
 # Cross-language benchmark UI
 benchmark-ui:
-	@echo ""
-	@echo "=========================================="
-	@echo "  Launching Benchmark UI"
-	@echo "=========================================="
 	@cd benchmarks/cross-language && $(MAKE) benchmark-ui

@@ -308,8 +308,47 @@ void scheduler_stop() {
 }
 
 void scheduler_wait() {
+    // First, drain all queues until empty and no actors are active
+    int max_wait_iterations = 10000;  // Prevent infinite loop
+    int iteration = 0;
+
+    while (iteration < max_wait_iterations) {
+        int all_idle = 1;
+
+        // Check all cores for pending work
+        for (int i = 0; i < num_cores; i++) {
+            Scheduler* core = &schedulers[i];
+
+            // Check if incoming queue has messages
+            if (queue_size(&core->incoming_queue) > 0) {
+                all_idle = 0;
+                break;
+            }
+
+            // Check if any actors are active (have pending messages)
+            for (int j = 0; j < core->actor_count; j++) {
+                ActorBase* actor = core->actors[j];
+                if (actor && actor->active && actor->mailbox.count > 0) {
+                    all_idle = 0;
+                    break;
+                }
+            }
+
+            if (!all_idle) break;
+        }
+
+        if (all_idle) {
+            // All queues drained and no active actors - we're done
+            break;
+        }
+
+        // Yield to let scheduler threads process
+        sched_yield();
+        iteration++;
+    }
+
+    // Now stop and join threads
     for (int i = 0; i < num_cores; i++) {
-        // Silently ignore join errors on Windows (threads may already be cleaned up)
         int result = pthread_join(schedulers[i].thread, NULL);
         (void)result;  // Suppress unused warning
     }

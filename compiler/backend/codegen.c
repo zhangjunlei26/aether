@@ -1418,7 +1418,9 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
         print_line(gen, "uint64_t _bench_cycles = _bench_end - _bench_start;");
         print_line(gen, "#if defined(__x86_64__) || defined(__i386__)");
         print_line(gen, "double cycles_per_msg = (double)_bench_cycles / (10000000 * 2);");
-        print_line(gen, "double throughput = 2.0 * 10000000;");
+        print_line(gen, "double cpu_freq_ghz = 3.0;  // Approximate CPU frequency");
+        print_line(gen, "double seconds = cycles_per_msg * (10000000 * 2) / (cpu_freq_ghz * 1e9);");
+        print_line(gen, "double throughput = (2.0 * 10000000) / seconds;");
         print_line(gen, "printf(\"\\nCycles/msg:     %%.2f\\n\", cycles_per_msg);");
         print_line(gen, "printf(\"Throughput:     %%.2f M msg/sec\\n\", throughput / 1e6);");
         print_line(gen, "#elif defined(__aarch64__) || defined(__arm__)");

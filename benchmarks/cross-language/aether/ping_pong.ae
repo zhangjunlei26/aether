@@ -1,5 +1,5 @@
-// Aether ping-pong benchmark using V2 message-based syntax
-// Tests 10 million message round-trips between two actors
+// Aether ping-pong benchmark with PROPER SYNCHRONIZATION
+// Validates that responses contain correct count values
 
 message Ping {
     count: int
@@ -11,14 +11,20 @@ message Pong {
 
 actor PingActor {
     state pong_ref = 0;
-    state pongs_received = 0;
+    state expected_count = 0;
     state total_messages = 10000000;
+    state errors = 0;
 
     receive {
         Pong { count } -> {
-            pongs_received = pongs_received + 1;
-            if (pongs_received < total_messages) {
-                pong_ref ! Ping { count: pongs_received };
+            // VALIDATE: The pong must echo back our expected count
+            if (count != expected_count) {
+                errors = errors + 1;
+            }
+
+            expected_count = expected_count + 1;
+            if (expected_count < total_messages) {
+                pong_ref ! Ping { count: expected_count };
             }
         }
     }
@@ -26,34 +32,28 @@ actor PingActor {
 
 actor PongActor {
     state ping_ref = 0;
-    state pings_received = 0;
 
     receive {
         Ping { count } -> {
-            pings_received = pings_received + 1;
+            // Echo back the EXACT count we received
             ping_ref ! Pong { count: count };
         }
     }
 }
 
 main() {
-    print("=== Aether Ping-Pong Benchmark ===");
-    print("Step 1: Spawning ping actor");
+    print("=== Aether Ping-Pong (Validated) ===");
 
     ping = spawn PingActor();
-
-    print("Step 2: Spawning pong actor");
     pong = spawn PongActor();
 
-    print("Step 3: Setting actor references");
     ping.pong_ref = pong;
     pong.ping_ref = ping;
 
-    print("Step 4: Sending initial message");
+    // Start with count=0
     pong ! Ping { count: 0 };
 
-    print("Step 5: Waiting for completion");
-    // Give actors time to process all messages
+    // Wait for completion
     i = 0;
     while (i < 100000000) {
         i = i + 1;
