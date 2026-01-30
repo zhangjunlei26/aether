@@ -118,7 +118,7 @@ gcc -o build\bench_actor_pool.exe tests\runtime\bench_actor_pool.c \
 
 ### Message Coalescing
 ```c
-#define COALESCE_THRESHOLD 16  // In multicore_scheduler.h
+#define COALESCE_THRESHOLD 512  // In multicore_scheduler.h
 // Batch size for message processing
 ```
 
@@ -148,14 +148,14 @@ gcc -o build\bench_actor_pool.exe tests\runtime\bench_actor_pool.c \
 - Monitor active actor count
 
 ### Low Throughput
-- Ensure message coalescing is active (check COALESCE_THRESHOLD)
+- Ensure message coalescing is active (COALESCE_THRESHOLD: 512)
 - Use batch operations for actor allocation
 - Verify zero-copy for large messages (>256 bytes)
 - Check core count (scheduler_init parameter)
 
 ### High Latency
-- Reduce COALESCE_THRESHOLD if latency-sensitive
-- Check progressive backoff settings
+- Consider tuning COALESCE_THRESHOLD for latency-sensitive workloads
+- Check progressive backoff settings (idle_count thresholds)
 - Verify no blocking operations in actor step functions
 
 ### Crashes/Hangs

@@ -28,7 +28,7 @@ actor counter {
 }
 
 main() {
-    let c = spawn_counter();
+    c = spawn_counter();
     send_counter(c, 1, 0);
 }
 ```
@@ -43,8 +43,8 @@ main() {
 ### Key Concepts
 - **State**: Each actor has private state that only it can access
 - **Messages**: Actors communicate only through messages (no shared memory)
-- **Lightweight**: Actors are only 128 bytes (vs 1-8MB for OS threads)
-- **Fast**: 125 million messages per second per core
+- **Lightweight**: Actors have minimal memory overhead compared to OS threads
+- **Fast**: High-throughput message passing optimized for modern multi-core systems
 
 ---
 
@@ -57,16 +57,16 @@ Declare arrays with a fixed size:
 ```aether
 main() {
     // Fixed-size array
-    let nums: int[5];
-    
+    int[5] nums;
+
     // Array literal
-    let values = [10, 20, 30, 40, 50];
-    
+    values = [10, 20, 30, 40, 50];
+
     // Indexing
     nums[0] = 100;
     nums[1] = 200;
-    let x = values[0];  // x = 10
-    
+    x = values[0];  // x = 10
+
     print(x);
 }
 ```
@@ -78,13 +78,13 @@ Use `make()` for runtime-sized arrays (Go-style):
 ```aether
 main() {
     // Allocate 1000 integers
-    let buffer = make([]int, 1000);
-    
+    buffer = make([]int, 1000);
+
     // Use like any array
     buffer[0] = 42;
     buffer[999] = 100;
-    
-    let val = buffer[0];
+
+    val = buffer[0];
     print(val);  // Prints 42
 }
 ```
@@ -94,8 +94,8 @@ main() {
 ```aether
 main() {
     // 3x3 matrix
-    let matrix: int[3][3];
-    
+    int[3][3] matrix;
+
     matrix[0][0] = 1;
     matrix[1][1] = 5;
     matrix[2][2] = 9;
@@ -120,9 +120,9 @@ actor buffer {
 }
 
 main() {
-    let buf = spawn_buffer();
-    
-    for (let i = 0; i < 10; i++) {
+    buf = spawn_buffer();
+
+    for (i = 0; i < 10; i++) {
         send_buffer(buf, 1, i * 10);
     }
 }
@@ -151,10 +151,10 @@ actor worker {
 
 main() {
     // Spawn multiple workers
-    let w1 = spawn_worker();
-    let w2 = spawn_worker();
-    let w3 = spawn_worker();
-    
+    w1 = spawn_worker();
+    w2 = spawn_worker();
+    w3 = spawn_worker();
+
     // Distribute work
     send_worker(w1, 1, 0);
     send_worker(w2, 1, 0);
@@ -202,20 +202,20 @@ actor processor {
 
 ```aether
 main() {
-    let sum = 0;
-    
+    sum = 0;
+
     // For loop
-    for (let i = 0; i < 100; i++) {
+    for (i = 0; i < 100; i++) {
         sum = sum + i;
     }
-    
+
     // While loop
-    let j = 0;
+    j = 0;
     while (j < 10) {
         print(j);
         j++;
     }
-    
+
     print(sum);
 }
 ```
@@ -231,23 +231,21 @@ Aether automatically distributes actors across CPU cores using round-robin assig
 ```aether
 main() {
     // These actors will be distributed across cores
-    let actors = make([]actor worker, 100);
-    
-    for (let i = 0; i < 100; i++) {
+    actors = make([]actor worker, 100);
+
+    for (i = 0; i < 100; i++) {
         actors[i] = spawn_worker();
     }
-    
+
     // Send work to all actors
-    for (let i = 0; i < 100; i++) {
+    for (i = 0; i < 100; i++) {
         send_worker(actors[i], 1, i);
     }
 }
 ```
 
 **Performance**:
-- **Ping-pong** (2 actors): 226M msg/sec
-- **Ring** (100 actors): 418M msg/sec
-- **Skynet** (1111 actors): 3.1B msg/sec
+Performance varies based on workload patterns and hardware. The runtime includes optimizations for message passing, cache locality, and multi-core scalability.
 
 See [benchmarks/cross-language](../benchmarks/cross-language/) for methodology and comparisons.
 
@@ -296,9 +294,9 @@ actor coordinator {
     
     receive(msg) {
         if (msg.type == 1) {  // Distribute work
-            let w = workers[next_worker];
+            w = workers[next_worker];
             send_worker(w, 1, msg.payload);
-            
+
             next_worker++;
             if (next_worker >= 4) {
                 next_worker = 0;
@@ -309,21 +307,21 @@ actor coordinator {
 
 main() {
     // Create coordinator
-    let coord = spawn_coordinator();
-    
+    coord = spawn_coordinator();
+
     // Create workers (will be distributed across cores)
-    let w1 = spawn_worker();
-    let w2 = spawn_worker();
-    let w3 = spawn_worker();
-    let w4 = spawn_worker();
-    
+    w1 = spawn_worker();
+    w2 = spawn_worker();
+    w3 = spawn_worker();
+    w4 = spawn_worker();
+
     // TODO: In future version, we can initialize coordinator's workers array
-    
+
     // Send 100 tasks through coordinator
-    for (let i = 0; i < 100; i++) {
+    for (i = 0; i < 100; i++) {
         send_coordinator(coord, 1, i);
     }
-    
+
     // Check worker status
     send_worker(w1, 2, 0);
     send_worker(w2, 2, 0);
@@ -382,7 +380,7 @@ You've learned:
 - IMPLEMENTED Complete applications
 
 **Aether gives you**:
-- **Performance**: 226M msg/sec (ping-pong), 418M msg/sec (ring), 3.1B msg/sec (skynet)
+- **Performance**: High-throughput message passing with cache-optimized data structures
 - **Lightweight**: Actor pooling and arena allocation reduce overhead
 - **Simple**: No locks, no shared memory, just messages
 - **Fast**: Compiles to C, no VM overhead

@@ -88,9 +88,9 @@ actor Ping {
 }
 
 main {
-    let pong = spawn Pong
-    let ping = spawn Ping
-    
+    pong = spawn Pong
+    ping = spawn Ping
+
     send ping, "pong" -> pong
     send ping, "start"
 }
@@ -106,10 +106,10 @@ import std.log as Log
 
 main {
     Log.info("Starting application")
-    
-    let map = HashMap.new()
+
+    map = HashMap.new()
     map.insert("key", "value")
-    
+
     print(map.get("key"))
 }
 ```

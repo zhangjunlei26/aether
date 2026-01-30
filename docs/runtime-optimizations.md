@@ -37,7 +37,7 @@ static _Atomic uint64_t g_pool_misses = 0;
 **Implementation:** `runtime/actors/aether_adaptive_batch.h`
 
 **Technique:**
-Configurable maximum batch size to amortize message processing overhead under high load while maintaining responsiveness under low load.
+Configurable batch size range to amortize message processing overhead under high load while maintaining responsiveness under low load.
 
 ```c
 #define MIN_BATCH_SIZE 64
@@ -47,7 +47,8 @@ Configurable maximum batch size to amortize message processing overhead under hi
 **Rationale:**
 - Larger batches reduce per-message overhead when queues are full
 - Adaptive algorithm scales down for low-load scenarios
-- Testing showed diminishing returns beyond certain thresholds due to cache effects
+- Batch size adjusts dynamically based on consecutive full or partial batches
+- Testing showed diminishing returns beyond 1024 due to cache effects
 
 ### Message Coalescing
 
@@ -57,7 +58,7 @@ Configurable maximum batch size to amortize message processing overhead under hi
 Drains multiple messages from the lock-free queue in a single atomic operation batch, reducing per-message overhead by amortizing atomic operations across multiple messages.
 
 ```c
-#define COALESCE_THRESHOLD 16
+#define COALESCE_THRESHOLD 512
 
 // Drain messages into local buffer
 while (count < COALESCE_THRESHOLD && queue_dequeue(...)) {
@@ -131,37 +132,45 @@ Three-phase idle strategy based on iteration count:
 3. **OS yield:** Minimal power, cooperative scheduling
 
 ```c
-if (idle_count < 100) {
-    // Tight spin
-} else if (idle_count < 500) {
+if (idle_count < 10000) {
+    // Tight spin with pause
+    #if defined(__x86_64__) || defined(_M_X64)
     __asm__ __volatile__("pause" ::: "memory");
+    #endif
 } else {
+    // Brief yield only after extended idle
     sched_yield();
-    idle_count = 200;
+    idle_count = 5000;
 }
 ```
 
 **Rationale:**
-- Most work arrives quickly during active periods
-- PAUSE reduces contention without full context switch overhead
-- OS yield prevents CPU saturation during idle periods
+- Aggressive spinning for high-throughput workloads
+- PAUSE instruction reduces power consumption during spin-wait
+- Extended idle threshold before yielding maintains responsiveness
+- Partial reset keeps system responsive to new work
 
 ### Cache Line Alignment
 
 **Implementation:** Multiple components
 
 **Technique:**
-Align frequently-accessed shared data structures to cache line boundaries.
+Align frequently-accessed shared data structures to cache line boundaries and optimize buffer sizes for cache locality.
 
 ```c
 typedef struct __attribute__((aligned(64))) {
     atomic_flag lock;
     char padding[63];
 } OptimizedSpinlock;
+
+// Mailbox optimized for L1 cache fit
+#define MAILBOX_SIZE 256  // 256 slots × 48 bytes = 12KB
 ```
 
 **Rationale:**
-Prevents false sharing when multiple threads access different variables. Cache line bouncing between cores degrades performance significantly.
+- Prevents false sharing when multiple threads access different variables
+- Cache line bouncing between cores degrades performance
+- Mailbox size chosen to fit in L1 cache for better access latency
 
 ### Power-of-2 Buffer Sizing
 
@@ -171,14 +180,42 @@ Prevents false sharing when multiple threads access different variables. Cache l
 Use power-of-2 sizes with bitwise AND masking instead of modulo division.
 
 ```c
-#define QUEUE_SIZE 4096
+#define QUEUE_SIZE 16384
 #define QUEUE_MASK (QUEUE_SIZE - 1)
 
 int index = (head + 1) & QUEUE_MASK;
+
+// Also used in pool index calculations
+int idx = atomic_fetch_add_explicit(&pool->next_index, 1, memory_order_relaxed)
+          & (MSG_PAYLOAD_POOL_SIZE - 1);
 ```
 
 **Rationale:**
 Bitwise AND operations are significantly faster than modulo division. Explicit masking ensures consistent optimization across compilers.
+
+### Relaxed Atomic Memory Ordering
+
+**Implementation:** `runtime/actors/aether_send_message.c`
+
+**Technique:**
+Use `memory_order_relaxed` for atomic operations that don't require synchronization with other operations, particularly for statistics counters.
+
+```c
+// Statistics counters (no synchronization needed)
+atomic_fetch_add_explicit(&g_pool_hits, 1, memory_order_relaxed);
+atomic_fetch_add_explicit(&g_pool_misses, 1, memory_order_relaxed);
+
+// Pool initialization and state
+atomic_store_explicit(&pool->next_index, 0, memory_order_relaxed);
+atomic_store_explicit(&slot->in_use, 0, memory_order_relaxed);
+```
+
+**Rationale:**
+- Default `memory_order_seq_cst` provides full sequential consistency but incurs memory barrier overhead
+- Statistics counters don't need synchronization with message passing operations
+- Pool state within thread-local storage doesn't require cross-thread ordering
+- Relaxed ordering eliminates expensive memory barriers on hot paths
+- Still provides atomicity and eventual consistency for monitoring purposes
 
 ## Benchmarking Methodology
 
@@ -217,6 +254,83 @@ Each optimization is measured against a naive implementation:
 ### SIMD Message Processing
 
 **Reason:** Message processing is memory-bound rather than compute-bound. Vectorization overhead exceeded benefits.
+
+## Actor-Level Optimizations
+
+These optimizations target actor-specific operations:
+
+### Actor Pooling
+**Implementation:** `runtime/actors/aether_actor_pool.h`
+
+Reuses actor instances instead of repeated malloc/free operations. Maintains pool of pre-allocated actors per type with lock-free acquisition.
+
+### Direct Actor Bypass
+**Implementation:** `runtime/actors/aether_direct_send.h`
+
+Skips mailbox queue overhead for same-core actors by directly invoking message handlers when appropriate.
+
+### Message Deduplication
+**Implementation:** `runtime/actors/aether_message_dedup.h`
+
+Detects and skips redundant messages using a rolling window with fast hash-based fingerprinting.
+
+### Compile-Time Message Specialization
+**Implementation:** `runtime/actors/aether_message_specialize.h`
+
+Generates optimized send/receive functions for specific message types, eliminating generic message construction overhead.
+
+## Benchmarking
+
+### Core Scheduler Benchmarks
+**Location:** `tests/runtime/bench_scheduler.c`
+
+Comprehensive benchmark suite measuring:
+- Single/multi-core throughput
+- Cross-core messaging overhead
+- Latency characteristics
+- Contention handling
+- Burst pattern recovery
+- Saturation behavior
+- Scalability analysis
+
+Run benchmarks:
+```bash
+cd build
+./bench_scheduler.exe
+```
+
+### Actor-Level Benchmarks
+**Location:** `benchmarks/optimizations/`
+
+- `bench_actor_baseline.c`: Unoptimized actor operations
+- `bench_actor_optimized.c`: All optimizations applied
+- `bench_message_coalescing.c`: Message batching analysis
+- `bench_inline_asm_atomics.c`: Spinlock comparison
+- `bench_zerocopy.c`: Large message optimization
+
+Build and run:
+```bash
+cd benchmarks/optimizations
+gcc -O3 -march=native -o bench_name bench_name.c
+./bench_name
+```
+
+### Testing
+**File:** [tests/runtime/test_actor_optimizations.c](../tests/runtime/test_actor_optimizations.c)
+
+Tests each optimization individually and in combination:
+- Actor pool acquisition/release
+- Direct send same/different core detection
+- Message deduplication
+- Specialized sends
+- Adaptive batching
+
+Running tests:
+```bash
+cd tests/runtime
+gcc -O2 -I../.. test_actor_optimizations.c -o test_optimizations
+./test_optimizations
+```
 
 ## Performance Characteristics
 

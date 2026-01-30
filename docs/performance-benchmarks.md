@@ -16,25 +16,7 @@ Two actors exchange messages in sequence. Tests basic message passing latency an
 
 **Location:** `benchmarks/cross-language/aether/ping_pong.ae`
 
-### Ring
-Multiple actors arranged in a ring topology pass messages sequentially. Tests routing efficiency and multi-actor coordination.
-
-**Workload:**
-- Configurable number of actors in ring topology
-- Messages circulate through the ring
-- Measures: throughput under coordination overhead
-
-**Location:** `benchmarks/cross-language/aether/ring.ae`
-
-### Skynet
-Hierarchical actor tree with recursive spawning. Tests actor creation speed and tree-based message distribution.
-
-**Workload:**
-- Hierarchical tree of actors
-- Each node spawns multiple children
-- Measures: actor creation overhead, tree messaging patterns
-
-**Location:** `benchmarks/cross-language/aether/skynet.ae`
+**Note:** Additional benchmark patterns (ring, skynet) are planned for future implementation.
 
 ## Cross-Language Benchmarks
 
@@ -104,6 +86,8 @@ Dynamic batch size adjustment based on queue utilization.
 
 **Implementation:** `runtime/actors/aether_adaptive_batch.h`
 
+**Configuration:** MIN_BATCH_SIZE: 64, MAX_BATCH_SIZE: 1024
+
 **Characteristics:**
 - Increases batch size under load
 - Decreases during idle periods
@@ -147,19 +131,14 @@ cd benchmarks/cross-language
 ./run_benchmarks.sh
 ```
 
-### Statistical Analysis
+### Custom Runs
+
+Benchmarks can be compiled and run directly:
 
 ```bash
-cd benchmarks/cross-language
-bash run_statistical_bench.sh
-```
-
-### Web UI
-
-```bash
-cd benchmarks/cross-language
-make benchmark-ui
-# Open http://localhost:8080
+cd benchmarks/cross-language/aether
+make
+./ping_pong
 ```
 
 ## Interpreting Results

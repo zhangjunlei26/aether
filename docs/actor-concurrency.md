@@ -24,13 +24,13 @@ The actor runtime includes several performance optimizations that are applied au
 **Message Delivery:**
 - Local messages: Direct mailbox writes (no queue overhead)
 - Remote messages: Lock-free queue with adaptive backpressure
-- Adaptive batch processing: 32-256 messages per core cycle
+- Adaptive batch processing: 64-1024 messages per core cycle
 
 ### Implemented Optimizations
 
 **Message Coalescing:**
 - Batches multiple messages to reduce atomic operations
-- Processes up to 256 messages per scheduler cycle
+- Processes up to 512 messages per scheduler cycle
 - Reduces per-message overhead
 
 **Actor Pooling:**
@@ -80,7 +80,7 @@ typedef struct Counter {
 
 ### Mailbox
 
-Each actor has a ring buffer mailbox (16 messages by default):
+Each actor has a ring buffer mailbox (256 messages, optimized for L1 cache):
 
 ```c
 typedef struct {
@@ -243,4 +243,4 @@ free(c);  // Manual cleanup
 - No automatic garbage collection
 - No actor supervision trees (yet)
 - No pattern matching in receive blocks (yet)
-- Fixed mailbox size (16 messages)
+- Fixed mailbox size (256 messages)
