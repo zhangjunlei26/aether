@@ -227,9 +227,9 @@ spawn() → INITIALIZING → READY → RUNNING ⇄ WAITING → TERMINATED
    ```
    
    **Optimization:** Zero-copy transfer
-   - Ownership transfer instead of memcpy
-   - Significant improvement for large payloads
-   - Eliminates memory copying overhead
+   - Ownership transfer instead of memcpy for large payloads
+   - Reduces memory bandwidth consumption
+   - Eliminates copying overhead for large messages
 
 3. **Message Queue** (`runtime/lockfree_queue.h`)
    - Lock-free implementation (SPSC atomic ring buffer)
@@ -294,14 +294,10 @@ spawn() → INITIALIZING → READY → RUNNING ⇄ WAITING → TERMINATED
 - Minimizes cross-node memory latency
 
 **Message Batching**:
-- Adaptive batch size (32-256 messages per core cycle)
-- Increases under load, decreases when idle
-- Amortizes scheduling overhead
-
-**Performance**:
-- 4-core baseline: 83M msg/sec (without sender batching)
-- 4-core optimized: 173M msg/sec (with sender-side batching)
-- Batching speedup: 2.1x measured improvement
+- Adaptive batch size adjusts based on workload
+- Increases under sustained load to amortize overhead
+- Decreases during idle periods for lower latency
+- Maintains responsiveness while maximizing throughput
 
 **Key Files**:
 - `runtime/scheduler/multicore_scheduler.c` - Implementation

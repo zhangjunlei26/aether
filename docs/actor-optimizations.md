@@ -8,39 +8,36 @@ The actor runtime implements performance optimizations targeting message-passing
 
 ### Message Coalescing
 
-**Performance Impact:** 15x throughput improvement
-
 **Implementation:** `runtime/scheduler/multicore_scheduler.c`
 
-Drains multiple messages from the lock-free queue in a single batch, reducing atomic operations by 94%. Instead of performing atomic operations for each message, the scheduler drains up to 16 messages and processes them locally.
+Drains multiple messages from the lock-free queue in a single batch, reducing the number of atomic operations required. Instead of performing atomic operations for each message, the scheduler drains multiple messages and processes them locally.
 
-**Measurement:**
-- Baseline: 86.78 M msg/sec with 20M atomic operations
-- Optimized: 1,337.99 M msg/sec with 1.25M atomic operations
+**Rationale:**
+- Amortizes atomic operation overhead across batches
+- Reduces cache coherency traffic between cores
+- Maintains message ordering guarantees
 
 ### Optimized Spinlock
-
-**Performance Impact:** 3x improvement for contention scenarios
 
 **Implementation:** `runtime/scheduler/multicore_scheduler.h`
 
 Custom spinlock using atomic_flag with platform-specific CPU yield hints. The PAUSE instruction reduces power consumption and improves memory ordering efficiency on hyper-threaded cores.
 
-**Measurement:**
-- Baseline: 147ms for 4M lock/unlock operations
-- Optimized: 49ms for 4M lock/unlock operations
+**Rationale:**
+- PAUSE reduces memory bus contention during spin-wait
+- Signals CPU pipeline for improved SMT scheduling
+- Provides better power efficiency than tight spinning
 
 ### Lock-Free Message Queue
-
-**Performance Impact:** 1.8x improvement under concurrent load
 
 **Implementation:** `runtime/scheduler/lockfree_queue.h`
 
 Single-producer, single-consumer ring buffer using atomic head/tail pointers. Cache line padding prevents false sharing between producer and consumer cores.
 
-**Measurement:**
-- Simple mailbox: 1,535.8 M ops/sec
-- Lock-free mailbox: 2,763.9 M ops/sec
+**Rationale:**
+- Eliminates mutex overhead in message passing path
+- Cache line padding prevents false sharing
+- Power-of-2 sizing enables fast modulo operations
 
 ### Progressive Backoff Strategy
 
@@ -76,20 +73,24 @@ Generates optimized send/receive functions for specific message types, eliminati
 ### 5. Adaptive Batch Processing
 **File:** `runtime/actors/aether_adaptive_batch.h`
 
-Dynamically adjusts batch size (4-64 messages) based on queue utilization patterns.
+Dynamically adjusts batch size based on queue utilization patterns. The system adapts between small batches for low latency and larger batches for high throughput.
 
 ## Performance Characteristics
 
-Current scheduler metrics:
+### Scalability
 
-| Metric | Performance |
-|--------|-------------|
-| 4-core (baseline) | 83M msg/sec |
-| 4-core (with batching) | 173M msg/sec |
-| Batching speedup | 2.1x measured |
-| Message latency | Sub-millisecond |
+The scheduler exhibits near-linear scaling for independent actors due to:
+- Partitioned design minimizing cross-core coordination
+- Lock-free cross-core messaging
+- Cache-local actor processing
 
-The scheduler exhibits near-linear scaling for independent actors due to partitioned design and lock-free cross-core messaging.
+### Workload Patterns
+
+Performance varies by workload characteristics:
+- **Independent actors**: Near-linear scaling with core count
+- **High cross-core communication**: Reduced efficiency due to cache coherency overhead
+- **Burst patterns**: Adaptive batching maintains responsiveness
+- **Sustained load**: Coalescing optimizations reduce atomic operation overhead
 
 ## Benchmarking
 

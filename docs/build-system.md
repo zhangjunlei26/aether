@@ -55,13 +55,13 @@ gcc -O3 -march=native -fprofile-use
 ### Used By Major Projects
 
 **Browsers:**
-- Chrome: 10-15% faster JavaScript execution
-- Firefox: 10% page load improvement
+- Chrome: JavaScript engine optimization
+- Firefox: Page load optimization
 - Safari: WebKit uses PGO for hot paths
 
 **Compilers:**
-- LLVM/Clang: Self-hosts with PGO (15% faster compilation)
-- GCC: Uses PGO for bootstrap
+- LLVM/Clang: Self-hosts with PGO for compilation speed
+- GCC: Uses PGO for bootstrap builds
 - MSVC: Default for Windows builds
 
 **Databases:**

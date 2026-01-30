@@ -6,9 +6,50 @@ The Aether runtime implements several performance optimizations based on empiric
 
 ## Implemented Optimizations
 
-### Message Coalescing
+### Thread-Local Message Payload Pools
 
-**Performance Impact:** 15x throughput improvement for high message rates
+**Implementation:** `runtime/actors/aether_send_message.c`
+
+**Technique:**
+Per-thread pool of pre-allocated buffers to eliminate dynamic allocation overhead in the message-passing hot path. Global atomic counters track pool effectiveness across all scheduler threads.
+
+```c
+#define MSG_PAYLOAD_POOL_SIZE 256
+#define MSG_PAYLOAD_MAX_SIZE 256
+
+static _Thread_local struct {
+    uint8_t buffers[MSG_PAYLOAD_POOL_SIZE][MSG_PAYLOAD_MAX_SIZE];
+    uint8_t in_use[MSG_PAYLOAD_POOL_SIZE];
+} payload_pool;
+
+static _Atomic uint64_t g_pool_hits = 0;
+static _Atomic uint64_t g_pool_misses = 0;
+```
+
+**Rationale:**
+- Eliminates allocator overhead and memory fragmentation
+- Message size threshold chosen to cover majority of typical workloads
+- Thread-local design avoids synchronization overhead
+- Pool statistics enable runtime verification of effectiveness
+
+### Adaptive Batch Size Configuration
+
+**Implementation:** `runtime/actors/aether_adaptive_batch.h`
+
+**Technique:**
+Configurable maximum batch size to amortize message processing overhead under high load while maintaining responsiveness under low load.
+
+```c
+#define MIN_BATCH_SIZE 64
+#define MAX_BATCH_SIZE 1024
+```
+
+**Rationale:**
+- Larger batches reduce per-message overhead when queues are full
+- Adaptive algorithm scales down for low-load scenarios
+- Testing showed diminishing returns beyond certain thresholds due to cache effects
+
+### Message Coalescing
 
 **Implementation:** `runtime/scheduler/multicore_scheduler.c`
 
@@ -16,7 +57,7 @@ The Aether runtime implements several performance optimizations based on empiric
 Drains multiple messages from the lock-free queue in a single atomic operation batch, reducing per-message overhead by amortizing atomic operations across multiple messages.
 
 ```c
-#define COALESCE_THRESHOLD 16  // Drain 16 messages per batch
+#define COALESCE_THRESHOLD 16
 
 // Drain messages into local buffer
 while (count < COALESCE_THRESHOLD && queue_dequeue(...)) {
@@ -30,16 +71,9 @@ for (int i = 0; i < count; i++) {
 ```
 
 **Rationale:**
-Atomic queue operations (CAS, memory barriers) dominate cost at high message rates. Batching reduces atomic operations by 94% (1 batch operation vs 16 individual operations).
-
-**Measurement:**
-- Baseline: 86.78 M msg/sec (20M atomic operations)
-- Optimized: 1,337.99 M msg/sec (1.25M atomic operations)
-- Speedup: 15.42x
+Atomic queue operations (CAS, memory barriers) dominate cost at high message rates. Batching significantly reduces the number of atomic operations required.
 
 ### Optimized Spinlock with PAUSE Instruction
-
-**Performance Impact:** 3x improvement for lock contention scenarios
 
 **Implementation:** `runtime/scheduler/multicore_scheduler.h`
 
@@ -61,16 +95,9 @@ static inline void spinlock_lock(OptimizedSpinlock* lock) {
 **Rationale:**
 - PAUSE instruction reduces power consumption during spin-wait
 - Improves memory ordering efficiency on hyper-threaded cores
-- Signals CPU that thread is in a spin-loop (allows for SMT optimization)
-
-**Measurement:**
-- Baseline spinlock: 147ms for 4M lock/unlock operations
-- Optimized spinlock: 49ms for 4M lock/unlock operations
-- Speedup: 3.00x
+- Signals CPU that thread is in a spin-loop for SMT optimization
 
 ### Lock-Free Message Queue
-
-**Performance Impact:** 1.8x improvement under concurrent load
 
 **Implementation:** `runtime/scheduler/lockfree_queue.h`
 
@@ -88,27 +115,20 @@ typedef struct {
 ```
 
 **Rationale:**
-- No mutex overhead in message passing hot path
+- Eliminates mutex overhead in message passing hot path
 - Cache line padding prevents false sharing between producer and consumer
-- Power-of-2 masking for fast modulo operations
-
-**Measurement:**
-- Simple mailbox: 1,535.8 M ops/sec
-- Lock-free mailbox: 2,763.9 M ops/sec
-- Speedup: 1.80x
+- Power-of-2 masking enables fast modulo operations
 
 ### Progressive Backoff Strategy
-
-**Performance Impact:** Balances latency and power efficiency
 
 **Implementation:** `runtime/scheduler/multicore_scheduler.c`
 
 **Technique:**
 Three-phase idle strategy based on iteration count:
 
-1. **Tight spin (0-100 iterations):** Ultra-low latency, high power
-2. **PAUSE spin (100-500 iterations):** Reduced power, sub-microsecond response
-3. **OS yield (500+ iterations):** Minimal power, millisecond response
+1. **Tight spin:** Ultra-low latency, high power consumption
+2. **PAUSE spin:** Reduced power, fast response time
+3. **OS yield:** Minimal power, cooperative scheduling
 
 ```c
 if (idle_count < 100) {
@@ -117,23 +137,21 @@ if (idle_count < 100) {
     __asm__ __volatile__("pause" ::: "memory");
 } else {
     sched_yield();
-    idle_count = 200;  // Reset to phase 2
+    idle_count = 200;
 }
 ```
 
 **Rationale:**
-- Most work arrives within 100 iterations (sub-microsecond)
-- PAUSE reduces contention without full context switch
-- OS yield prevents CPU saturation when truly idle
+- Most work arrives quickly during active periods
+- PAUSE reduces contention without full context switch overhead
+- OS yield prevents CPU saturation during idle periods
 
 ### Cache Line Alignment
-
-**Performance Impact:** Prevents false sharing overhead
 
 **Implementation:** Multiple components
 
 **Technique:**
-Align frequently-accessed shared data structures to 64-byte cache line boundaries.
+Align frequently-accessed shared data structures to cache line boundaries.
 
 ```c
 typedef struct __attribute__((aligned(64))) {
@@ -143,11 +161,9 @@ typedef struct __attribute__((aligned(64))) {
 ```
 
 **Rationale:**
-Modern CPUs use 64-byte cache lines. When two threads access different variables in the same cache line, the cache line bounces between cores (false sharing), causing performance degradation.
+Prevents false sharing when multiple threads access different variables. Cache line bouncing between cores degrades performance significantly.
 
 ### Power-of-2 Buffer Sizing
-
-**Performance Impact:** Fast modulo operations
 
 **Implementation:** All ring buffers
 
@@ -158,13 +174,11 @@ Use power-of-2 sizes with bitwise AND masking instead of modulo division.
 #define QUEUE_SIZE 4096
 #define QUEUE_MASK (QUEUE_SIZE - 1)
 
-int index = (head + 1) & QUEUE_MASK;  // Instead of (head + 1) % QUEUE_SIZE
+int index = (head + 1) & QUEUE_MASK;
 ```
 
 **Rationale:**
-- Modulo division: ~30 CPU cycles
-- Bitwise AND: 1 CPU cycle
-- Compiler can optimize, but explicit masking ensures consistency
+Bitwise AND operations are significantly faster than modulo division. Explicit masking ensures consistent optimization across compilers.
 
 ## Benchmarking Methodology
 
@@ -172,8 +186,7 @@ int index = (head + 1) & QUEUE_MASK;  // Instead of (head + 1) % QUEUE_SIZE
 
 - Compiler: GCC with -O3 -march=native
 - Platform: x86_64 multi-core system
-- Measurement: RDTSC or clock_gettime for nanosecond precision
-- Workload: 10M operations per benchmark
+- Measurement: RDTSC or clock_gettime for precision timing
 - Verification: Checksum validation for correctness
 
 ### Baseline Comparison
@@ -183,8 +196,7 @@ Each optimization is measured against a naive implementation:
 1. Implement baseline version
 2. Implement optimized version
 3. Run identical workload on both
-4. Calculate speedup ratio
-5. Verify correctness via output comparison
+4. Verify correctness via output comparison
 
 ### Statistical Validity
 
@@ -196,38 +208,23 @@ Each optimization is measured against a naive implementation:
 
 ### Manual Prefetching
 
-**Expected:** 5-15% improvement  
-**Actual:** 16% regression  
-**Reason:** Modern CPUs have superior automatic prefetching
+**Reason:** Modern CPUs have superior automatic prefetching. Manual prefetch instructions introduced pipeline stalls.
 
 ### Profile-Guided Optimization
 
-**Expected:** 10-20% improvement  
-**Actual:** 19% regression  
-**Reason:** Training workload differed from production patterns
+**Reason:** Training workload differed from production patterns, resulting in suboptimal code layout.
 
 ### SIMD Message Processing
 
-**Expected:** 4-8x improvement (vectorization)  
-**Actual:** 1.16x improvement  
-**Reason:** Message processing is memory-bound, not compute-bound
+**Reason:** Message processing is memory-bound rather than compute-bound. Vectorization overhead exceeded benefits.
 
 ## Performance Characteristics
-
-### Throughput
-
-Current scheduler performance metrics:
-
-- 4-core (baseline): 83M msg/sec
-- 4-core (with sender batching): 173M msg/sec
-- Batching speedup: 2.1x measured
-- Latency: Sub-millisecond (median)
 
 ### Scalability
 
 The scheduler exhibits near-linear scaling for independent actors due to:
 
-- Partitioned design (no work stealing)
+- Partitioned design
 - Lock-free cross-core messaging
 - Cache-local actor processing
 
@@ -237,8 +234,6 @@ Efficiency decreases under high cross-core communication due to cache coherency 
 
 ### Zero-Copy Message Passing
 
-**Expected Impact:** 4.8x for messages >4KB
-
 Transfer ownership of large message payloads instead of copying data. Requires:
 - Reference counting or move semantics
 - Payload size threshold detection
@@ -246,16 +241,12 @@ Transfer ownership of large message payloads instead of copying data. Requires:
 
 ### Type-Specific Actor Pools
 
-**Expected Impact:** 6.9x for batched allocation
-
 Pre-allocate actors in type-specific pools with free-list indexing:
 - Single allocation for N actors
 - O(1) actor creation/destruction
 - Improved memory locality
 
 ### NUMA-Aware Allocation
-
-**Expected Impact:** 20-30% on multi-socket systems
 
 Allocate actor memory on the same NUMA node as the executing core:
 - Reduces memory access latency

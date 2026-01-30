@@ -19,6 +19,7 @@ CodeGenerator* create_code_generator(FILE* output) {
     gen->declared_vars = NULL;
     gen->declared_var_count = 0;
     gen->generating_lvalue = 0;  // Not generating lvalue by default
+    gen->in_condition = 0;  // Not in condition by default
     return gen;
 }
 
@@ -255,11 +256,15 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
             
         case AST_BINARY_EXPRESSION:
             if (expr->child_count >= 2) {
-                fprintf(gen->output, "(");
+                // Skip outer parens if we're in a condition (if/while already provide parens)
+                int skip_parens = gen->in_condition;
+                gen->in_condition = 0;  // Only skip for top-level, not nested
+
+                if (!skip_parens) fprintf(gen->output, "(");
                 generate_expression(gen, expr->children[0]);
                 fprintf(gen->output, " %s ", get_c_operator(expr->value));
                 generate_expression(gen, expr->children[1]);
-                fprintf(gen->output, ")");
+                if (!skip_parens) fprintf(gen->output, ")");
             }
             break;
             
@@ -564,23 +569,25 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
         case AST_IF_STATEMENT:
             fprintf(gen->output, "if (");
             if (stmt->child_count > 0) {
+                gen->in_condition = 1;
                 generate_expression(gen, stmt->children[0]);
+                gen->in_condition = 0;
             }
             fprintf(gen->output, ") {\n");
-            
+
             indent(gen);
             if (stmt->child_count > 1) {
                 generate_statement(gen, stmt->children[1]);
             }
             unindent(gen);
-            
+
             if (stmt->child_count > 2) {
                 print_line(gen, "} else {");
                 indent(gen);
                 generate_statement(gen, stmt->children[2]);
                 unindent(gen);
             }
-            
+
             print_line(gen, "}");
             break;
             
@@ -623,10 +630,12 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
         case AST_WHILE_LOOP:
             fprintf(gen->output, "while (");
             if (stmt->child_count > 0) {
+                gen->in_condition = 1;
                 generate_expression(gen, stmt->children[0]);
+                gen->in_condition = 0;
             }
             fprintf(gen->output, ") {\n");
-            
+
             indent(gen);
             if (stmt->child_count > 1) {
                 generate_statement(gen, stmt->children[1]);
