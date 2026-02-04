@@ -31,7 +31,7 @@ actor Counter {
 
 main() {
     // Create a counter
-    counter = spawn_Counter()
+    counter = spawn(Counter())
     
     // Send it messages
     send_Counter(counter, 1, 0)
@@ -48,7 +48,7 @@ main() {
 ```
 
 **What's happening:**
-1. `spawn_Counter()` creates a new counter actor
+1. `spawn(Counter())` creates a new counter actor instance
 2. `send_Counter(counter, 1, 0)` sends a message (type=1, payload=0)
 3. `Counter_step(counter)` processes one message from the mailbox
 4. Each message increments the count
@@ -106,7 +106,7 @@ actor Processor {
 }
 
 main() {
-    proc = spawn_Processor()
+    proc = spawn(Processor())
     
     send_Processor(proc, 1, 10)  // Add 10
     send_Processor(proc, 1, 5)   // Add 5
@@ -137,7 +137,7 @@ actor Logger {
 }
 
 main() {
-    logger = spawn_Logger()
+    logger = spawn(Logger())
     
     // Send 3 messages
     send_Logger(logger, 1, 0)
@@ -182,7 +182,7 @@ actor ShoppingCart {
 }
 
 main() {
-    cart = spawn_ShoppingCart()
+    cart = spawn(ShoppingCart())
     
     // Add items (type=1, price)
     send_ShoppingCart(cart, 1, 100)  // $100 item
@@ -225,7 +225,7 @@ actor TrafficLight {
 }
 
 main() {
-    light = spawn_TrafficLight()
+    light = spawn(TrafficLight())
     
     // Simulate time passing
     send_TrafficLight(light, 2, 0)  // tick
@@ -253,9 +253,9 @@ actor Counter {
 
 main() {
     // Create multiple counters
-    counter1 = spawn_Counter()
-    counter2 = spawn_Counter()
-    counter3 = spawn_Counter()
+    counter1 = spawn(Counter())
+    counter2 = spawn(Counter())
+    counter3 = spawn(Counter())
     
     // Send messages to different counters
     send_Counter(counter1, 1, 0)
@@ -422,29 +422,29 @@ actor ScoreTracker {
 
 ### When to Use Actors
 
-- IMPLEMENTED Independent concurrent tasks
-- IMPLEMENTED State machines
-- IMPLEMENTED Event processing
-- IMPLEMENTED Game entities (players, NPCs, items)
-- IMPLEMENTED Microservices patterns
+- Independent concurrent tasks
+- State machines
+- Event processing
+- Game entities (players, NPCs, items)
+- Microservices patterns
 
 ### When NOT to Use Actors
 
-- NOT IMPLEMENTED Simple sequential code
-- NOT IMPLEMENTED High-speed data sharing
-- NOT IMPLEMENTED Tight coupling between components
+- Simple sequential code
+- High-speed data sharing
+- Tight coupling between components
 
 ## Best Practices
 
 ### 1. Keep State Small
 
 ```aether
-// IMPLEMENTED Good: Minimal state
+// Good: Minimal state
 actor Counter {
     state count = 0
 }
 
-// NOT IMPLEMENTED Avoid: Too much state
+// Avoid: Too much state
 actor Everything {
     state count = 0
     state name = ""
@@ -495,11 +495,11 @@ Counter_step(c)  // Process message 3
 ## Next Steps
 
 You've learned:
-- IMPLEMENTED What actors are
-- IMPLEMENTED Actor state and messages
-- IMPLEMENTED Spawning and messaging
-- IMPLEMENTED Multiple concurrent actors
-- IMPLEMENTED Actor design patterns
+- What actors are
+- Actor state and messages
+- Spawning and messaging
+- Multiple concurrent actors
+- Actor design patterns
 
 **Next Tutorial:** [Advanced Topics](04-advanced-topics.md)
 
@@ -518,7 +518,7 @@ actor MyActor {
 }
 
 // Use actor
-actor = spawn_MyActor()
+actor = spawn(MyActor())
 send_MyActor(actor, 1, 42)
 MyActor_step(actor)
 

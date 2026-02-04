@@ -14,7 +14,7 @@ actor TestImports {
 }
 
 main {
-    test = spawn TestImports
+    test = spawn(TestImports())
     send test, "test"
 }
 

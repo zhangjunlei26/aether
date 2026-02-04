@@ -20,7 +20,7 @@ main() {
     nodes = [];
     i = 0;
     while (i < 100) {
-        n = spawn Node();
+        n = spawn(Node());
         nodes = nodes + [n];
         i = i + 1;
     }

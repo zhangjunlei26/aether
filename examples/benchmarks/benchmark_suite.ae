@@ -108,11 +108,11 @@ main {
     print("")
     
     print("1. Actor Ring Benchmark (10k messages)")
-    first = spawn RingNode
+    first = spawn(RingNode())
     prev = first
     
     for (int i = 0; i < 100; i = i + 1) {
-        node = spawn RingNode
+        node = spawn(RingNode())
         send prev, "next" -> node
         send node, "init"
         prev = node
@@ -122,22 +122,22 @@ main {
     
     print("")
     print("2. HashMap Benchmark")
-    mapbench = spawn HashMapBench
+    mapbench = spawn(HashMapBench())
     send mapbench, "run"
     
     print("")
     print("3. Vector Benchmark")
-    vecbench = spawn VectorBench
+    vecbench = spawn(VectorBench())
     send vecbench, "run"
     
     print("")
     print("4. Tail Call Optimization")
-    fibbench = spawn FibBench
+    fibbench = spawn(FibBench())
     send fibbench, "run"
     
     print("")
     print("5. Constant Folding")
-    constbench = spawn ConstantBench
+    constbench = spawn(ConstantBench())
     send constbench, "run"
     
     print("")

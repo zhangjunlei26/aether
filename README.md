@@ -204,7 +204,7 @@ actor Counter {
 
 main() {
     // Spawn counter actor
-    counter = spawn Counter();
+    counter = spawn(Counter());
 
     // Send messages
     counter ! Increment;

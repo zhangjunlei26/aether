@@ -107,8 +107,21 @@ int is_assignable(Type* from, Type* to) {
 }
 
 int is_callable(Type* type) {
-    // For now, assume all types are callable if they have a function call AST node
-    return type != NULL;
+    if (!type) return 0;
+    switch (type->kind) {
+        case TYPE_INT:
+        case TYPE_INT64:
+        case TYPE_UINT64:
+        case TYPE_FLOAT:
+        case TYPE_BOOL:
+        case TYPE_STRING:
+        case TYPE_VOID:
+        case TYPE_ARRAY:
+        case TYPE_WILDCARD:
+            return 0;
+        default:
+            return 1;
+    }
 }
 
 // Type inference functions
@@ -309,6 +322,16 @@ int typecheck_program(ASTNode* program) {
                 }
                 break;
             }
+            case AST_MESSAGE_DEFINITION: {
+                // Register message type so receive patterns can look up field types
+                Type* msg_type = create_type(TYPE_MESSAGE);
+                add_symbol(global_table, child->value, msg_type, 0, 0, 0);
+                Symbol* msg_sym = lookup_symbol(global_table, child->value);
+                if (msg_sym) {
+                    msg_sym->node = child;
+                }
+                break;
+            }
             case AST_MAIN_FUNCTION:
                 // Main function doesn't need to be in symbol table
                 break;
@@ -373,6 +396,22 @@ int typecheck_node(ASTNode* node, SymbolTable* table) {
     }
 }
 
+// Look up the type of a specific field in a message definition
+static Type* lookup_message_field_type(SymbolTable* table, const char* message_name, const char* field_name) {
+    Symbol* msg_sym = lookup_symbol(table, message_name);
+    if (!msg_sym || !msg_sym->node || msg_sym->node->type != AST_MESSAGE_DEFINITION) {
+        return NULL;
+    }
+    ASTNode* msg_def = msg_sym->node;
+    for (int i = 0; i < msg_def->child_count; i++) {
+        ASTNode* field = msg_def->children[i];
+        if (field->type == AST_MESSAGE_FIELD && field->value && strcmp(field->value, field_name) == 0) {
+            return field->node_type ? clone_type(field->node_type) : NULL;
+        }
+    }
+    return NULL;
+}
+
 int typecheck_actor_definition(ASTNode* actor, SymbolTable* table) {
     if (!actor || actor->type != AST_ACTOR_DEFINITION) return 0;
     
@@ -410,8 +449,12 @@ int typecheck_actor_definition(ASTNode* actor, SymbolTable* table) {
                         for (int k = 0; k < pattern->child_count; k++) {
                             ASTNode* field = pattern->children[k];
                             if (field->type == AST_PATTERN_FIELD) {
-                                // Field name is the variable name (implicit binding)
-                                add_symbol(receive_table, field->value, create_type(TYPE_INT), 0, 0, 0);
+                                // Look up actual field type from message definition
+                                Type* field_type = lookup_message_field_type(table, pattern->value, field->value);
+                                if (!field_type) {
+                                    field_type = create_type(TYPE_UNKNOWN);
+                                }
+                                add_symbol(receive_table, field->value, field_type, 0, 0, 0);
                             }
                         }
                     }

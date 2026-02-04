@@ -11,17 +11,17 @@ actor Counter {
     state count: int = 0
 
     receive {
-        Increment { amount } -> {
+        Increment(amount) -> {
             count = count + amount;
         }
-        GetValue {} -> {
+        GetValue() -> {
             print(count);
         }
     }
 }
 
 main() {
-    counter = spawn Counter;
+    counter = spawn(Counter());
     counter ! Increment { amount: 5 };
     counter ! Increment { amount: 3 };
     counter ! GetValue {};

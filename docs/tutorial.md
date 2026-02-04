@@ -28,7 +28,7 @@ actor counter {
 }
 
 main() {
-    c = spawn_counter();
+    c = spawn(counter());
     send_counter(c, 1, 0);
 }
 ```
@@ -37,7 +37,7 @@ main() {
 - `actor counter { ... }` defines an actor named `counter`
 - `state int count = 0` declares the actor's private state
 - `receive(msg) { ... }` is the message handler (called when messages arrive)
-- `spawn_counter()` creates a new counter actor
+- `spawn(counter())` creates a new counter actor
 - `send_counter(c, 1, 0)` sends a message to the actor
 
 ### Key Concepts
@@ -111,7 +111,7 @@ actor buffer {
 }
 
 main() {
-    buf = spawn_buffer();
+    buf = spawn(buffer());
 
     for (i = 0; i < 10; i++) {
         send_buffer(buf, 1, i * 10);
@@ -141,9 +141,9 @@ actor worker {
 }
 
 main() {
-    w1 = spawn_worker();
-    w2 = spawn_worker();
-    w3 = spawn_worker();
+    w1 = spawn(worker());
+    w2 = spawn(worker());
+    w3 = spawn(worker());
 
     send_worker(w1, 1, 0);
     send_worker(w2, 1, 0);
@@ -218,7 +218,7 @@ main() {
     actors = make([]actor worker, 100);
 
     for (i = 0; i < 100; i++) {
-        actors[i] = spawn_worker();
+        actors[i] = spawn(worker());
     }
 
     for (i = 0; i < 100; i++) {
@@ -283,12 +283,12 @@ actor coordinator {
 }
 
 main() {
-    coord = spawn_coordinator();
+    coord = spawn(coordinator());
 
-    w1 = spawn_worker();
-    w2 = spawn_worker();
-    w3 = spawn_worker();
-    w4 = spawn_worker();
+    w1 = spawn(worker());
+    w2 = spawn(worker());
+    w3 = spawn(worker());
+    w4 = spawn(worker());
 
     for (i = 0; i < 100; i++) {
         send_coordinator(coord, 1, i);

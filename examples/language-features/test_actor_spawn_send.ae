@@ -7,7 +7,7 @@ actor Counter {
 }
 
 main() {
-    c = spawn_Counter();
+    c = spawn(Counter());
     send_Counter(c, 1, 0);
     print("Actor spawned and message sent\n");
 }

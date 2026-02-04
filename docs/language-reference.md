@@ -52,7 +52,7 @@ add(a, b) {
 greet(name) {
     print("Hello, ")
     print(name)
-    print("!\n")
+    print("\n")
 }
 
 // Explicit types (optional, for clarity)
@@ -67,6 +67,20 @@ void print_hello() {
 
 Functions can return values or `void`. The `main()` function is the entry point.
 Types are inferred from usage when not explicitly specified.
+
+### Pattern Matching Functions
+
+Functions support Erlang-style pattern matching with guards:
+
+```aether
+fib(0) -> 1
+fib(1) -> 1
+fib(n) when n > 1 -> fib(n-1) + fib(n-2)
+
+classify(x) when x < 0 -> "negative"
+classify(x) when x == 0 -> "zero"
+classify(x) when x > 0 -> "positive"
+```
 
 ## Control Flow
 
@@ -100,12 +114,22 @@ for (i = 0; i < 10; i = i + 1) {
 }
 ```
 
+### Match Expressions
+
+```aether
+result = match (value) {
+    0 => "zero"
+    1 => "one"
+    _ => "other"
+}
+```
+
 ## Structs
 
 ```aether
 struct Point {
-    int x
-    int y
+    x,
+    y
 }
 
 main() {
@@ -115,22 +139,58 @@ main() {
 }
 ```
 
-Structs group related data. Fields are accessed with `.` operator.
+Structs group related data. Fields are accessed with the `.` operator.
 Struct literals use the `StructName{ field: value }` syntax.
+Field types are inferred from usage. Explicit types are also supported:
+
+```aether
+struct Point {
+    int x
+    int y
+}
+```
+
+## Messages
+
+Messages define structured data for actor communication:
+
+```aether
+message Increment {
+    amount: int
+}
+
+message Greet {
+    name: string
+}
+
+message Reset {}
+```
+
+Each message type has named fields with explicit types. Empty messages are also valid.
 
 ## Actors
 
-Actors are the core concurrency primitive. They have state and process messages.
+Actors are the core concurrency primitive. They encapsulate state and process messages through pattern matching.
 
 ### Actor Definition
 
 ```aether
+message Increment { amount: int }
+message GetCount { dummy: int }
+
 actor Counter {
-    state int count = 0;
-    
-    receive(msg) {
-        if (msg.type == 1) {
-            count = count + 1;
+    state count = 0
+
+    receive {
+        Increment(amount) -> {
+            count = count + amount
+        }
+        GetCount() -> {
+            print(count)
+            print("\n")
+        }
+        _ -> {
+            print("Unknown message\n")
         }
     }
 }
@@ -138,7 +198,7 @@ actor Counter {
 
 ### Actor State
 
-State variables are declared with `state` keyword and persist across messages:
+State variables are declared with the `state` keyword and persist across messages:
 
 ```aether
 actor Counter {
@@ -149,38 +209,27 @@ actor Counter {
 
 ### Message Handling
 
-The `receive` block defines how an actor processes messages. The `msg` parameter contains:
-- `msg.type` - Message type (int)
-- `msg.sender_id` - ID of sending actor (int)
-- `msg.payload_int` - Integer payload (int)
-- `msg.payload_ptr` - Pointer payload (void*)
+The `receive` block uses pattern matching to dispatch incoming messages by type. Each clause destructures the message fields and executes the corresponding handler. The wildcard pattern `_` handles unrecognized messages.
 
 ### Spawning Actors
 
 ```aether
-c = spawn_Counter()
+c = spawn(Counter())
 ```
 
-The compiler generates `spawn_ActorName()` functions automatically.
+The `spawn(ActorName())` syntax creates a new actor instance. The compiler generates the underlying spawn function automatically.
 
 ### Sending Messages
 
 ```aether
-send_Counter(c, 1, 0)
+// Fire-and-forget
+c ! Increment { amount: 1 }
+
+// Request-reply
+result = c ? GetCount { dummy: 0 }
 ```
 
-The compiler generates `send_ActorName()` functions. Parameters:
-- Actor instance
-- Message type
-- Integer payload
-
-### Processing Messages
-
-```aether
-Counter_step(c)
-```
-
-The compiler generates `ActorName_step()` functions that process one message from the mailbox.
+The `!` operator sends a message asynchronously. The `?` operator sends a message and waits for a reply.
 
 ## Expressions
 
@@ -215,7 +264,6 @@ i--
 
 ```aether
 point.x = 10
-msg.type = 1
 ```
 
 ## Built-in Functions
@@ -242,4 +290,4 @@ gcc output.c -Iruntime -o program
 
 ## Type System
 
-Aether uses static typing. All variables and function parameters must have explicit types. Type checking occurs during compilation.
+Aether uses static typing with type inference. Types are deduced automatically from initialization and usage context, and checked at compile time. Explicit type annotations are optional and can be used where additional clarity is desired.

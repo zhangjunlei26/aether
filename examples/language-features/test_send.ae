@@ -16,8 +16,8 @@ actor Receiver {
 }
 
 main() {
-    s = spawn_Sender();
-    r = spawn_Receiver();
+    s = spawn(Sender());
+    r = spawn(Receiver());
     
     send_Sender(s, 1, 0);
     send_Receiver(r, 1, 0);

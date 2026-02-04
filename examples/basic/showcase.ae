@@ -88,8 +88,8 @@ main() {
     
     // 4. Actors
     print("4. ACTORS (Concurrency)\n");
-    counter = spawn_Counter();
-    logger = spawn_MessageLogger();
+    counter = spawn(Counter());
+    logger = spawn(MessageLogger());
     
     print("   Spawning actors...\n");
     print("   Sending messages...\n");

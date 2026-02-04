@@ -9,14 +9,14 @@
 Thread 1: Lock → Do Work → Unlock
 Thread 2: [WAITING...] Lock → Do Work → Unlock  ← Blocked!
 ```
-One thread blocks others. Like a single bathroom - everyone waits in line.
+One thread blocks others.
 
 **Lock-Free (New):**
 ```
 Thread 1: Do Work (atomic operations)
 Thread 2: Do Work (atomic operations)  ← No blocking!
 ```
-Multiple threads work simultaneously. Like having multiple bathrooms - no waiting.
+Multiple threads work simultaneously.
 
 **Benefits:**
 - **No waiting** - threads never block each other
@@ -25,21 +25,21 @@ Multiple threads work simultaneously. Like having multiple bathrooms - no waitin
 
 ---
 
-## Full Integration Complete SUPPORTED
+## Integrated Optimizations
 
 ### What Was Implemented
 
-1. **Lock-Free Message Pools** SUPPORTED
+1. **Lock-Free Message Pools**
    - TLS pools have no mutex
    - Zero contention on hot path
    - Automatic per-thread allocation
 
-2. **Lock-Free Mailboxes** SUPPORTED
+2. **Lock-Free Mailboxes**
    - SPSC (Single Producer Single Consumer) atomic queue
    - 64-byte cache line padding
    - Runtime switchable
 
-3. **Runtime Configuration API** SUPPORTED
+3. **Runtime Configuration API**
    - Control optimizations via flags
    - Auto-detect CPU features
    - Best out-of-the-box experience
@@ -62,12 +62,11 @@ int main() {
 }
 ```
 
-**Example result on modern CPU:**
-- Lock-free mailboxes: SUPPORTED ENABLED
-- Lock-free pools: SUPPORTED ENABLED  
-- MWAIT idle: SUPPORTED ENABLED
-- AVX2 SIMD: SUPPORTED ENABLED
-- **Optimal performance configuration**
+**Example output on a modern CPU:**
+- Lock-free mailboxes: active
+- Lock-free pools: active
+- MWAIT idle: active
+- AVX2 SIMD: active
 
 ---
 
@@ -104,8 +103,8 @@ aether_runtime_init(0,
 // ========================================
 // CPU: <detected processor>
 // Active Optimizations:
-//   Lock-free mailbox: ENABLED
-//   Lock-free pools:   ENABLED
+//   Lock-free mailbox: active
+//   Lock-free pools:   active
 //   ...
 ```
 
@@ -133,11 +132,7 @@ aether_runtime_init(8, flags);
 
 ## Performance Expectations
 
-| Configuration | Throughput | Latency | Use Case |
-|--------------|------------|---------|----------|
-| **Maximum** (all optimizations) | 3.1B msg/sec (skynet) | 0.96 cycles/msg | Modern CPUs (2013+) |
-| **High** (TIER 1 + TIER 2) | 418M msg/sec (ring) | 7.18 cycles/msg | AVX2-capable CPUs |
-| **Moderate** (TIER 1 only) | 226M msg/sec (ping-pong) | 13.29 cycles/msg | All platforms |
+Performance varies by hardware and workload. Use the profiling tools to measure throughput on your target platform.
 
 See [benchmarks/cross-language](../benchmarks/cross-language/) for detailed measurements.
 
@@ -265,11 +260,11 @@ if (pool->is_thread_local) {
 
 | Platform | Lock-Free | MWAIT | SIMD | Status |
 |----------|-----------|-------|------|--------|
-| **Intel x86** (2013+) | SUPPORTED | SUPPORTED | AVX2 | Full support |
-| **AMD Ryzen** | SUPPORTED | SUPPORTED | AVX2 | Full support |
-| **Old x86** (pre-2013) | SUPPORTED | NO | SSE4.2 | Partial |
-| **ARM** | SUPPORTED | NO (uses WFE) | NEON | Fallbacks active |
-| **Other** | SUPPORTED | NO | NO | Baseline |
+| **Intel x86** (2013+) | Yes | Yes | AVX2 | Full support |
+| **AMD Ryzen** | Yes | Yes | AVX2 | Full support |
+| **Old x86** (pre-2013) | Yes | No | SSE4.2 | Partial |
+| **ARM** | Yes | No (uses WFE) | NEON | Fallbacks active |
+| **Other** | Yes | No | No | Baseline |
 
 Runtime automatically uses best available optimizations for each platform.
 

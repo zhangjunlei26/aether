@@ -67,7 +67,7 @@ actor counter {
 }
 
 main() {
-    c = spawn_counter();
+    c = spawn(counter());
     send_counter(c, 1, 0);
 }
 ```

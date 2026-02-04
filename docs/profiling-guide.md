@@ -24,6 +24,8 @@ Output includes:
 
 ## Example Output
 
+Sample output (actual values depend on hardware):
+
 ```
 --- Core 0 ---
   Mailbox Send:         1000000 ops,    19.28 cycles/op
@@ -229,6 +231,8 @@ See:
 5. **Focus on hot paths** - Profile what matters
 
 ## Performance Wins Validated
+
+Measured on test hardware; results vary by platform.
 
 Using this profiling system, we've measured:
 - Atomic overhead: **5.74x slower** in tight loops

@@ -101,7 +101,7 @@ OK
 ...
 OK
 
->>> counter = spawn Counter()
+>>> counter = spawn(Counter())
 >>> send counter, "increment"
 1
 ```

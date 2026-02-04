@@ -22,7 +22,7 @@ actor Counter {
 }
 
 fn main() {
-    let counter = spawn Counter;
+    let counter = spawn(Counter());
     
     // Send 1M messages to test pool performance
     let i = 0;

@@ -86,7 +86,7 @@ func main() {
     print("")
     
     // Create coordinator
-    coord = spawn Coordinator()
+    coord = spawn(Coordinator())
     
     // Add 5 workers
     print("Creating workers...")

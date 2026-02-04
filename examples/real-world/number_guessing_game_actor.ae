@@ -57,14 +57,14 @@ actor GameManager {
     
     receive {
         // Set the secret number
-        SetSecret { number } -> {
+        SetSecret(number) -> {
             secret_number = number;
             game_over = 0;
             guesses_made = 0;
         }
         
         // Handle a guess attempt
-        MakeGuess { guess, player } -> {
+        MakeGuess(guess, player) -> {
             if (game_over == 0) {
                 guesses_made = guesses_made + 1;
                 
@@ -84,7 +84,7 @@ actor GameManager {
         }
         
         // Reset the game
-        Reset { dummy } -> {
+        Reset(dummy) -> {
             guesses_made = 0;
             game_over = 0;
         }
@@ -98,7 +98,7 @@ actor ScoreBoard {
     
     receive {
         // Record a completed game
-        RecordScore { guesses } -> {
+        RecordScore(guesses) -> {
             games_played = games_played + 1;
             total_guesses = total_guesses + guesses;
             
@@ -108,7 +108,7 @@ actor ScoreBoard {
         }
         
         // Get statistics
-        GetStats { dummy } -> {
+        GetStats(dummy) -> {
             print("Statistics requested\n");
             print("Games played: ");
             print(games_played);
@@ -154,8 +154,8 @@ main() {
     print("Try to guess it in as few attempts as possible!\n")
     
     // Spawn actors (V2 clean syntax!)
-    game = spawn_GameManager();
-    scoreboard = spawn_ScoreBoard();
+    game = spawn(GameManager());
+    scoreboard = spawn(ScoreBoard());
     
     // ============================================
     // GAME 1: Number is 42
@@ -219,8 +219,8 @@ main() {
  * 
  * 4. PATTERN MATCHING
  *    OLD: if (msg.type == 1) { ... } if (msg.type == 2) { ... }
- *    NEW: SetSecret { number } -> { ... }
- *         MakeGuess { guess } -> { ... }
+ *    NEW: SetSecret(number) -> { ... }
+ *         MakeGuess(guess) -> { ... }
  * 
  * 5. TYPE SAFETY
  *    OLD: Runtime errors if wrong message type

@@ -299,22 +299,31 @@ ASTNode* parse_primary_expression(Parser* parser) {
         }
 
         case TOKEN_SPAWN: {
-            // spawn ActorName() - V2 syntax for spawning actors as expressions
+            // spawn(ActorName()) - spawn as function-call syntax
             int line = token->line;
             int column = token->column;
             advance_token(parser); // consume 'spawn'
 
-            Token* actor_name = expect_token(parser, TOKEN_IDENTIFIER);
-            if (!actor_name) {
-                parser_error(parser, "Expected actor name after 'spawn'");
+            // Expect opening paren: spawn(...)
+            if (!expect_token(parser, TOKEN_LEFT_PAREN)) {
+                parser_error(parser, "Expected '(' after 'spawn'");
                 return NULL;
             }
 
-            // Expect () after actor name
+            Token* actor_name = expect_token(parser, TOKEN_IDENTIFIER);
+            if (!actor_name) {
+                parser_error(parser, "Expected actor name inside spawn(...)");
+                return NULL;
+            }
+
+            // Expect () after actor name (constructor args)
             if (!expect_token(parser, TOKEN_LEFT_PAREN)) return NULL;
             if (!expect_token(parser, TOKEN_RIGHT_PAREN)) return NULL;
 
-            // Create function call node for spawn_ActorName
+            // Expect closing paren for spawn(...)
+            if (!expect_token(parser, TOKEN_RIGHT_PAREN)) return NULL;
+
+            // Internal representation unchanged: AST_FUNCTION_CALL with spawn_ActorName
             char func_name[256];
             snprintf(func_name, sizeof(func_name), "spawn_%s", actor_name->value);
 
@@ -1126,17 +1135,17 @@ ASTNode* parse_message_definition(Parser* parser) {
 }
 
 // Parse message pattern in receive block
-// Syntax: MessageName { field1, field2 } or MessageName { field1: var1, field2 }
+// Syntax: MessageName(field1, field2) or MessageName(field1: var1, field2)
 ASTNode* parse_message_pattern(Parser* parser) {
     Token* msg_name = expect_token(parser, TOKEN_IDENTIFIER);
     if (!msg_name) return NULL;
-    
+
     ASTNode* pattern = create_ast_node(AST_MESSAGE_PATTERN, msg_name->value, msg_name->line, msg_name->column);
-    
+
     // Check for field destructuring
-    if (match_token(parser, TOKEN_LEFT_BRACE)) {
+    if (match_token(parser, TOKEN_LEFT_PAREN)) {
         // Parse pattern fields
-        while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
+        while (!match_token(parser, TOKEN_RIGHT_PAREN)) {
             if (is_at_end(parser)) {
                 parser_message(parser, "Error: Unexpected end in message pattern");
                 return NULL;

@@ -16,14 +16,14 @@ actor Greeter {
     state count = 0;
     
     receive {
-        Greet { name } -> {
+        Greet(name) -> {
             count = count + 1;
             print("Hello! Greeting #");
             print(count);
             print("\n");
         }
         
-        Farewell { name } -> {
+        Farewell(name) -> {
             print("Goodbye!\n");
         }
         
@@ -39,7 +39,7 @@ main() {
     print("╚═══════════════════════════════════════╝\n\n");
     
     // Spawn actor (V1 syntax for now)
-    greeter = spawn_Greeter();
+    greeter = spawn(Greeter());
     
     print("✓ Message definitions with named fields\n");
     print("✓ Pattern matching in receive blocks\n");

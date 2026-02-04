@@ -10,7 +10,7 @@ actor Counter {
 }
 
 main() {
-    c = spawn_Counter();
+    c = spawn(Counter());
     
     // Send 5 messages
     send_Counter(c, 1, 0);

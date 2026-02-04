@@ -74,7 +74,7 @@ main() {
     print("=================================\n\n")
     
     // Create text processor actor
-    processor = spawn_TextProcessor()
+    processor = spawn(TextProcessor())
     
     // Simulate processing multiple lines
     // In a real implementation, these would come from file input

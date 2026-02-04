@@ -1016,11 +1016,23 @@ void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
                         indent(gen);
                         print_line(gen, "%s* _pattern = (%s*)_msg_data;", pattern->value, pattern->value);
 
-                        // Extract pattern fields
+                        // Extract pattern fields with correct types from message definition
                         for (int k = 0; k < pattern->child_count; k++) {
                             ASTNode* field = pattern->children[k];
                             if (field->type == AST_PATTERN_FIELD) {
-                                print_line(gen, "int %s = _pattern->%s;", field->value, field->value);
+                                const char* c_type = "int";
+                                if (msg_def && msg_def->fields) {
+                                    MessageFieldDef* fdef = msg_def->fields;
+                                    while (fdef) {
+                                        if (strcmp(fdef->name, field->value) == 0) {
+                                            Type temp_type = { .kind = fdef->type_kind, .element_type = NULL, .array_size = 0, .struct_name = NULL };
+                                            c_type = get_c_type(&temp_type);
+                                            break;
+                                        }
+                                        fdef = fdef->next;
+                                    }
+                                }
+                                print_line(gen, "%s %s = _pattern->%s;", c_type, field->value, field->value);
                             }
                         }
 

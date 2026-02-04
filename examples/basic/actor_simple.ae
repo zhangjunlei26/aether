@@ -13,7 +13,7 @@ actor Greeter {
     state count = 0
     
     receive {
-        Greet { name } -> {
+        Greet(name) -> {
             count = count + 1;
             print("Hello, ");
             print(name);
@@ -22,7 +22,7 @@ actor Greeter {
             print(")\n");
         }
         
-        Farewell { name } -> {
+        Farewell(name) -> {
             print("Goodbye, ");
             print(name);
             print("!\n");
@@ -35,7 +35,7 @@ actor Greeter {
 }
 
 main() {
-    greeter = spawn_Greeter();
+    greeter = spawn(Greeter());
     greeter ! Greet { name: "Alice" };
     greeter ! Greet { name: "Bob" };
     greeter ! Farewell { name: "Alice" };

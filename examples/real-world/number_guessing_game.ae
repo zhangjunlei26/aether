@@ -123,8 +123,8 @@ main() {
     print("\nWelcome! I'll pick a number, you try to guess it!\n")
     
     // Create game actors
-    game = spawn_GameManager()
-    scoreboard = spawn_ScoreBoard()
+    game = spawn(GameManager())
+    scoreboard = spawn(ScoreBoard())
     
     // Game 1: Number is 42
     send_GameManager(game, 1, 42)  // Set secret number

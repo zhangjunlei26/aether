@@ -116,7 +116,7 @@ CPU to NUMA Node Mapping:
   CPU 13 -> NUMA Node 1
   ...
 
-NUMA-aware allocation is ENABLED in the multicore scheduler.
+NUMA-aware allocation is active in the multicore scheduler.
 ```
 
 ## Build Integration

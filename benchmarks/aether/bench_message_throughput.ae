@@ -14,7 +14,7 @@ main() {
     actors = [];
     i = 0;
     while (i < 100) {
-        c = spawn Counter();
+        c = spawn(Counter());
         actors = actors + [c];
         i = i + 1;
     }
