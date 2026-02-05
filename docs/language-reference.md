@@ -114,15 +114,39 @@ for (i = 0; i < 10; i = i + 1) {
 }
 ```
 
-### Match Expressions
+### Match Statements
 
 ```aether
-result = match (value) {
-    0 => "zero"
-    1 => "one"
-    _ => "other"
+match (value) {
+    0 -> { print("zero\n") }
+    1 -> { print("one\n") }
+    _ -> { print("other\n") }
 }
 ```
+
+Match statements also support list patterns for arrays:
+
+```aether
+// Array must have corresponding _len variable
+nums = [1, 2, 3]
+nums_len = 3
+
+match (nums) {
+    [] -> { print("empty\n") }
+    [x] -> { print("single element\n") }
+    [h|t] -> {
+        print("head: ")
+        print(h)
+        print("\n")
+    }
+}
+```
+
+List pattern types:
+- `[]` - matches empty arrays
+- `[x]` - matches single-element arrays, binds element to `x`
+- `[x, y]` - matches two-element arrays, binds elements
+- `[h|t]` - matches non-empty arrays, `h` is first element, `t` is rest
 
 ## Structs
 
@@ -270,6 +294,29 @@ point.x = 10
 
 - `print(format, ...)` - Print formatted string (similar to printf)
 
+## Modules and Imports
+
+Import modules to use external functionality:
+
+```aether
+// Basic import
+import std.math
+
+// Import with alias
+import std.collections as col
+import std.math as m
+
+// Use aliased module
+main() {
+    // m.sqrt(16) refers to std.math.sqrt(16)
+    result = m.sqrt(16)
+}
+```
+
+Import forms:
+- `import module.name` - Import with full module prefix
+- `import module.name as alias` - Import with shorter alias
+
 ## Comments
 
 ```aether
@@ -284,8 +331,8 @@ point.x = 10
 Aether programs compile to C code, which is then compiled to native executables.
 
 ```bash
-aetherc program.ae output.c
-gcc output.c -Iruntime -o program
+ae run program.ae          # Compile and run
+ae build program.ae -o app # Compile to executable
 ```
 
 ## Type System

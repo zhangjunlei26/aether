@@ -26,30 +26,53 @@ This guide covers installation and basic usage of the Aether programming languag
 ### Building from Source
 
 ```bash
-git clone https://github.com/yourname/aether.git
+git clone https://github.com/nicolasmd87/aether.git
 cd aether
+make ae
+```
 
-# Linux/macOS
-make compiler
+This builds the compiler and the `ae` CLI tool. Verify:
 
-# Windows (MinGW)
-./build_compiler.ps1
+```bash
+./build/ae version
+```
+
+**Windows (MinGW):**
+```bash
+mingw32-make ae
 ```
 
 ## Your First Aether Program
 
-Create a file named `hello.ae`:
+**Option A: Create a project (recommended)**
+
+```bash
+./build/ae init myproject
+cd myproject
+../build/ae run
+```
+
+This creates a project with `aether.toml`, `src/main.ae`, and `tests/`.
+
+**Option B: Run a single file**
+
+Create `hello.ae`:
 
 ```aether
-main {
-    print("Hello, Aether!")
+main() {
+    print("Hello, Aether!\n");
 }
 ```
 
-Compile and run:
+```bash
+./build/ae run hello.ae
+```
+
+**Build an executable:**
 
 ```bash
-./build/aetherc run hello.ae
+./build/ae build hello.ae -o hello
+./hello
 ```
 
 ## Actor-Based Programming
@@ -57,22 +80,26 @@ Compile and run:
 Aether is built around the actor model. Here is a simple counter example:
 
 ```aether
-actor counter {
-    state int count = 0;
+message Ping {}
 
-    receive(msg) {
-        count++;
-        print(count);
+actor counter {
+    state count = 0
+
+    receive {
+        Ping() -> {
+            count = count + 1
+            print(count)
+        }
     }
 }
 
 main() {
-    c = spawn(counter());
-    send_counter(c, 1, 0);
+    c = spawn(counter())
+    c ! Ping {}
 }
 ```
 
-Actors are lightweight concurrent entities that communicate through asynchronous messages. Each actor has private state and a mailbox for incoming messages. The runtime distributes actors across available CPU cores automatically.
+Actors are lightweight concurrent entities that communicate through asynchronous messages. Each actor has private state and a mailbox for incoming messages. Messages are defined with the `message` keyword and sent with the `!` operator. The runtime distributes actors across available CPU cores automatically.
 
 ## Module System
 
@@ -82,7 +109,7 @@ Import modules using the `import` statement:
 import std.collections.HashMap
 import std.log as Log
 
-main {
+main() {
     Log.info("Starting application")
 
     map = HashMap.new()
@@ -111,14 +138,30 @@ See [stdlib-reference.md](stdlib-reference.md) for the full API reference.
 
 ## Pattern Matching
 
-Aether supports pattern matching:
+Aether supports pattern matching in match statements:
 
 ```aether
-match value {
-    0 => print("Zero")
-    1 => print("One")
-    [h|t] => print("List with head: " + h)
-    _ => print("Other")
+match (value) {
+    0 -> { print("Zero\n") }
+    1 -> { print("One\n") }
+    _ -> { print("Other\n") }
+}
+```
+
+List patterns work with arrays (requires corresponding `_len` variable):
+
+```aether
+nums = [1, 2, 3]
+nums_len = 3
+
+match (nums) {
+    [] -> { print("empty\n") }
+    [x] -> { print("one element\n") }
+    [h|t] -> {
+        print("head: ")
+        print(h)
+        print("\n")
+    }
 }
 ```
 
@@ -164,4 +207,4 @@ match value {
 
 **Windows:**
 - Use PowerShell, not CMD
-- Forward slashes in paths work: `./build/aetherc`
+- Forward slashes in paths work: `./build/ae`

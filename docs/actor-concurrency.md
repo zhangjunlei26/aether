@@ -211,6 +211,5 @@ Message payloads are managed by thread-local pools. Payloads are returned to the
 
 - No automatic garbage collection
 - No actor supervision trees
-- No pattern matching in receive blocks
 - Fixed mailbox size (256 messages)
 - Mailbox is not thread-safe; only the owning thread may access it

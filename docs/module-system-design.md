@@ -176,4 +176,4 @@ main() {
 ## Notes
 
 - Single-file programs continue to work without modules
-- Third-party package management is limited (apkg provides basic init and build commands only)
+- Third-party package management via `ae add` (GitHub packages)

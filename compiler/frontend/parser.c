@@ -697,9 +697,27 @@ ASTNode* parse_for_loop(Parser* parser) {
     Token* token = peek_token(parser);
     
     // Check if init is a variable declaration (int i = 1) or expression (i = 1)
-    if (token && (token->type == TOKEN_INT || token->type == TOKEN_STRING || 
+    if (token && (token->type == TOKEN_INT || token->type == TOKEN_STRING ||
                   token->type == TOKEN_FLOAT || token->type == TOKEN_BOOL)) {
         init = parse_variable_declaration_with_semicolon(parser, false);
+        expect_token(parser, TOKEN_SEMICOLON);
+    } else if (token && token->type == TOKEN_IDENTIFIER) {
+        // Check for Python-style: i = 0 (treat as variable declaration)
+        Token* next = peek_ahead(parser, 1);
+        if (next && next->type == TOKEN_ASSIGN) {
+            // Parse as variable declaration without consuming semicolon
+            Token* name = expect_token(parser, TOKEN_IDENTIFIER);
+            init = create_ast_node(AST_VARIABLE_DECLARATION, name->value, name->line, name->column);
+            init->node_type = create_type(TYPE_UNKNOWN);
+            if (match_token(parser, TOKEN_ASSIGN)) {
+                ASTNode* value = parse_expression(parser);
+                if (value) {
+                    add_child(init, value);
+                }
+            }
+        } else {
+            init = parse_expression(parser);
+        }
         expect_token(parser, TOKEN_SEMICOLON);
     } else if (!match_token(parser, TOKEN_SEMICOLON)) {
         init = parse_expression(parser);
@@ -890,15 +908,19 @@ ASTNode* parse_match_statement(Parser* parser) {
 ASTNode* parse_match_case(Parser* parser) {
     Token* current = peek_token(parser);
     if (!current) return NULL;
-    
-    // Parse pattern (simplified: just expressions or underscore for wildcard)
+
+    // Parse pattern: wildcard, list pattern, or expression
     ASTNode* pattern = NULL;
-    
+
     if (current->type == TOKEN_IDENTIFIER && strcmp(current->value, "_") == 0) {
         // Wildcard pattern
         advance_token(parser);
         pattern = create_ast_node(AST_LITERAL, "_", current->line, current->column);
         pattern->node_type = create_type(TYPE_WILDCARD);
+    } else if (current->type == TOKEN_LEFT_BRACKET) {
+        // List pattern: [], [x], [x, y], [h|t]
+        pattern = parse_pattern(parser);
+        if (!pattern) return NULL;
     } else {
         // Expression pattern (literal, identifier, etc.)
         pattern = parse_expression(parser);
@@ -1000,7 +1022,7 @@ ASTNode* parse_import_statement(Parser* parser) {
     
     // Check for alias: import mod as alias
     Token* next = peek_token(parser);
-    if (next && next->type == TOKEN_IDENTIFIER && strcmp(next->value, "as") == 0) {
+    if (next && next->type == TOKEN_AS) {
         advance_token(parser);  // consume 'as'
         Token* alias = expect_token(parser, TOKEN_IDENTIFIER);
         if (alias) {

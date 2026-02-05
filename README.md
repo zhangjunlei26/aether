@@ -70,12 +70,12 @@ See [benchmarks/cross-language/](benchmarks/cross-language/) for methodology and
 ```bash
 git clone https://github.com/nicolasmd87/aether.git
 cd aether
-
-# Build compiler and CLI tool
-make compiler
 make ae
+```
 
-# Test it works
+This builds both the compiler and the `ae` CLI tool. Verify it works:
+
+```bash
 ./build/ae version
 ```
 
@@ -83,59 +83,45 @@ make ae
 
 ### Your First Program
 
-Create `hello.ae`:
-
-```aether
-main() {
-    print("Hello from Aether!\\n");
-    print("The answer is: %d\\n", 42);
-}
+```bash
+# Create a new project
+./build/ae init hello
+cd hello
+../build/ae run
 ```
 
-Run it:
+Or run a single file directly:
 
 ```bash
-./build/ae run hello.ae
+./build/ae run examples/basics/hello.ae
 ```
 
-**Docker:**
+### The `ae` Command
+
+`ae` is the single entry point for everything — like `go` or `cargo`:
 
 ```bash
-# Build container
-docker build -t aether:latest -f docker/Dockerfile .
-
-# Start development shell
-docker run -it -v $(pwd):/aether aether:latest
-
-# Inside container
-make compiler
-make test
+ae init <name>           # Create a new project
+ae run [file.ae]         # Compile and run (file or project)
+ae build [file.ae]       # Compile to executable
+ae test [file|dir]       # Discover and run tests
+ae add <package>         # Add a dependency
+ae repl                  # Start interactive REPL
+ae version               # Show version
+ae help                  # Show all commands
 ```
 
-See [docker/README.md](docker/README.md) for detailed setup.
+In a project directory (with `aether.toml`), `ae run` and `ae build` work without arguments.
 
-### Common Commands
-
-**Using ae (recommended):**
+**Using Make (alternative):**
 
 ```bash
-./build/ae run hello.ae          # Run a program
-./build/ae build app.ae -o myapp # Build executable
-./build/ae compile lib.ae        # Compile to C only
-./build/ae test                  # Run tests
-./build/ae help                  # Show help
-```
-
-**Using Make:**
-
-```bash
-make compiler                    # Build compiler
+make compiler                    # Build compiler only
 make ae                          # Build ae CLI tool
-make run FILE=hello.ae           # Run a program
-make compile FILE=app.ae         # Build executable
-make test                        # Run tests
+make test                        # Run C test suite (153 tests)
+make examples                    # Build all examples
 make -j8                         # Parallel build
-make help                        # Show all commands
+make help                        # Show all targets
 ```
 
 **Windows:** Use `mingw32-make` instead of `make` and `.\\build\\ae.exe` instead of `./build/ae`.
@@ -145,10 +131,9 @@ make help                        # Show all commands
 ```
 aether/
 ├── compiler/           # Aether compiler (lexer, parser, codegen)
-│   ├── lexer.c/h      # Tokenization
-│   ├── parser.c/h     # AST generation
-│   ├── typechecker.c/h # Type inference and checking
-│   ├── codegen.c/h    # C code generation
+│   ├── frontend/      # Lexer, parser, tokens
+│   ├── analysis/      # Type checker, type inference
+│   ├── backend/       # C code generation, optimizer
 │   └── aetherc.c      # Compiler entry point
 ├── runtime/           # Runtime system
 │   ├── actors/        # Actor implementation and lock-free mailboxes
@@ -156,15 +141,19 @@ aether/
 │   ├── scheduler/     # Multi-core work-stealing scheduler
 │   └── utils/         # CPU detection, SIMD, tracing, profiling
 ├── std/               # Standard library
-│   ├── collections/   # HashMap, Vector, List
-│   ├── io/           # File I/O, streams
-│   ├── net/          # TCP/UDP networking
-│   └── json/         # JSON parser
-├── tests/            # Test suite
+│   ├── collections/   # HashMap, Vector, Set, List
+│   ├── string/       # String operations
+│   ├── net/          # TCP/UDP networking, HTTP
+│   ├── json/         # JSON parser
+│   └── fs/           # File system operations
+├── tools/            # Developer tools
+│   ├── ae.c          # Unified CLI tool (ae command)
+│   └── apkg/         # Package manager, TOML parser
+├── tests/            # Test suite (runtime, syntax, integration)
 ├── examples/         # Example programs (.ae files)
-├── benchmarks/       # Performance benchmarks
-│   ├── aether/       # Aether runtime benchmarks
-│   └── cross-language/ # Comparisons with other languages
+│   ├── basics/       # Hello world, variables, arrays, etc.
+│   ├── actors/       # Actor patterns (ping-pong, pipeline, etc.)
+│   └── applications/ # Complete applications
 ├── docs/            # Documentation
 └── docker/          # Docker configuration
 ```
@@ -182,38 +171,35 @@ actor Counter {
     state count = 0
 
     receive {
-        Increment -> {
-            count = count + 1;
+        Increment() -> {
+            count = count + 1
         }
-
-        Decrement -> {
-            count = count - 1;
+        Decrement() -> {
+            count = count - 1
         }
-
-        GetCount -> {
-            print("Current count: ");
-            print(count);
-            print("\n");
+        GetCount() -> {
+            print("Current count: ")
+            print(count)
+            print("\n")
         }
-
-        Reset -> {
-            count = 0;
+        Reset() -> {
+            count = 0
         }
     }
 }
 
 main() {
     // Spawn counter actor
-    counter = spawn(Counter());
+    counter = spawn(Counter())
 
     // Send messages
-    counter ! Increment;
-    counter ! Increment;
-    counter ! GetCount;
-    counter ! Decrement;
-    counter ! GetCount;
-    counter ! Reset;
-    counter ! GetCount;
+    counter ! Increment {}
+    counter ! Increment {}
+    counter ! GetCount {}
+    counter ! Decrement {}
+    counter ! GetCount {}
+    counter ! Reset {}
+    counter ! GetCount {}
 }
 ```
 
@@ -284,13 +270,15 @@ The runtime employs a tiered optimization strategy:
 ### Running Tests
 
 ```bash
-# All tests
+# Runtime test suite (153 tests)
 make test
 
-# Specific test suite
-./build/test_harness compiler    # Compiler tests
-./build/test_harness runtime     # Runtime tests
-./build/test_harness integration # Integration tests
+# Aether syntax and integration tests
+./build/ae test tests/syntax/
+./build/ae test tests/integration/
+
+# Build all examples (24 programs)
+make examples
 ```
 
 ### Running Benchmarks
@@ -351,12 +339,6 @@ The benchmark suite compares Aether against C, C++, Go, Rust, Java, Zig, Erlang,
 - Package management concepts
 - Editor integration experiments
 - Runtime optimization research
-
-### Not Planned
-- Production hardening (requires significant resources)
-- Enterprise support
-- Distributed actors
-- Hot code reloading
 
 ## License
 
