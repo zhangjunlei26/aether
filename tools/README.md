@@ -13,7 +13,6 @@ tools/
 │   ├── main.c             # Package manager entry point
 │   └── toml_parser.c/h    # TOML configuration parser
 ├── profiler/               # Runtime profiler (see profiler/README.md)
-├── benchmark_compare.py    # Benchmark result comparison
 ├── benchmark_runner.sh     # CI benchmark execution
 ├── check_regression.py     # Performance regression detection
 └── test_apkg.sh           # Package manager tests
@@ -124,7 +123,6 @@ See [profiler/README.md](profiler/README.md) for integration details.
 Used by CI for performance tracking:
 
 - `benchmark_runner.sh` - Executes benchmark suite
-- `benchmark_compare.py` - Compares results between runs
 - `check_regression.py` - Detects performance regressions
 
 Run benchmarks:
