@@ -22,19 +22,48 @@ To install to a custom location:
 
 ### Prerequisites
 
-The installer checks for these automatically, but here's what you need:
+The installer checks for these automatically and provides platform-specific install commands if something is missing. Here's what you need:
 
 **macOS:**
-- Xcode command line tools: `xcode-select --install`
+```bash
+xcode-select --install
+# Or with Homebrew: brew install gcc make
+```
 
-**Linux (Debian/Ubuntu):**
-- `sudo apt-get install build-essential`
+**Linux (Debian/Ubuntu/Pop!_OS/Mint):**
+```bash
+sudo apt-get install build-essential
+```
 
-**Linux (Fedora/RHEL):**
-- `sudo dnf install gcc make`
+**Linux (Fedora):**
+```bash
+sudo dnf install gcc make
+```
+
+**Linux (RHEL/CentOS/Rocky/AlmaLinux):**
+```bash
+sudo yum install gcc make
+```
+
+**Linux (Arch/Manjaro):**
+```bash
+sudo pacman -S base-devel
+```
+
+**Linux (openSUSE):**
+```bash
+sudo zypper install gcc make
+```
+
+**Linux (Alpine):**
+```bash
+apk add build-base
+```
 
 **Windows:**
-- MinGW-w64 GCC 11.0+ (MSVC is not supported)
+- Install [MinGW-w64](https://www.mingw-w64.org/) (GCC 11.0+)
+- Add MinGW `bin` directory to your PATH
+- MSVC is not supported — Aether requires GCC
 - Use `mingw32-make ae` instead of the install script
 
 ### Development Build (without installing)

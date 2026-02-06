@@ -35,31 +35,111 @@ warn()  { printf "${YELLOW}%s${NC}\n" "$1"; }
 error() { printf "${RED}%s${NC}\n" "$1"; }
 
 if [ "$EDITOR_ONLY" -eq 0 ]; then
+    # Detect Linux distribution
+    detect_linux_distro() {
+        if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            echo "$ID"
+        elif [ -f /etc/debian_version ]; then
+            echo "debian"
+        elif [ -f /etc/redhat-release ]; then
+            echo "rhel"
+        elif [ -f /etc/arch-release ]; then
+            echo "arch"
+        else
+            echo "unknown"
+        fi
+    }
+
+    # Get install command for the current OS
+    get_install_hint() {
+        case "$(uname -s)" in
+            Darwin)
+                echo "  macOS: xcode-select --install"
+                echo "     Or: brew install gcc make"
+                ;;
+            Linux)
+                distro=$(detect_linux_distro)
+                case "$distro" in
+                    ubuntu|debian|pop|mint|elementary)
+                        echo "  Debian/Ubuntu: sudo apt-get install build-essential"
+                        ;;
+                    fedora)
+                        echo "  Fedora: sudo dnf install gcc make"
+                        ;;
+                    rhel|centos|rocky|almalinux)
+                        echo "  RHEL/CentOS: sudo yum install gcc make"
+                        ;;
+                    arch|manjaro|endeavouros)
+                        echo "  Arch Linux: sudo pacman -S base-devel"
+                        ;;
+                    opensuse*)
+                        echo "  openSUSE: sudo zypper install gcc make"
+                        ;;
+                    alpine)
+                        echo "  Alpine: apk add build-base"
+                        ;;
+                    void)
+                        echo "  Void Linux: sudo xbps-install -S base-devel"
+                        ;;
+                    gentoo)
+                        echo "  Gentoo: emerge sys-devel/gcc sys-devel/make"
+                        ;;
+                    *)
+                        echo "  Linux: Install gcc and make using your package manager"
+                        echo "         Common packages: build-essential, base-devel, or gcc + make"
+                        ;;
+                esac
+                ;;
+            MINGW*|MSYS*|CYGWIN*)
+                echo "  Windows: Install MinGW-w64 from https://www.mingw-w64.org/"
+                echo "           Add MinGW bin directory to PATH"
+                echo "           Use: mingw32-make ae"
+                ;;
+            *)
+                echo "  Install GCC (or Clang) and GNU Make for your platform"
+                ;;
+        esac
+    }
+
     # Check prerequisites
     info "Checking prerequisites..."
 
-    if ! command -v gcc >/dev/null 2>&1 && ! command -v cc >/dev/null 2>&1; then
-        error "Error: C compiler (gcc or cc) not found."
-        echo ""
-        case "$(uname -s)" in
-            Darwin) echo "  Install: xcode-select --install" ;;
-            Linux)  echo "  Install: sudo apt-get install build-essential" ;;
-            *)      echo "  Install GCC or Clang for your platform." ;;
-        esac
-        exit 1
+    MISSING_DEPS=""
+
+    if ! command -v gcc >/dev/null 2>&1 && ! command -v cc >/dev/null 2>&1 && ! command -v clang >/dev/null 2>&1; then
+        MISSING_DEPS="C compiler (gcc, clang, or cc)"
     fi
 
     if ! command -v make >/dev/null 2>&1; then
-        error "Error: make not found."
-        case "$(uname -s)" in
-            Darwin) echo "  Install: xcode-select --install" ;;
-            Linux)  echo "  Install: sudo apt-get install build-essential" ;;
-            *)      echo "  Install GNU Make for your platform." ;;
-        esac
+        if [ -n "$MISSING_DEPS" ]; then
+            MISSING_DEPS="$MISSING_DEPS, make"
+        else
+            MISSING_DEPS="make"
+        fi
+    fi
+
+    if [ -n "$MISSING_DEPS" ]; then
+        error "Error: Missing prerequisites: $MISSING_DEPS"
+        echo ""
+        echo "Install the required tools:"
+        get_install_hint
+        echo ""
+        echo "After installing, run this script again:"
+        echo "  $0"
         exit 1
     fi
 
-    ok "  Prerequisites OK"
+    # Show what compiler we found
+    if command -v gcc >/dev/null 2>&1; then
+        CC_VERSION=$(gcc --version 2>&1 | head -1)
+    elif command -v clang >/dev/null 2>&1; then
+        CC_VERSION=$(clang --version 2>&1 | head -1)
+    else
+        CC_VERSION=$(cc --version 2>&1 | head -1)
+    fi
+    ok "  C compiler: $CC_VERSION"
+    ok "  make: $(make --version 2>&1 | head -1)"
     echo ""
 
     # Build
