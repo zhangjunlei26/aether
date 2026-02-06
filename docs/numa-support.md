@@ -81,12 +81,16 @@ Modified `runtime/scheduler/multicore_scheduler.c`:
 
 ### Testing
 
-**NUMA Detection Tool:**
+**Check NUMA Topology:**
+
+On Linux, use `numactl` to check NUMA configuration:
 ```bash
-./build/numa_info.exe
+numactl --hardware
 ```
 
-**Output Example (UMA system):**
+On macOS, NUMA is not supported (single memory domain).
+
+**Example Output (UMA system):**
 ```
 NUMA Topology Detection
 =======================

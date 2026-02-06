@@ -245,7 +245,7 @@ You've learned:
 - Basic math operations
 - Comments
 
-**Next Tutorial:** [Functions and Type Inference](02-functions-and-types.md)
+**Next Tutorial:** [Functions and Control Flow](02-functions-and-control-flow.md)
 
 ## Quick Reference
 

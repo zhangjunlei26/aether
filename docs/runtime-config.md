@@ -191,8 +191,10 @@ if (aether_runtime_has_feature(AETHER_FLAG_ENABLE_MWAIT)) {
 ## Testing
 
 ### Check CPU Features
-```bash
-./build/cpu_info.exe
+
+Use the verbose flag to see detected CPU features at startup:
+```c
+aether_runtime_init(0, AETHER_FLAG_AUTO_DETECT | AETHER_FLAG_VERBOSE);
 ```
 
 ### Run Configuration Example
@@ -287,7 +289,7 @@ aether_runtime_init(0, AETHER_FLAG_AUTO_DETECT | AETHER_FLAG_VERBOSE);
 
 ### Issue: "Performance not as expected"
 **Check:**
-1. CPU actually supports features (`./build/cpu_info.exe`)
+1. CPU actually supports features (use `AETHER_FLAG_VERBOSE` to see detected capabilities)
 2. Flags are set correctly
 3. Actors created after `aether_runtime_init()`
 

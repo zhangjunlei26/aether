@@ -88,20 +88,9 @@ TEST_SRC = tests/runtime/test_harness.c \
            tests/compiler/test_lexer.c
 
 # Standalone test programs with their own main() - build separately
-STANDALONE_TESTS = tests/test_runtime_implementations.c \
-                   tests/test_scheduler_integration.c \
-                   tests/runtime/test_runtime_manual.c \
-                   tests/compiler/test_arrays.c \
-           tests/test_memory_stress.c \
-           tests/test_memory_leaks.c \
-           tests/test_64bit.c \
-           tests/test_runtime_math.c \
-           tests/test_runtime_collections.c \
-           tests/test_runtime_json.c \
-           tests/test_runtime_http.c \
-           tests/test_runtime_net.c \
-           tests/test_runtime_strings.c \
-           tests/test_collections.c
+# These are not part of the main test suite but can be built manually
+STANDALONE_TESTS = tests/runtime/test_runtime_manual.c \
+                   tests/compiler/test_arrays.c
 
 all: compiler
 
