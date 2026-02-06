@@ -531,7 +531,7 @@ You've learned:
 - Multiple concurrent actors
 - Actor design patterns
 
-**Next Tutorial:** [Advanced Topics](04-advanced-topics.md)
+**Next:** See the [Language Reference](../language-reference.md) for complete syntax details.
 
 ## Quick Reference
 
