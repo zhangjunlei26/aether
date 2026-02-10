@@ -189,13 +189,18 @@ examples: compiler
 	@echo "==================================="
 	@echo "  Building Aether Examples"
 	@echo "==================================="
-	@$(MKDIR) $(BUILD_DIR)/examples $(BUILD_DIR)/examples/basics $(BUILD_DIR)/examples/actors $(BUILD_DIR)/examples/applications
+	@$(MKDIR) $(BUILD_DIR)/examples $(BUILD_DIR)/examples/basics $(BUILD_DIR)/examples/actors $(BUILD_DIR)/examples/applications $(BUILD_DIR)/examples/c-interop
 	@pass=0; fail=0; \
 	for src in $$(find examples -name '*.ae' | sort); do \
 		name=$$(echo $$src | sed 's|examples/||;s|\.ae$$||'); \
+		dir=$$(dirname $$src); \
+		extra_c=""; \
+		if [ -d "$$dir" ]; then \
+			extra_c=$$(find "$$dir" -maxdepth 1 -name '*.c' 2>/dev/null | tr '\n' ' '); \
+		fi; \
 		printf "  %-30s " "$$name"; \
 		if ./build/aetherc$(EXE_EXT) $$src $(BUILD_DIR)/examples/$$name.c 2>/dev/null && \
-		   $(CC) $(CFLAGS) $(BUILD_DIR)/examples/$$name.c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) \
+		   $(CC) $(CFLAGS) $(BUILD_DIR)/examples/$$name.c $$extra_c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) \
 		         -o $(BUILD_DIR)/examples/$$name$(EXE_EXT) $(LDFLAGS) 2>/dev/null; then \
 			echo "OK"; \
 			pass=$$((pass + 1)); \

@@ -151,9 +151,9 @@ void* __attribute__((hot)) scheduler_thread(void* arg) {
                 int drained = 0;
                 while (actor->mailbox.count > 0 && drained < 128) {
                     if (actor->step) actor->step(actor);
-                    sched->messages_processed++;  // Per-core counter - no atomic!
                     drained++;
                 }
+                sched->messages_processed += drained;  // Batch update!
             }
 
             // Now try to deliver message
@@ -205,9 +205,10 @@ void* __attribute__((hot)) scheduler_thread(void* arg) {
                     int processed = 0;
                     while (actor->mailbox.count > 0 && processed < 64) {
                         actor->step(actor);
-                        sched->messages_processed++;  // Per-core counter - no atomic!
                         processed++;
                     }
+                    // Batch counter update - single write per batch instead of per message!
+                    sched->messages_processed += processed;
                     if (processed > 0 && actor->mailbox.count == 0) {
                         actor->active = 0;
                     }
@@ -436,7 +437,7 @@ void scheduler_wait() {
         // Uses per-core counters (Linux kernel's per-CPU counter pattern)
         // No atomic contention on the hot path - only sum on read
         int stable_count = 0;
-        while (stable_count < 5) {  // Require 5 consecutive stable reads
+        while (stable_count < 3) {  // Require 3 consecutive stable reads
             // Memory barrier to ensure we see latest values from other cores
             atomic_thread_fence(memory_order_acquire);
 
@@ -454,13 +455,13 @@ void scheduler_wait() {
 
             if (total_sent == total_processed) {
                 stable_count++;
-                // Small delay between stability checks to avoid false positives
-                if (total_sent > 0) {
-                    usleep(100);  // 100 microseconds
-                }
             } else {
                 stable_count = 0;
-                // Spin-wait when not yet idle
+            }
+
+            // Brief spin between checks for memory visibility
+            // Note: 500 iterations is enough for memory visibility while keeping latency low
+            for (int spin = 0; spin < 500; spin++) {
                 #if defined(__x86_64__) || defined(_M_X64)
                 __asm__ __volatile__("pause" ::: "memory");
                 #elif defined(__aarch64__)
