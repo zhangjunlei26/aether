@@ -34,7 +34,7 @@ This suite compares baseline actor implementations using a ping-pong message pas
 
 **Test characteristics:**
 - Ping-pong pattern with full round-trip validation
-- Configurable message count (default: 10,000,000)
+- Configurable message count (default: 1,000,000)
 - All languages use standard optimizations (-O3 equivalent)
 - No specialized tuning or non-standard optimizations
 - Validates message integrity on every exchange
@@ -60,7 +60,7 @@ Edit `benchmark_config.json` to adjust parameters:
 
 ```json
 {
-  "messages": 10000000,
+  "messages": 1000000,
   "timeout_seconds": 60
 }
 ```

@@ -681,6 +681,127 @@ void scheduler_send_remote(ActorBase* actor, Message msg, int from_core) {
     AETHER_STAT_INC(queue_sends);
 }
 
+// ==============================================================================
+// BATCH SEND OPTIMIZATION (for main thread fan-out patterns)
+// ==============================================================================
+// Reduces atomic operations from N to num_cores by grouping messages by target
+// core and using queue_enqueue_batch for bulk insertion.
+//
+// Performance: For fork-join with 8 workers and 1M messages:
+//   - Without batching: ~1M atomic ops (one per message)
+//   - With batching: ~4K atomic ops (256 messages per batch, 8 cores)
+
+#define BATCH_SEND_SIZE 256
+
+typedef struct {
+    ActorBase* actors[BATCH_SEND_SIZE];
+    Message messages[BATCH_SEND_SIZE];
+    int count;
+    int by_core[MAX_CORES];  // Count per target core for efficient sorting
+} BatchSendBuffer;
+
+static __thread BatchSendBuffer* g_batch_buffer = NULL;
+
+void scheduler_send_batch_start(void) {
+    if (!g_batch_buffer) {
+        g_batch_buffer = calloc(1, sizeof(BatchSendBuffer));
+    }
+    g_batch_buffer->count = 0;
+    memset(g_batch_buffer->by_core, 0, sizeof(g_batch_buffer->by_core));
+}
+
+void scheduler_send_batch_add(ActorBase* actor, Message msg) {
+    // FAST PATH: Single-actor programs bypass batching entirely
+    // Main Thread Mode = synchronous processing, zero queue overhead
+    if (aether_main_thread_mode_active()) {
+        mailbox_send(&actor->mailbox, msg);
+        actor->step(actor);
+        AETHER_STAT_INC(inline_sends);
+        return;
+    }
+
+    // BATCH PATH: Multi-actor fan-out optimization
+    if (!g_batch_buffer) {
+        scheduler_send_batch_start();
+    }
+
+    // If buffer is full, flush first
+    if (g_batch_buffer->count >= BATCH_SEND_SIZE) {
+        scheduler_send_batch_flush();
+    }
+
+    int idx = g_batch_buffer->count++;
+    g_batch_buffer->actors[idx] = actor;
+    g_batch_buffer->messages[idx] = msg;
+
+    // Track per-core counts for O(1) sorting later
+    int target_core = actor->assigned_core;
+    if (target_core >= 0 && target_core < num_cores) {
+        g_batch_buffer->by_core[target_core]++;
+    }
+}
+
+void scheduler_send_batch_flush(void) {
+    if (!g_batch_buffer || g_batch_buffer->count == 0) return;
+
+    // === PHASE 1: Compute offsets for radix sort by core ===
+    int offsets[MAX_CORES];
+    int offset = 0;
+    for (int c = 0; c < num_cores; c++) {
+        offsets[c] = offset;
+        offset += g_batch_buffer->by_core[c];
+    }
+
+    // === PHASE 2: Sort messages into per-core buckets ===
+    void* sorted_actors[BATCH_SEND_SIZE];
+    Message sorted_msgs[BATCH_SEND_SIZE];
+    int positions[MAX_CORES];
+    memcpy(positions, offsets, sizeof(offsets));
+
+    for (int i = 0; i < g_batch_buffer->count; i++) {
+        ActorBase* actor = g_batch_buffer->actors[i];
+        int target_core = actor->assigned_core;
+        if (target_core < 0 || target_core >= num_cores) {
+            target_core = actor->id % num_cores;
+        }
+        int pos = positions[target_core]++;
+        sorted_actors[pos] = actor;
+        sorted_msgs[pos] = g_batch_buffer->messages[i];
+    }
+
+    // === PHASE 3: Batch enqueue to each core (ONE atomic per core!) ===
+    uint64_t total_sent = 0;
+    for (int c = 0; c < num_cores; c++) {
+        int start = offsets[c];
+        int count = g_batch_buffer->by_core[c];
+        if (count == 0) continue;
+
+        // Use queue_enqueue_batch: single atomic_store for entire batch!
+        int enqueued = queue_enqueue_batch(
+            &schedulers[c].incoming_queue,
+            &sorted_actors[start],
+            &sorted_msgs[start],
+            count
+        );
+
+        // Fallback for overflow (rare) - scheduler_send_remote handles its own counting
+        for (int j = enqueued; j < count; j++) {
+            scheduler_send_remote(sorted_actors[start + j], sorted_msgs[start + j], -1);
+        }
+
+        // Only count batch-enqueued messages here (fallback already counted by send_remote)
+        total_sent += enqueued;
+        atomic_fetch_add_explicit(&schedulers[c].work_count, enqueued, memory_order_relaxed);
+    }
+
+    // Single atomic update for batch-sent messages
+    atomic_fetch_add_explicit(&main_thread_sent, total_sent, memory_order_relaxed);
+
+    // Reset buffer
+    g_batch_buffer->count = 0;
+    memset(g_batch_buffer->by_core, 0, sizeof(g_batch_buffer->by_core));
+}
+
 // Spawn actor with NUMA-aware allocation.  actor_size must be >= sizeof(ActorBase)
 // and cover the full derived-actor struct (e.g. sizeof(PingActor)).
 ActorBase* scheduler_spawn_pooled(int preferred_core, void (*step)(void*), size_t actor_size) {

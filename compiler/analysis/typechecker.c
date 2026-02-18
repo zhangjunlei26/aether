@@ -98,8 +98,8 @@ static ASTNode* resolve_and_load_module(const char* module_name) {
 // Resolve local package modules (non-std imports)
 // Converts dots to slashes: "mypackage.utils" -> "mypackage/utils/module.ae"
 static ASTNode* resolve_local_module(const char* module_path) {
-    char path[512];
     char converted[512];
+    char path[sizeof(converted) + 16];
 
     // Convert dots to slashes
     strncpy(converted, module_path, sizeof(converted) - 1);

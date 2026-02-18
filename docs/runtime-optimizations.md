@@ -101,6 +101,28 @@ for (int i = 0; i < count; i++) {
 
 The batch dequeue reads `head` and `tail` once, copies all available messages, then advances `head` with a single `atomic_store`. This matches the existing batch enqueue pattern used by `queue_enqueue_batch`.
 
+### Batch Send for Fan-Out Patterns
+
+**Implementation:** `runtime/scheduler/multicore_scheduler.c`, `compiler/backend/codegen.c`
+
+For main thread fan-out patterns (fork-join), batch send reduces atomic operations from N to num_cores. The compiler detects while loops containing sends in `main()` and wraps them with batch start/flush calls.
+
+```c
+// Generated code for fork-join pattern:
+scheduler_send_batch_start();
+while (i < total) {
+    worker ! Work { value: i };  // Buffered, not sent immediately
+    i = i + 1;
+}
+scheduler_send_batch_flush();  // Bulk send with one atomic per core
+```
+
+The flush sorts messages by target core using radix sort, then calls `queue_enqueue_batch` for each core. This reduces atomics from N (one per message) to num_cores (one per core).
+
+**Runtime auto-detection:** The batch send path automatically detects when Main Thread Actor Mode is active (single-actor programs) and uses the synchronous zero-copy path instead of batching. This ensures single-actor benchmarks like counting use the optimal path while multi-actor fan-out patterns like fork-join benefit from batch send. No manual configuration is required.
+
+**Pattern detection:** Only applied in `main()` function loops, not inside actor receive handlers. This preserves low-latency actor-to-actor messaging while optimizing main-to-actors fan-out.
+
 ### Adaptive Batch Size
 
 **Implementation:** `runtime/actors/aether_adaptive_batch.h`

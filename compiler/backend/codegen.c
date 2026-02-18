@@ -99,8 +99,8 @@ static ASTNode* codegen_resolve_and_load_module(const char* module_name) {
 // Resolve local package modules (non-std imports)
 // Converts dots to slashes: "mypackage.utils" -> "mypackage/utils/module.ae"
 static ASTNode* codegen_resolve_local_module(const char* module_path) {
-    char path[512];
     char converted[512];
+    char path[sizeof(converted) + 16];
 
     // Convert dots to slashes
     strncpy(converted, module_path, sizeof(converted) - 1);
@@ -142,6 +142,16 @@ static ASTNode* codegen_resolve_local_module(const char* module_path) {
     return NULL;
 }
 
+// Check if an AST node contains send expressions (for batch optimization)
+static int contains_send_expression(ASTNode* node) {
+    if (!node) return 0;
+    if (node->type == AST_SEND_FIRE_FORGET || node->type == AST_SEND_STATEMENT) return 1;
+    for (int i = 0; i < node->child_count; i++) {
+        if (contains_send_expression(node->children[i])) return 1;
+    }
+    return 0;
+}
+
 // Returns the field name if msg has exactly one int field (eligible for inline encoding),
 // or NULL otherwise. Inline messages skip pool allocation entirely — the single int field
 // is stored in Message.payload_int, avoiding memcpy and pool lookup on every send.
@@ -167,6 +177,7 @@ CodeGenerator* create_code_generator(FILE* output) {
     gen->declared_var_count = 0;
     gen->generating_lvalue = 0;  // Not generating lvalue by default
     gen->in_condition = 0;  // Not in condition by default
+    gen->in_main_loop = 0;  // Not in main loop by default
     gen->emit_header = 0;
     gen->header_file = NULL;
     gen->header_path = NULL;
@@ -896,13 +907,22 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                                 }
                             }
                             fprintf(gen->output, ", NULL, {NULL, 0, 0}}; ");
-                            fprintf(gen->output, "if (current_core_id >= 0 && current_core_id == ((ActorBase*)(");
-                            generate_expression(gen, target);
-                            fprintf(gen->output, "))->assigned_core) { scheduler_send_local((ActorBase*)(");
-                            generate_expression(gen, target);
-                            fprintf(gen->output, "), _imsg); } else { scheduler_send_remote((ActorBase*)(");
-                            generate_expression(gen, target);
-                            fprintf(gen->output, "), _imsg, current_core_id); } }");
+
+                            if (gen->in_main_loop) {
+                                // Batch path: collect messages for bulk flush
+                                fprintf(gen->output, "scheduler_send_batch_add((ActorBase*)(");
+                                generate_expression(gen, target);
+                                fprintf(gen->output, "), _imsg); }");
+                            } else {
+                                // Standard path: immediate send with core check
+                                fprintf(gen->output, "if (current_core_id >= 0 && current_core_id == ((ActorBase*)(");
+                                generate_expression(gen, target);
+                                fprintf(gen->output, "))->assigned_core) { scheduler_send_local((ActorBase*)(");
+                                generate_expression(gen, target);
+                                fprintf(gen->output, "), _imsg); } else { scheduler_send_remote((ActorBase*)(");
+                                generate_expression(gen, target);
+                                fprintf(gen->output, "), _imsg, current_core_id); } }");
+                            }
                         } else {
                             // General path: multi-field messages go through pool allocation
                             fprintf(gen->output, "{ %s _msg = { ._message_id = %d",
@@ -1229,7 +1249,17 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             print_line(gen, "}");
             break;
             
-        case AST_WHILE_LOOP:
+        case AST_WHILE_LOOP: {
+            // Check if loop body contains sends (for batch optimization)
+            int has_sends = contains_send_expression(stmt);
+
+            // Batch optimization: only in main() (not inside actors)
+            // Uses queue_enqueue_batch to reduce atomics from N to num_cores
+            if (has_sends && gen->current_actor == NULL) {
+                print_line(gen, "scheduler_send_batch_start();");
+                gen->in_main_loop = 1;
+            }
+
             fprintf(gen->output, "while (");
             if (stmt->child_count > 0) {
                 gen->in_condition = 1;
@@ -1243,9 +1273,15 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                 generate_statement(gen, stmt->children[1]);
             }
             unindent(gen);
-            
+
             print_line(gen, "}");
+
+            if (has_sends && gen->current_actor == NULL) {
+                print_line(gen, "scheduler_send_batch_flush();");
+                gen->in_main_loop = 0;
+            }
             break;
+        }
             
         case AST_MATCH_STATEMENT:
             // Generate match as a series of if-else statements

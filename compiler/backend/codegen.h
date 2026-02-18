@@ -17,6 +17,7 @@ typedef struct {
     int declared_var_count;
     int generating_lvalue;  // Track if we're generating an assignment target (lvalue)
     int in_condition;  // Track if we're in a condition (if/while) to avoid double parens
+    int in_main_loop;  // Track if we're in main's loop for batch send optimization
     ASTNode* program;  // Reference to program root for lookups
 
     // Header generation (--emit-header)

@@ -107,6 +107,11 @@ int scheduler_register_actor(ActorBase* actor, int preferred_core);
 void scheduler_send_local(ActorBase* actor, Message msg);
 void scheduler_send_remote(ActorBase* actor, Message msg, int from_core);
 
+// Batch send for main thread fan-out patterns (fork-join)
+void scheduler_send_batch_start(void);
+void scheduler_send_batch_add(ActorBase* actor, Message msg);
+void scheduler_send_batch_flush(void);
+
 // Optimized APIs using integrated features (TIER 1 - always on)
 ActorBase* scheduler_spawn_pooled(int preferred_core, void (*step)(void*), size_t actor_size);
 void scheduler_release_pooled(ActorBase* actor);

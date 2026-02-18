@@ -52,6 +52,11 @@ Master spawns N workers, distributes work, collects results. Tests fan-out/fan-i
 - Master sends tasks, workers reply with results
 - Measures parallel dispatch and aggregation
 
+**Notes:**
+- Activates Batch Send optimization (groups messages by target core)
+- Reduces atomic operations from N to num_cores
+- Main thread fan-out pattern benefits significantly from batching
+
 **Location:** `benchmarks/cross-language/aether/fork_join.ae`
 
 ## Cross-Language Benchmarks
@@ -146,7 +151,8 @@ make
 
 ### Key Metrics
 
-- **Throughput**: Messages processed per second
+- **Throughput**: Messages processed per second (M msg/sec)
+- **ns/msg**: Nanoseconds per message (lower is better)
 - **Latency**: Time from send to receive (per round-trip)
 
 ### Considerations
