@@ -460,7 +460,9 @@ counter ! Increment { amount: 10 };
 counter ! Reset {};
 ```
 
-### Ask Pattern (Request-Reply)
+### Ask Pattern (Request-Reply) — *Experimental*
+
+> **Status: Experimental.** The `?` operator compiles but the reply path is not yet connected to the scheduler. Messages are sent but replies are not delivered back to the caller. Use fire-and-forget (`!`) for production code.
 
 The `?` operator sends a message and waits for a reply:
 
@@ -469,7 +471,9 @@ The `?` operator sends a message and waits for a reply:
 result = calculator ? Add { a: 5, b: 3 };
 ```
 
-### Reply Statement
+### Reply Statement — *Experimental*
+
+> **Status: Experimental.** The `reply` statement compiles and validates message fields at compile time, but the reply is not actually sent back to the caller at runtime. Full ask/reply requires request-tracking infrastructure in the scheduler.
 
 Actors respond using the `reply` statement:
 

@@ -3,7 +3,43 @@
 #include <string.h>
 #include <stdarg.h>
 #include "../compiler/frontend/lexer.h"
+#include "../compiler/frontend/parser.h"
 #include "../compiler/ast.h"
+
+/* Extract a JSON string value for a given key from raw JSON content.
+   Returns a newly allocated string or NULL. Caller must free. */
+static char* json_extract_string(const char* json, const char* key) {
+    if (!json || !key) return NULL;
+    char search[128];
+    snprintf(search, sizeof(search), "\"%s\":", key);
+    char* start = strstr(json, search);
+    if (!start) return NULL;
+    start += strlen(search);
+    while (*start == ' ' || *start == '\t') start++;
+    if (*start != '"') return NULL;
+    start++;
+    /* Find closing quote, handling escapes */
+    char* buf = malloc(strlen(start) + 1);
+    if (!buf) return NULL;
+    int bi = 0;
+    for (const char* p = start; *p && *p != '"'; p++) {
+        if (*p == '\\' && *(p + 1)) {
+            p++;
+            switch (*p) {
+                case 'n': buf[bi++] = '\n'; break;
+                case 't': buf[bi++] = '\t'; break;
+                case 'r': buf[bi++] = '\r'; break;
+                case '\\': buf[bi++] = '\\'; break;
+                case '"': buf[bi++] = '"'; break;
+                default: buf[bi++] = *p; break;
+            }
+        } else {
+            buf[bi++] = *p;
+        }
+    }
+    buf[bi] = '\0';
+    return buf;
+}
 
 // LSP Server lifecycle
 LSPServer* lsp_server_create() {
@@ -55,12 +91,34 @@ void lsp_server_run(LSPServer* server) {
             } else if (strcmp(msg->method, "textDocument/definition") == 0) {
                 lsp_handle_definition(server, msg->id, "file:///test.ae", 0, 0);
             } else if (strcmp(msg->method, "textDocument/didOpen") == 0) {
-                lsp_log(server, "Document opened");
+                char* uri = json_extract_string(msg->params, "uri");
+                char* text = json_extract_string(msg->params, "text");
+                if (uri && text) {
+                    lsp_document_open(server, uri, text);
+                    lsp_log(server, "Document opened: %s", uri);
+                    lsp_publish_diagnostics(server, uri);
+                }
+                free(uri);
+                free(text);
             } else if (strcmp(msg->method, "textDocument/didChange") == 0) {
-                lsp_log(server, "Document changed");
+                char* uri = json_extract_string(msg->params, "uri");
+                char* text = json_extract_string(msg->params, "text");
+                if (uri && text) {
+                    lsp_document_change(server, uri, text);
+                    lsp_log(server, "Document changed: %s", uri);
+                    lsp_publish_diagnostics(server, uri);
+                }
+                free(uri);
+                free(text);
             } else if (strcmp(msg->method, "textDocument/didSave") == 0) {
-                lsp_log(server, "Document saved - running diagnostics");
-                lsp_publish_diagnostics(server, "file:///test.ae");
+                char* uri = json_extract_string(msg->params, "uri");
+                if (uri) {
+                    lsp_log(server, "Document saved: %s", uri);
+                    lsp_publish_diagnostics(server, uri);
+                    free(uri);
+                } else {
+                    lsp_log(server, "Document saved (unknown URI)");
+                }
             } else if (strcmp(msg->method, "initialized") == 0) {
                 lsp_log(server, "Client initialized");
             } else if (strcmp(msg->method, "shutdown") == 0) {
@@ -114,6 +172,32 @@ const char* lsp_document_get(LSPServer* server, const char* uri) {
         }
     }
     return NULL;
+}
+
+void lsp_document_change(LSPServer* server, const char* uri, const char* text) {
+    for (int i = 0; i < server->document_count; i++) {
+        if (strcmp(server->open_documents[i], uri) == 0) {
+            free(server->document_contents[i]);
+            server->document_contents[i] = strdup(text);
+            return;
+        }
+    }
+    lsp_document_open(server, uri, text);
+}
+
+void lsp_document_close(LSPServer* server, const char* uri) {
+    for (int i = 0; i < server->document_count; i++) {
+        if (strcmp(server->open_documents[i], uri) == 0) {
+            free(server->open_documents[i]);
+            free(server->document_contents[i]);
+            for (int j = i; j < server->document_count - 1; j++) {
+                server->open_documents[j] = server->open_documents[j + 1];
+                server->document_contents[j] = server->document_contents[j + 1];
+            }
+            server->document_count--;
+            return;
+        }
+    }
 }
 
 // LSP features
@@ -191,16 +275,129 @@ void lsp_handle_document_symbol(LSPServer* server, const char* id, const char* u
 
 void lsp_publish_diagnostics(LSPServer* server, const char* uri) {
     const char* source = lsp_document_get(server, uri);
-    if (!source) return;
+    if (!source) {
+        lsp_log(server, "No document content for URI: %s", uri);
+        return;
+    }
 
-    // Build diagnostics JSON safely with bounds checking
-    char diagnostics[8192];
+    char diagnostics[16384];
+    char diag_items[15000];
+    int diag_offset = 0;
+    int diag_count = 0;
+
+    /* Phase 1: Lex the source and collect TOKEN_ERROR tokens */
+    lexer_init(source);
+    Token* tok;
+    while ((tok = next_token()) != NULL) {
+        if (tok->type == TOKEN_ERROR) {
+            int line = tok->line > 0 ? tok->line - 1 : 0;
+            int col = tok->column > 0 ? tok->column - 1 : 0;
+            if (diag_offset > 0) {
+                diag_items[diag_offset++] = ',';
+            }
+            int n = snprintf(diag_items + diag_offset, sizeof(diag_items) - diag_offset,
+                "{\"range\":{\"start\":{\"line\":%d,\"character\":%d},"
+                "\"end\":{\"line\":%d,\"character\":%d}},"
+                "\"severity\":1,\"source\":\"aether\","
+                "\"message\":\"Unexpected token: %s\"}",
+                line, col, line, col + 1,
+                tok->value ? tok->value : "?");
+            if (n > 0 && diag_offset + n < (int)sizeof(diag_items)) {
+                diag_offset += n;
+                diag_count++;
+            }
+        }
+        int is_eof = (tok->type == TOKEN_EOF);
+        free_token(tok);
+        if (is_eof) break;
+    }
+
+    /* Phase 2: If no lex errors, try parsing to catch syntax errors */
+    if (diag_count == 0) {
+        lexer_init(source);
+        Token* tokens[4096];
+        int token_count = 0;
+        while (token_count < 4095) {
+            Token* t = next_token();
+            tokens[token_count++] = t;
+            if (t->type == TOKEN_EOF || t->type == TOKEN_ERROR) break;
+        }
+
+        /* Redirect stderr to capture parser errors */
+        FILE* old_stderr = stderr;
+        char parse_errors[4096] = {0};
+        FILE* err_capture = fmemopen(parse_errors, sizeof(parse_errors), "w");
+        if (err_capture) {
+            stderr = err_capture;
+        }
+
+        Parser* parser = create_parser(tokens, token_count);
+        ASTNode* ast = parse_program(parser);
+
+        if (err_capture) {
+            fflush(err_capture);
+            fclose(err_capture);
+            stderr = old_stderr;
+        }
+
+        /* Extract line/column from captured error messages if parse failed */
+        if (parse_errors[0] != '\0') {
+            char* line_ptr = parse_errors;
+            while (line_ptr && *line_ptr && diag_count < 20) {
+                char* newline = strchr(line_ptr, '\n');
+                if (newline) *newline = '\0';
+
+                if (strlen(line_ptr) > 2) {
+                    if (diag_offset > 0) {
+                        diag_items[diag_offset++] = ',';
+                    }
+                    /* Escape quotes in the error message */
+                    char safe_msg[512];
+                    int si = 0;
+                    for (const char* p = line_ptr; *p && si < 500; p++) {
+                        if (*p == '"' || *p == '\\') safe_msg[si++] = '\\';
+                        safe_msg[si++] = *p;
+                    }
+                    safe_msg[si] = '\0';
+
+                    int n = snprintf(diag_items + diag_offset, sizeof(diag_items) - diag_offset,
+                        "{\"range\":{\"start\":{\"line\":0,\"character\":0},"
+                        "\"end\":{\"line\":0,\"character\":1}},"
+                        "\"severity\":1,\"source\":\"aether\","
+                        "\"message\":\"%s\"}", safe_msg);
+                    if (n > 0 && diag_offset + n < (int)sizeof(diag_items)) {
+                        diag_offset += n;
+                        diag_count++;
+                    }
+                }
+
+                if (newline) {
+                    *newline = '\n';
+                    line_ptr = newline + 1;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if (ast) free_ast_node(ast);
+        free_parser(parser);
+        for (int i = 0; i < token_count; i++) {
+            free_token(tokens[i]);
+        }
+    }
+
+    diag_items[diag_offset] = '\0';
+
+    lsp_log(server, "Publishing %d diagnostics for %s", diag_count, uri);
+
     int written = snprintf(diagnostics, sizeof(diagnostics),
-                          "{\"uri\":\"%s\",\"diagnostics\":[]}", uri);
+                          "{\"uri\":\"%s\",\"diagnostics\":[%s]}", uri, diag_items);
 
     if (written < 0 || (size_t)written >= sizeof(diagnostics)) {
-        lsp_log(server, "Warning: URI too long for diagnostics buffer");
-        return;
+        lsp_log(server, "Warning: diagnostics buffer overflow, sending empty");
+        snprintf(diagnostics, sizeof(diagnostics),
+                "{\"uri\":\"%s\",\"diagnostics\":[]}", uri);
     }
 
     lsp_send_notification(server, "textDocument/publishDiagnostics", diagnostics);
@@ -252,10 +449,28 @@ JSONRPCMessage* lsp_read_message(LSPServer* server) {
         method_start = strchr(method_start, '"');
         method_start = strchr(method_start + 1, '"') + 1;
         char* method_end = strchr(method_start, '"');
-        msg->method = strndup(method_start, method_end - method_start);
+        if (method_end) {
+            msg->method = strndup(method_start, method_end - method_start);
+        }
     }
-    
-    free(content);
+
+    // Extract id (can be number or string)
+    char* id_start = strstr(content, "\"id\":");
+    if (id_start) {
+        id_start += 5;
+        while (*id_start == ' ') id_start++;
+        if (*id_start == '"') {
+            char* id_end = strchr(id_start + 1, '"');
+            if (id_end) msg->id = strndup(id_start, id_end - id_start + 1);
+        } else {
+            char* id_end = id_start;
+            while (*id_end >= '0' && *id_end <= '9') id_end++;
+            if (id_end > id_start) msg->id = strndup(id_start, id_end - id_start);
+        }
+    }
+
+    // Store full content as params for handlers to extract fields
+    msg->params = content;
     return msg;
 }
 

@@ -1,6 +1,12 @@
-// std.http - HTTP Client & Server
-// Import with: import std.http
-// Usage: http.get(url), http.server_create(port), etc.
+// std.http - HTTP Client & Server (alias for std.net)
+//
+// This is a convenience module that re-exports HTTP functions from std.net.
+// You can use either:
+//   import std.http  (this module)
+//   import std.net   (consolidated networking module)
+//
+// The implementations are in std/net/aether_http.c and std/net/aether_http_server.c
+// which are compiled into libaether.a
 
 // HTTP Client
 extern http_get(url: ptr) -> ptr

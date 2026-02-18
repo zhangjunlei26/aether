@@ -40,8 +40,10 @@ void add_constraint(InferenceContext* ctx, ASTNode* node, Type* type, const char
     // Grow array if needed
     if (ctx->constraint_count >= ctx->constraint_capacity) {
         int new_capacity = ctx->constraint_capacity == 0 ? 16 : ctx->constraint_capacity * 2;
-        ctx->constraints = (TypeConstraint*)realloc(ctx->constraints, 
+        TypeConstraint* new_constraints = (TypeConstraint*)realloc(ctx->constraints, 
                                                      new_capacity * sizeof(TypeConstraint));
+        if (!new_constraints) return;
+        ctx->constraints = new_constraints;
         ctx->constraint_capacity = new_capacity;
     }
     

@@ -24,7 +24,7 @@ ASTNode* optimize_ast(ASTNode* node);
 typedef struct {
     int constants_folded;
     int dead_code_removed;
-    int tail_calls_optimized;
+    int tail_calls_detected;
 } OptimizationStats;
 
 extern OptimizationStats global_opt_stats;

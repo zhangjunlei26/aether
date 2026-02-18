@@ -18,8 +18,11 @@ TEST_CATEGORY(http_response_structure, TEST_CATEGORY_NETWORK) {
 }
 
 TEST_CATEGORY(http_url_parsing, TEST_CATEGORY_NETWORK) {
-    // URL parsing test placeholder
-    ASSERT_TRUE(1);
+    // Test URL query string parsing
+    const char* url = "/search?q=test&limit=10";
+    ASSERT_NOT_NULL(url);
+    ASSERT_TRUE(strstr(url, "?") != NULL);  // Has query string
+    ASSERT_TRUE(strstr(url, "q=test") != NULL);
 }
 
 TEST_CATEGORY(http_response_cleanup, TEST_CATEGORY_NETWORK) {

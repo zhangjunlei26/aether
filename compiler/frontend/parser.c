@@ -1303,38 +1303,46 @@ ASTNode* parse_message_pattern(Parser* parser) {
 ASTNode* parse_reply_statement(Parser* parser) {
     Token* reply_token = peek_token(parser);
     advance_token(parser); // consume 'reply'
-    
+
     Token* msg_name = expect_token(parser, TOKEN_IDENTIFIER);
     if (!msg_name) return NULL;
-    
-    ASTNode* reply_stmt = create_ast_node(AST_REPLY_STATEMENT, msg_name->value, reply_token->line, reply_token->column);
-    
-    // Parse message constructor
+
+    ASTNode* reply_stmt = create_ast_node(AST_REPLY_STATEMENT, NULL, reply_token->line, reply_token->column);
+
+    // Create message constructor node (codegen expects this structure)
+    ASTNode* msg_constructor = create_ast_node(AST_MESSAGE_CONSTRUCTOR, msg_name->value, msg_name->line, msg_name->column);
+
+    // Parse message fields
     if (match_token(parser, TOKEN_LEFT_BRACE)) {
         while (!match_token(parser, TOKEN_RIGHT_BRACE)) {
             if (is_at_end(parser)) {
                 parser_message(parser, "Error: Unexpected end in reply statement");
                 return NULL;
             }
-            
+
             Token* field_name = expect_token(parser, TOKEN_IDENTIFIER);
             if (!field_name) break;
-            
+
             expect_token(parser, TOKEN_COLON);
-            
+
             ASTNode* field_expr = parse_expression(parser);
             if (!field_expr) break;
-            
+
             ASTNode* field_init = create_ast_node(AST_FIELD_INIT, field_name->value, field_name->line, field_name->column);
             add_child(field_init, field_expr);
-            add_child(reply_stmt, field_init);
-            
+            add_child(msg_constructor, field_init);
+
             if (peek_token(parser) && peek_token(parser)->type == TOKEN_COMMA) {
                 advance_token(parser);
             }
         }
     }
-    
+
+    add_child(reply_stmt, msg_constructor);
+
+    // Optional semicolon (Aether allows statements without semicolons)
+    match_token(parser, TOKEN_SEMICOLON);
+
     return reply_stmt;
 }
 

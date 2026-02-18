@@ -131,7 +131,9 @@ In a project directory (with `aether.toml`), `ae run` and `ae build` work withou
 ```bash
 make compiler                    # Build compiler only
 make ae                          # Build ae CLI tool
-make test                        # Run C test suite (153 tests)
+make test                        # Run C test suite (165 tests)
+make test-ae                     # Run .ae source tests (15 tests)
+make test-all                    # Run all tests (C + .ae)
 make examples                    # Build all examples
 make -j8                         # Parallel build
 make help                        # Show all targets
@@ -284,12 +286,14 @@ The runtime employs a tiered optimization strategy:
 ### Running Tests
 
 ```bash
-# Runtime test suite (153 tests)
+# Runtime test suite (165 C tests)
 make test
 
-# Aether syntax and integration tests
-./build/ae test tests/syntax/
-./build/ae test tests/integration/
+# Aether source tests (15 tests)
+make test-ae
+
+# All tests (C + .ae = 180 tests)
+make test-all
 
 # Build all examples (24 programs)
 make examples

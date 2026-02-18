@@ -49,10 +49,10 @@ else ifneq ($(findstring CYGWIN,$(DETECTED_OS)),)
     LDFLAGS += -lws2_32
 endif
 
-COMPILER_SRC = compiler/aetherc.c compiler/frontend/lexer.c compiler/frontend/parser.c compiler/ast.c compiler/analysis/typechecker.c compiler/backend/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/analysis/type_inference.c compiler/backend/optimizer.c compiler/aether_diagnostics.c runtime/actors/aether_message_registry.c
-COMPILER_LIB_SRC = compiler/frontend/lexer.c compiler/frontend/parser.c compiler/ast.c compiler/analysis/typechecker.c compiler/backend/codegen.c compiler/aether_error.c compiler/aether_module.c compiler/analysis/type_inference.c compiler/backend/optimizer.c compiler/aether_diagnostics.c runtime/actors/aether_message_registry.c
+COMPILER_SRC = compiler/aetherc.c compiler/frontend/lexer.c compiler/frontend/parser.c compiler/ast.c compiler/analysis/typechecker.c compiler/backend/codegen.c compiler/backend/codegen_expr.c compiler/backend/codegen_stmt.c compiler/backend/codegen_actor.c compiler/backend/codegen_func.c compiler/aether_error.c compiler/aether_module.c compiler/analysis/type_inference.c compiler/backend/optimizer.c compiler/aether_diagnostics.c runtime/actors/aether_message_registry.c
+COMPILER_LIB_SRC = compiler/frontend/lexer.c compiler/frontend/parser.c compiler/ast.c compiler/analysis/typechecker.c compiler/backend/codegen.c compiler/backend/codegen_expr.c compiler/backend/codegen_stmt.c compiler/backend/codegen_actor.c compiler/backend/codegen_func.c compiler/aether_error.c compiler/aether_module.c compiler/analysis/type_inference.c compiler/backend/optimizer.c compiler/aether_diagnostics.c runtime/actors/aether_message_registry.c
 RUNTIME_SRC = runtime/scheduler/multicore_scheduler.c runtime/scheduler/scheduler_optimizations.c runtime/config/aether_optimization_config.c runtime/memory/memory.c runtime/memory/aether_arena.c runtime/memory/aether_pool.c runtime/memory/aether_memory_stats.c runtime/utils/aether_tracing.c runtime/utils/aether_bounds_check.c runtime/utils/aether_test.c runtime/memory/aether_arena_optimized.c runtime/aether_runtime_types.c runtime/utils/aether_cpu_detect.c runtime/memory/aether_batch.c runtime/utils/aether_simd_vectorized.c runtime/aether_runtime.c runtime/aether_numa.c runtime/actors/aether_send_buffer.c runtime/actors/aether_send_message.c runtime/actors/aether_actor_thread.c
-STD_SRC = std/string/aether_string.c std/math/aether_math.c std/net/aether_http.c std/net/aether_http_server.c std/net/aether_net.c std/collections/aether_collections.c std/json/aether_json.c std/fs/aether_fs.c std/log/aether_log.c
+STD_SRC = std/string/aether_string.c std/math/aether_math.c std/net/aether_http.c std/net/aether_http_server.c std/net/aether_net.c std/collections/aether_collections.c std/json/aether_json.c std/fs/aether_fs.c std/log/aether_log.c std/io/aether_io.c
 COLLECTIONS_SRC = std/collections/aether_hashmap.c std/collections/aether_set.c std/collections/aether_vector.c std/collections/aether_pqueue.c
 
 # Object files
@@ -86,6 +86,7 @@ TEST_SRC = tests/runtime/test_harness.c \
            tests/runtime/test_lockfree_mailbox.c \
            tests/runtime/test_scheduler_optimizations.c \
            tests/runtime/test_spsc_queue.c \
+           tests/runtime/test_http_server.c \
            tests/memory/test_memory_arena.c \
            tests/memory/test_memory_pool.c \
            tests/compiler/test_lexer.c
@@ -177,6 +178,41 @@ test-manual-runtime: compiler
 	$(CC) $(CFLAGS) tests/test_runtime_manual.c $(RUNTIME_SRC) $(LDFLAGS) -o build/test_runtime_manual$(EXE_EXT)
 	@echo "Running manual runtime test..."
 	./build/test_runtime_manual$(EXE_EXT)
+
+# Test .ae source files - compiles and runs each test file
+test-ae: compiler ae
+	@echo "==================================="
+	@echo "  Running Aether Source Tests (.ae)"
+	@echo "==================================="
+	@passed=0; failed=0; total=0; \
+	for test_file in tests/syntax/*.ae tests/compiler/*.ae tests/integration/*.ae; do \
+		if [ -f "$$test_file" ]; then \
+			total=$$((total + 1)); \
+			name=$$(basename "$$test_file" .ae); \
+			echo -n "  Testing $$name... "; \
+			if ./build/ae build "$$test_file" -o build/test_$$name 2>/dev/null; then \
+				if ./build/test_$$name >/dev/null 2>&1; then \
+					echo "[PASS]"; \
+					passed=$$((passed + 1)); \
+				else \
+					echo "[FAIL] (runtime error)"; \
+					failed=$$((failed + 1)); \
+				fi; \
+			else \
+				echo "[FAIL] (compile error)"; \
+				failed=$$((failed + 1)); \
+			fi; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "Aether Tests: $$passed passed, $$failed failed, $$total total"
+
+# Run both C unit tests and .ae integration tests
+test-all: test test-ae
+	@echo ""
+	@echo "==================================="
+	@echo "  All Tests Complete"
+	@echo "==================================="
 
 # Benchmark presets: full (10M), medium (1M), low (100K), stress (100M)
 BENCHMARK_PRESET ?= low

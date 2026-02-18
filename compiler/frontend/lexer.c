@@ -76,10 +76,17 @@ int skip_comment() {
 
 Token* read_string() {
     advance(); // skip opening quote
-    char* buffer = malloc(MAX_IDENTIFIER_LENGTH);
+    int capacity = MAX_IDENTIFIER_LENGTH;
+    char* buffer = malloc(capacity);
     int i = 0;
     
     while (current_pos < source_length && peek() != '"') {
+        if (i >= capacity - 2) {
+            capacity *= 2;
+            char* new_buf = realloc(buffer, capacity);
+            if (!new_buf) { free(buffer); return create_token(TOKEN_ERROR, "out of memory", current_line, current_column); }
+            buffer = new_buf;
+        }
         if (peek() == '\\') {
             advance(); // skip backslash
             char c = advance();
@@ -107,10 +114,17 @@ Token* read_string() {
 }
 
 Token* read_number() {
-    char* buffer = malloc(MAX_IDENTIFIER_LENGTH);
+    int capacity = MAX_IDENTIFIER_LENGTH;
+    char* buffer = malloc(capacity);
     int i = 0;
     
     while (current_pos < source_length && (isdigit(peek()) || peek() == '.')) {
+        if (i >= capacity - 1) {
+            capacity *= 2;
+            char* new_buf = realloc(buffer, capacity);
+            if (!new_buf) { free(buffer); return create_token(TOKEN_ERROR, "out of memory", current_line, current_column); }
+            buffer = new_buf;
+        }
         buffer[i++] = advance();
     }
     
@@ -121,10 +135,17 @@ Token* read_number() {
 }
 
 Token* read_identifier() {
-    char* buffer = malloc(MAX_IDENTIFIER_LENGTH);
+    int capacity = MAX_IDENTIFIER_LENGTH;
+    char* buffer = malloc(capacity);
     int i = 0;
     
     while (current_pos < source_length && (isalnum(peek()) || peek() == '_')) {
+        if (i >= capacity - 1) {
+            capacity *= 2;
+            char* new_buf = realloc(buffer, capacity);
+            if (!new_buf) { free(buffer); return create_token(TOKEN_ERROR, "out of memory", current_line, current_column); }
+            buffer = new_buf;
+        }
         buffer[i++] = advance();
     }
     

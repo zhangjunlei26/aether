@@ -1,8 +1,13 @@
 #ifndef CODEGEN_H
 #define CODEGEN_H
 
+#include <stdio.h>
 #include "../ast.h"
 #include "../../runtime/actors/aether_message_registry.h"
+
+// Maximum defer nesting depth (scope depth * statements per scope)
+#define MAX_DEFER_STACK 256
+#define MAX_SCOPE_DEPTH 64
 
 typedef struct {
     FILE* output;
@@ -28,6 +33,12 @@ typedef struct {
     // Track generated pattern matching functions to avoid duplicates
     char** generated_functions;
     int generated_function_count;
+
+    // Defer stack: tracks deferred statements for LIFO execution at scope exit
+    ASTNode* defer_stack[MAX_DEFER_STACK];
+    int defer_count;
+    int scope_defer_start[MAX_SCOPE_DEPTH];  // defer_count at scope entry
+    int scope_depth;
 } CodeGenerator;
 
 // Code generation functions
@@ -56,5 +67,12 @@ void print_line(CodeGenerator* gen, const char* format, ...);
 void print_expression(CodeGenerator* gen, ASTNode* expr);
 const char* get_c_type(Type* type);
 const char* get_c_operator(const char* aether_op);
+
+// Defer management
+void push_defer(CodeGenerator* gen, ASTNode* stmt);
+void emit_defers_for_scope(CodeGenerator* gen);
+void emit_all_defers(CodeGenerator* gen);
+void enter_scope(CodeGenerator* gen);
+void exit_scope(CodeGenerator* gen);
 
 #endif

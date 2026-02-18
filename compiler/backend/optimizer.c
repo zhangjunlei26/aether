@@ -9,14 +9,14 @@ OptimizationStats global_opt_stats = {0, 0, 0};
 void reset_optimization_stats() {
     global_opt_stats.constants_folded = 0;
     global_opt_stats.dead_code_removed = 0;
-    global_opt_stats.tail_calls_optimized = 0;
+    global_opt_stats.tail_calls_detected = 0;
 }
 
 void print_optimization_stats() {
     printf("Optimization Statistics:\n");
     printf("  Constants folded: %d\n", global_opt_stats.constants_folded);
     printf("  Dead code removed: %d\n", global_opt_stats.dead_code_removed);
-    printf("  Tail calls optimized: %d\n", global_opt_stats.tail_calls_optimized);
+    printf("  Tail calls detected: %d\n", global_opt_stats.tail_calls_detected);
 }
 
 // Helper: check if node is a literal constant
@@ -230,7 +230,7 @@ ASTNode* optimize_tail_calls(ASTNode* node) {
                 last_stmt->child_count > 0 &&
                 is_tail_call(node, last_stmt->children[0])) {
                 
-                global_opt_stats.tail_calls_optimized++;
+                global_opt_stats.tail_calls_detected++;
                 
                 // Transform into loop (simplified)
                 // In a real compiler, this would involve more complex transformations
