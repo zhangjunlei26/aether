@@ -24,6 +24,7 @@ void clear_declared_vars(CodeGenerator* gen);
 
 /* Defer management (codegen.c) */
 void push_defer(CodeGenerator* gen, ASTNode* stmt);
+void push_auto_defer(CodeGenerator* gen, const char* free_fn, const char* var_name);
 void emit_defers_for_scope(CodeGenerator* gen);
 void emit_all_defers(CodeGenerator* gen);
 void enter_scope(CodeGenerator* gen);
@@ -37,6 +38,10 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt);
 
 /* Actor generation (codegen_actor.c) */
 void generate_actor_definition(CodeGenerator* gen, ASTNode* actor);
+
+/* Extern function registry — tracks param types for call-site cast emission */
+void register_extern_func(CodeGenerator* gen, ASTNode* ext);
+TypeKind lookup_extern_param_kind(CodeGenerator* gen, const char* func_name, int param_idx);
 
 /* Function/struct generation (codegen_func.c) */
 int has_return_value(ASTNode* node);

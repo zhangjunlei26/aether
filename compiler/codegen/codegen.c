@@ -173,6 +173,7 @@ CodeGenerator* create_code_generator(FILE* output) {
     gen->generating_lvalue = 0;  // Not generating lvalue by default
     gen->in_condition = 0;  // Not in condition by default
     gen->in_main_loop = 0;  // Not in main loop by default
+    gen->in_main_function = 0;
     gen->emit_header = 0;
     gen->header_file = NULL;
     gen->header_path = NULL;
@@ -183,6 +184,15 @@ CodeGenerator* create_code_generator(FILE* output) {
     gen->scope_depth = 0;
     memset(gen->defer_stack, 0, sizeof(gen->defer_stack));
     memset(gen->scope_defer_start, 0, sizeof(gen->scope_defer_start));
+    // Memory management
+    gen->no_auto_free = 0;
+    gen->synthetic_nodes = NULL;
+    gen->synthetic_node_count = 0;
+    gen->synthetic_node_capacity = 0;
+    // Extern function parameter registry
+    gen->extern_registry = NULL;
+    gen->extern_registry_count = 0;
+    gen->extern_registry_capacity = 0;
     return gen;
 }
 
@@ -217,6 +227,19 @@ void free_code_generator(CodeGenerator* gen) {
                 free(gen->generated_functions[i]);
             }
             free(gen->generated_functions);
+        }
+        if (gen->synthetic_nodes) {
+            for (int i = 0; i < gen->synthetic_node_count; i++) {
+                free_ast_node(gen->synthetic_nodes[i]);
+            }
+            free(gen->synthetic_nodes);
+        }
+        if (gen->extern_registry) {
+            for (int i = 0; i < gen->extern_registry_count; i++) {
+                free(gen->extern_registry[i].name);
+                free(gen->extern_registry[i].params);
+            }
+            free(gen->extern_registry);
         }
         free(gen);
     }
@@ -334,6 +357,29 @@ void push_defer(CodeGenerator* gen, ASTNode* stmt) {
     } else {
         fprintf(stderr, "Warning: defer stack overflow (max %d)\n", MAX_DEFER_STACK);
     }
+}
+
+// Push an auto-generated free call as a deferred statement.
+// Creates a synthetic AST_EXPRESSION_STATEMENT { AST_FUNCTION_CALL(free_fn, var_name) }
+// and pushes it onto the defer stack. The synthetic node is tracked for cleanup.
+void push_auto_defer(CodeGenerator* gen, const char* free_fn, const char* var_name) {
+    // Build: free_fn(var_name)
+    ASTNode* call = create_ast_node(AST_FUNCTION_CALL, free_fn, 0, 0);
+    ASTNode* arg  = create_ast_node(AST_IDENTIFIER, var_name, 0, 0);
+    add_child(call, arg);
+    // Wrap in expression statement so generate_statement() handles it correctly
+    ASTNode* stmt = create_ast_node(AST_EXPRESSION_STATEMENT, NULL, 0, 0);
+    add_child(stmt, call);
+
+    push_defer(gen, stmt);
+
+    // Track for cleanup in free_code_generator
+    if (gen->synthetic_node_count >= gen->synthetic_node_capacity) {
+        gen->synthetic_node_capacity = gen->synthetic_node_capacity * 2 + 8;
+        gen->synthetic_nodes = realloc(gen->synthetic_nodes,
+            gen->synthetic_node_capacity * sizeof(ASTNode*));
+    }
+    gen->synthetic_nodes[gen->synthetic_node_count++] = stmt;
 }
 
 // Enter a new scope - remember where defers started for this scope
@@ -661,6 +707,7 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
 
     // Initialize command-line arguments
     print_line(gen, "aether_args_init(argc, argv);");
+    print_line(gen, "int main_exit_ret = 0;");
     print_line(gen, "");
 
     // Initialize scheduler with recommended core count if actors were defined
@@ -681,13 +728,17 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
     }
     
     if (main->child_count > 0) {
+        gen->in_main_function = 1;
         generate_statement(gen, main->children[0]);
+        gen->in_main_function = 0;
     }
     
-    // Clean up scheduler
+    // Clean up scheduler (all return paths in main() jump here via goto main_exit)
+    print_line(gen, "main_exit:");
     if (gen->actor_count > 0) {
         print_line(gen, "");
-        print_line(gen, "// Wait for actors to complete and clean up");
+        print_line(gen, "// Signal scheduler threads to stop, then wait for them to join");
+        print_line(gen, "scheduler_stop();");
         print_line(gen, "scheduler_wait();");
     }
 
@@ -718,7 +769,7 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
     // Emit main function defers before return
     exit_scope(gen);
 
-    print_line(gen, "return 0;");
+    print_line(gen, "return main_exit_ret;");
     unindent(gen);
     print_line(gen, "}");
 }

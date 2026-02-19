@@ -117,10 +117,12 @@ typedef struct AetherString {
 
 #### Memory Management
 
-- `string_retain(AetherString* str)` - Increment reference count
-- `string_release(AetherString* str)` - Decrement and free if zero
+- `string_new(const char* cstr)` - Allocate a new string (use `string_free` when done)
+- `string_free(AetherString* str)` - Free the string
 
-**Note**: Strings are reference-counted. Use retain/release for manual memory management.
+In **auto mode** (default), `string_free` is injected automatically at scope exit for any variable assigned from `string_new()`. In manual mode, call it explicitly.
+
+The underlying C implementation also exposes `string_retain` / `string_release` for advanced use cases (e.g., sharing ownership across C callbacks), but Aether programs should use `string_free` directly.
 
 ---
 

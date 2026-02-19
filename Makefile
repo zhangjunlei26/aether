@@ -660,9 +660,9 @@ ci: clean
 			--track-origins=yes \
 			--error-exitcode=1 \
 			--suppressions=.valgrind-suppressions \
-			./build/test_runner || (echo 'Memory leaks detected!' && exit 1)"
+			./build/test_runner || (echo 'Valgrind errors detected!' && exit 1)"
 	@echo ""
-	@echo "✓ CI passed with no memory leaks"
+	@echo "✓ CI passed — Valgrind clean"
 
 valgrind-check: clean
 	@echo "==================================="
@@ -675,8 +675,8 @@ valgrind-check: clean
 		--track-origins=yes \
 		--error-exitcode=1 \
 		--suppressions=.valgrind-suppressions \
-		./build/test_runner$(EXE_EXT) || (echo "Memory leaks detected!" && exit 1)
-	@echo "✓ No memory leaks detected"
+		./build/test_runner$(EXE_EXT) || (echo "Valgrind errors detected!" && exit 1)
+	@echo "✓ Valgrind clean — no leaks or uninitialised reads"
 
 .PHONY: all compiler lsp apkg ae profiler docgen docs-server docs docs-serve test test-build test-valgrind test-asan test-memory test-manual-runtime benchmark benchmark-ui examples run compile repl clean help self-test release install stats stdlib ci docker-ci docker-build-ci valgrind-check
 

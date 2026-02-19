@@ -33,6 +33,7 @@
 // Global flags
 static bool verbose_mode = false;
 static const char* emit_header_path = NULL;
+static bool no_auto_free = false;  // --no-auto-free: manual memory mode
 
 #ifdef _WIN32
     #include <windows.h>
@@ -97,13 +98,11 @@ int compile_source(const char* input_path, const char* output_path) {
     // Null-terminate at actual bytes read
     source[bytes_read] = '\0';
     
-    printf("Compiling %s...\n", input_path);
-    
+    if (verbose_mode) printf("Compiling %s...\n", input_path);
+
     // Step 1: Lexical Analysis
     if (verbose_mode) {
         printf("[Phase 1/5] Lexical Analysis...\n");
-    } else {
-        printf("Step 1: Tokenizing...\n");
     }
     
     lexer_init(source);
@@ -132,10 +131,10 @@ int compile_source(const char* input_path, const char* output_path) {
         }
     }
     
-    printf("Generated %d tokens\n", token_count);
-    
+    if (verbose_mode) printf("Generated %d tokens\n", token_count);
+
     // Step 2: Parsing
-    printf("Step 2: Parsing...\n");
+    if (verbose_mode) printf("Step 2: Parsing...\n");
     Parser* parser = create_parser(tokens, token_count);
     ASTNode* program = parse_program(parser);
     
@@ -150,10 +149,10 @@ int compile_source(const char* input_path, const char* output_path) {
         return 0;
     }
     
-    printf("Parse successful\n");
-    
+    if (verbose_mode) printf("Parse successful\n");
+
     // Step 3: Type Checking
-    printf("Step 3: Type checking...\n");
+    if (verbose_mode) printf("Step 3: Type checking...\n");
     if (!typecheck_program(program)) {
         fprintf(stderr, "Type checking failed\n");
         // Cleanup
@@ -166,14 +165,14 @@ int compile_source(const char* input_path, const char* output_path) {
         return 0;
     }
     
-    printf("Type checking successful\n");
-    
+    if (verbose_mode) printf("Type checking successful\n");
+
     // Step 3.5: Optimization (AST-level passes: constant folding, dead code, tail calls)
-    printf("Step 3.5: Optimizing...\n");
+    if (verbose_mode) printf("Step 3.5: Optimizing...\n");
     program = optimize_ast(program);
 
     // Step 4: Code Generation
-    printf("Step 4: Generating C code...\n");
+    if (verbose_mode) printf("Step 4: Generating C code...\n");
     FILE *output = fopen(output_path, "w");
     if (!output) {
         perror("Error opening output file");
@@ -205,10 +204,11 @@ int compile_source(const char* input_path, const char* output_path) {
     CodeGenerator* codegen;
     if (header_output) {
         codegen = create_code_generator_with_header(output, header_output, header_path);
-        printf("Also generating header: %s\n", header_path);
+        if (verbose_mode) printf("Also generating header: %s\n", header_path);
     } else {
         codegen = create_code_generator(output);
     }
+    codegen->no_auto_free = no_auto_free ? 1 : 0;
     generate_program(codegen, program);
     fclose(output);
     if (header_output) {
@@ -218,10 +218,12 @@ int compile_source(const char* input_path, const char* output_path) {
         free(header_path);
     }
 
-    printf("Code generation successful\n");
-    // Print all optimization stats here — series loop collapse happens during codegen,
-    // so stats must be printed after generate_program(), not before it.
-    print_optimization_stats();
+    if (verbose_mode) {
+        printf("Code generation successful\n");
+        // Print all optimization stats here — series/linear loop collapse happens during codegen,
+        // so stats must be printed after generate_program(), not before it.
+        print_optimization_stats();
+    }
 
     // Cleanup
     free_ast_node(program);
@@ -261,7 +263,7 @@ int compile_c_to_exe(const char* c_file, const char* exe_file) {
              c_file, runtime_path, exe_file, runtime_path);
 #endif
 
-    printf("Executing: %s\n", cmd);
+    if (verbose_mode) printf("Executing: %s\n", cmd);
     int result = system(cmd);
     return result == 0;
 }
@@ -297,6 +299,9 @@ int main(int argc, char *argv[]) {
             return 0;
         } else if (strcmp(argv[arg_offset], "--verbose") == 0) {
             verbose_mode = true;
+            arg_offset++;
+        } else if (strcmp(argv[arg_offset], "--no-auto-free") == 0) {
+            no_auto_free = true;
             arg_offset++;
         } else if (strcmp(argv[arg_offset], "--emit-header") == 0) {
             // Check for optional explicit path argument (must end in .h)
@@ -380,6 +385,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    printf("Output written to %s\n", argv[arg_offset + 1]);
+    if (verbose_mode) printf("Output written to %s\n", argv[arg_offset + 1]);
     return 0;
 }

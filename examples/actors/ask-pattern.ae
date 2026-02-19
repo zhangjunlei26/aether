@@ -1,10 +1,10 @@
-// Ask Pattern - Request-Reply communication between actors
-// Uses the ? operator for synchronous-style queries
+// Reply Pattern - Actors that respond using the 'reply' keyword
+// Demonstrates reply-based messaging (fire-and-forget with actor response)
 //
 // Features:
-//   - ? operator for ask (request-reply)
-//   - reply statement to send response
-//   - Blocking wait for reply
+//   - reply statement to send response back to sender
+//   - wait_for_idle() to block until all actors finish
+// For synchronous ask/reply using '?', see docs/language-reference.md
 
 // Messages for the calculator
 message Add { a: int, b: int }

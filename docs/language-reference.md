@@ -16,15 +16,16 @@ Aether is a statically-typed, compiled language combining Erlang-inspired actor 
 6. [Match Statements](#match-statements)
 7. [Switch Statements](#switch-statements)
 8. [Defer Statement](#defer-statement)
-9. [Structs](#structs)
-10. [Messages](#messages)
-11. [Actors](#actors)
-12. [Operators](#operators)
-13. [Modules and Imports](#modules-and-imports)
-14. [Extern Functions](#extern-functions)
-15. [Built-in Functions](#built-in-functions)
-16. [Comments](#comments)
-17. [Compilation](#compilation)
+9. [Memory Management](#memory-management)
+10. [Structs](#structs)
+11. [Messages](#messages)
+12. [Actors](#actors)
+13. [Operators](#operators)
+14. [Modules and Imports](#modules-and-imports)
+15. [Extern Functions](#extern-functions)
+16. [Built-in Functions](#built-in-functions)
+17. [Comments](#comments)
+18. [Compilation](#compilation)
 
 ---
 
@@ -344,6 +345,78 @@ example() {
 - Unlocking mutexes
 - Logging function exit
 - Guaranteed cleanup regardless of return path
+
+---
+
+## Memory Management
+
+Aether uses **deterministic scope-exit cleanup** — no garbage collector, no GC pauses.
+
+### Auto Mode (default)
+
+Variables assigned from stdlib `*_new()` calls are automatically freed at scope exit:
+
+```aether
+import std.list
+
+main() {
+    items = list_new()          // allocated
+    list_add(items, "hello")
+    print(list_size(items))
+    print("\n")
+    // list_free(items) injected automatically here
+}
+```
+
+### `@manual` Annotation
+
+Use `@manual` when a value **escapes its scope** — returned from a function, passed to an actor, or stored somewhere that outlives the current block:
+
+```aether
+import std.list
+
+// Returns ownership to caller — must NOT free here
+build_list(n) : ptr {
+    @manual result = list_new()
+    i = 0
+    while i < n {
+        list_add(result, i)
+        i = i + 1
+    }
+    return result
+}
+
+main() {
+    items = build_list(10)   // auto-free fires here instead
+    print(list_size(items))
+    print("\n")
+}
+```
+
+Without `@manual`, auto mode would free `result` at the end of `build_list` — before the caller can use it.
+
+**Use `@manual` when:**
+- Returning a `*_new()` value from a function
+- Passing it to an actor via `!` (actor owns it)
+- Storing it in actor `state` (lives for actor's lifetime)
+
+### Manual Mode
+
+Disable all auto-free for an entire project:
+
+```toml
+# aether.toml
+[memory]
+mode = "manual"
+```
+
+Or for a single run:
+
+```bash
+ae run --no-auto-free file.ae
+```
+
+See [Memory Management Guide](memory-management.md) for the full reference.
 
 ---
 

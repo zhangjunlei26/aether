@@ -23,6 +23,7 @@ typedef struct {
     int generating_lvalue;  // Track if we're generating an assignment target (lvalue)
     int in_condition;  // Track if we're in a condition (if/while) to avoid double parens
     int in_main_loop;  // Track if we're in main's loop for batch send optimization
+    int in_main_function;  // Track if we're in main() so return -> goto main_exit
     ASTNode* program;  // Reference to program root for lookups
 
     // Header generation (--emit-header)
@@ -39,6 +40,24 @@ typedef struct {
     int defer_count;
     int scope_defer_start[MAX_SCOPE_DEPTH];  // defer_count at scope entry
     int scope_depth;
+
+    // Memory management: auto-free mode
+    int no_auto_free;   // 0 = auto (default), 1 = manual (--no-auto-free flag)
+
+    // Synthetic AST nodes created for auto-defer calls (freed at generator destruction)
+    ASTNode** synthetic_nodes;
+    int synthetic_node_count;
+    int synthetic_node_capacity;
+
+    // Extern function parameter type registry — used at call sites for proper casts
+    // e.g., list_add(void*, void*) called with int arg → cast to (void*)(intptr_t)
+    struct ExternParamInfo {
+        char* name;          // function name
+        TypeKind* params;    // array of parameter kinds (TYPE_PTR, TYPE_INT, ...)
+        int param_count;
+    }* extern_registry;
+    int extern_registry_count;
+    int extern_registry_capacity;
 } CodeGenerator;
 
 // Code generation functions
@@ -70,6 +89,7 @@ const char* get_c_operator(const char* aether_op);
 
 // Defer management
 void push_defer(CodeGenerator* gen, ASTNode* stmt);
+void push_auto_defer(CodeGenerator* gen, const char* free_fn, const char* var_name);
 void emit_defers_for_scope(CodeGenerator* gen);
 void emit_all_defers(CodeGenerator* gen);
 void enter_scope(CodeGenerator* gen);

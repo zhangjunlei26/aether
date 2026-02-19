@@ -93,6 +93,8 @@ static int try_emit_series_collapse(CodeGenerator* gen, ASTNode* while_node) {
     // 3. Parse each statement
     const char* acc_vars[MAX_SERIES_ACCUMULATORS];
     ASTNode*    acc_addends[MAX_SERIES_ACCUMULATORS];
+    int         acc_is_linear[MAX_SERIES_ACCUMULATORS];   // 1 = addend is counter (linear sum)
+    double      acc_linear_scale[MAX_SERIES_ACCUMULATORS]; // scale for counter*C pattern
     int         acc_count        = 0;
     int         found_counter    = 0;
     double      counter_step     = 1.0;
@@ -142,17 +144,59 @@ static int try_emit_series_collapse(CodeGenerator* gen, ASTNode* while_node) {
             if (counter_step <= 0.0) return 0;
             found_counter = 1;
         } else {
-            // Accumulator: addend must be loop-invariant (no ref to counter or other targets)
+            // Accumulator: addend is either loop-invariant (constant series)
+            // or the counter variable itself / counter*C (linear sum: Σ i = n*(n-1)/2).
             if (acc_count >= MAX_SERIES_ACCUMULATORS) return 0;
-            if (expr_references_var(addend, counter_var)) return 0;
-            if (expr_has_side_effects(addend)) return 0;
-            acc_vars[acc_count]    = target;
-            acc_addends[acc_count] = addend;
+
+            int addend_is_counter = 0;
+            double linear_scale = 1.0;
+
+            if (addend->type == AST_IDENTIFIER && addend->value &&
+                strcmp(addend->value, counter_var) == 0) {
+                // Plain counter addend: acc = acc + i
+                addend_is_counter = 1;
+            } else if (addend->type == AST_BINARY_EXPRESSION && addend->value &&
+                       strcmp(addend->value, "*") == 0 && addend->child_count >= 2) {
+                // Possibly scaled counter: acc = acc + i * C  or  acc = acc + C * i
+                ASTNode* ml = addend->children[0];
+                ASTNode* mr = addend->children[1];
+                if (ml && ml->type == AST_IDENTIFIER && ml->value &&
+                    strcmp(ml->value, counter_var) == 0 &&
+                    mr && mr->type == AST_LITERAL && mr->value) {
+                    addend_is_counter = 1;
+                    linear_scale = atof(mr->value);
+                } else if (mr && mr->type == AST_IDENTIFIER && mr->value &&
+                           strcmp(mr->value, counter_var) == 0 &&
+                           ml && ml->type == AST_LITERAL && ml->value) {
+                    addend_is_counter = 1;
+                    linear_scale = atof(ml->value);
+                }
+            }
+
+            if (addend_is_counter) {
+                acc_vars[acc_count]          = target;
+                acc_addends[acc_count]       = addend;
+                acc_is_linear[acc_count]     = 1;
+                acc_linear_scale[acc_count]  = linear_scale;
+            } else {
+                // Regular invariant addend: must not reference counter
+                if (expr_references_var(addend, counter_var)) return 0;
+                if (expr_has_side_effects(addend)) return 0;
+                acc_vars[acc_count]          = target;
+                acc_addends[acc_count]       = addend;
+                acc_is_linear[acc_count]     = 0;
+                acc_linear_scale[acc_count]  = 0.0;
+            }
             acc_count++;
         }
     }
 
     if (!found_counter) return 0;
+
+    // Linear sums require step = 1 (the triangular formula doesn't generalize cleanly to other steps).
+    for (int i = 0; i < acc_count; i++) {
+        if (acc_is_linear[i] && counter_step != 1.0) return 0;
+    }
 
     // 3b. Bound-mutation check: if any loop body statement assigns to a variable
     // referenced in the bound expression, the bound changes per-iteration.
@@ -162,7 +206,10 @@ static int try_emit_series_collapse(CodeGenerator* gen, ASTNode* while_node) {
 
     // 3c. Addend invariance check: verify no addend references a variable modified
     // by any other statement in the loop body.
+    // Skip for linear accumulators — their "addend" is the counter itself, which is
+    // expected to be in the write-set; the formula accounts for that by design.
     for (int i = 0; i < acc_count; i++) {
+        if (acc_is_linear[i]) continue;
         for (int j = 0; j < stmt_target_count; j++) {
             if (expr_references_var(acc_addends[i], stmt_targets[j])) return 0;
         }
@@ -178,26 +225,53 @@ static int try_emit_series_collapse(CodeGenerator* gen, ASTNode* while_node) {
     fprintf(gen->output, ")) {\n");
     indent(gen);
 
-    // acc = acc + addend * trip_count  [for each accumulator]
-    // trip_count = (bound - counter) / step  [+ 1 for <=]
+    // Emit each accumulator update.
+    // Constant addend: acc = acc + addend * trip_count
+    // Linear addend:   acc = acc + scale * (bound*(bound±1)/2 - counter*(counter-1)/2)
+    int emitted_linear = 0;
     for (int i = 0; i < acc_count; i++) {
         print_indent(gen);
-        fprintf(gen->output, "%s = %s + (", acc_vars[i], acc_vars[i]);
-        generate_expression(gen, acc_addends[i]);
-        fprintf(gen->output, ") * (");
-        if (counter_step == 1.0) {
+        if (acc_is_linear[i]) {
+            // Triangular-number closed form:
+            //   Σ(j = counter .. bound-1) j  =  bound*(bound-1)/2 - counter*(counter-1)/2
+            //   Σ(j = counter .. bound)   j  =  bound*(bound+1)/2 - counter*(counter-1)/2
+            if (acc_linear_scale[i] != 1.0) {
+                fprintf(gen->output, "%s = %s + %g * (", acc_vars[i], acc_vars[i], acc_linear_scale[i]);
+            } else {
+                fprintf(gen->output, "%s = %s + (", acc_vars[i], acc_vars[i]);
+            }
             fprintf(gen->output, "(");
             generate_expression(gen, cond_right);
-            fprintf(gen->output, ") - %s", counter_var);
+            if (is_lte) {
+                fprintf(gen->output, ") * ((");
+                generate_expression(gen, cond_right);
+                fprintf(gen->output, ") + 1)");
+            } else {
+                fprintf(gen->output, ") * ((");
+                generate_expression(gen, cond_right);
+                fprintf(gen->output, ") - 1)");
+            }
+            fprintf(gen->output, " / 2 - %s * (%s - 1) / 2);\n", counter_var, counter_var);
+            emitted_linear = 1;
         } else {
-            fprintf(gen->output, "((");
-            generate_expression(gen, cond_right);
-            fprintf(gen->output, ") - %s) / %g", counter_var, counter_step);
+            // Constant addend: multiply by trip count
+            fprintf(gen->output, "%s = %s + (", acc_vars[i], acc_vars[i]);
+            generate_expression(gen, acc_addends[i]);
+            fprintf(gen->output, ") * (");
+            if (counter_step == 1.0) {
+                fprintf(gen->output, "(");
+                generate_expression(gen, cond_right);
+                fprintf(gen->output, ") - %s", counter_var);
+            } else {
+                fprintf(gen->output, "((");
+                generate_expression(gen, cond_right);
+                fprintf(gen->output, ") - %s) / %g", counter_var, counter_step);
+            }
+            if (is_lte) {
+                fprintf(gen->output, " + 1");
+            }
+            fprintf(gen->output, ");\n");
         }
-        if (is_lte) {
-            fprintf(gen->output, " + 1");
-        }
-        fprintf(gen->output, ");\n");
     }
 
     // counter = bound (or bound + step for <=)
@@ -214,7 +288,11 @@ static int try_emit_series_collapse(CodeGenerator* gen, ASTNode* while_node) {
     print_indent(gen);
     fprintf(gen->output, "}\n");
 
-    global_opt_stats.series_loops_collapsed++;
+    if (emitted_linear) {
+        global_opt_stats.linear_loops_collapsed++;
+    } else {
+        global_opt_stats.series_loops_collapsed++;
+    }
     return 1;
 }
 
@@ -270,6 +348,28 @@ static int has_list_patterns(ASTNode* match_stmt) {
         }
     }
     return 0;
+}
+
+// Destructor registry: maps constructor function names to their free functions.
+// Used by auto-free mode to inject scope-exit cleanup for stdlib allocations.
+static const char* lookup_destructor(ASTNode* init_expr) {
+    if (!init_expr || init_expr->type != AST_FUNCTION_CALL || !init_expr->value) return NULL;
+
+    static const struct { const char* fn; const char* free_fn; } REGISTRY[] = {
+        { "map_new",    "map_free"      },
+        { "list_new",   "list_free"     },
+        { "map_keys",   "map_keys_free" },
+        { "dir_list",   "dir_list_free" },
+        { "string_new", "string_free"   },
+        { NULL,         NULL            }
+    };
+
+    for (int i = 0; REGISTRY[i].fn; i++) {
+        if (strcmp(init_expr->value, REGISTRY[i].fn) == 0) {
+            return REGISTRY[i].free_fn;
+        }
+    }
+    return NULL;
 }
 
 void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
@@ -388,11 +488,22 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                     }
 
                     fprintf(gen->output, ";\n");
+
+                    // Auto-free: if in auto mode, the variable is not @manual, and
+                    // the initializer calls a registered *_new() function, push a
+                    // scope-exit defer to call the corresponding *_free() function.
+                    if (!gen->no_auto_free && !stmt->is_manual &&
+                        stmt->child_count > 0 && stmt->value) {
+                        const char* free_fn = lookup_destructor(stmt->children[0]);
+                        if (free_fn) {
+                            push_auto_defer(gen, free_fn, stmt->value);
+                        }
+                    }
                 }
             }
             break;
         }
-        
+
         case AST_ASSIGNMENT:
             if (stmt->child_count >= 2) {
                 // Left side is lvalue (assignment target) - no atomic operations
@@ -654,7 +765,28 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             unindent(gen);
             break;
             
-        case AST_RETURN_STATEMENT:
+        case AST_RETURN_STATEMENT: {
+            // In main(), all returns go through main_exit so scheduler_wait() always runs
+            if (gen->in_main_function) {
+                if (gen->defer_count > 0) {
+                    emit_all_defers(gen);
+                }
+                print_indent(gen);
+                if (stmt->child_count > 0 && stmt->children[0] &&
+                    stmt->children[0]->type != AST_PRINT_STATEMENT) {
+                    fprintf(gen->output, "main_exit_ret = ");
+                    generate_expression(gen, stmt->children[0]);
+                    fprintf(gen->output, "; goto main_exit;\n");
+                } else {
+                    if (stmt->child_count > 0 && stmt->children[0] &&
+                        stmt->children[0]->type == AST_PRINT_STATEMENT) {
+                        generate_statement(gen, stmt->children[0]);
+                        print_indent(gen);
+                    }
+                    print_line(gen, "goto main_exit;");
+                }
+                break;
+            }
             // Emit ALL defers before return (unwind entire function)
             if (gen->defer_count > 0) {
                 // For return with value, save to temp first
@@ -700,6 +832,7 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                 }
             }
             break;
+        }
             
         case AST_BREAK_STATEMENT:
             // Emit defers for current scope before break

@@ -28,6 +28,7 @@ typedef struct {
 
 // Initialize mailbox
 static inline void lockfree_mailbox_init(LockFreeMailbox* mbox) {
+    memset(mbox, 0, sizeof(*mbox));
     atomic_store_explicit(&mbox->head, 0, memory_order_relaxed);
     atomic_store_explicit(&mbox->tail, 0, memory_order_relaxed);
 }

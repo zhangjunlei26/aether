@@ -43,7 +43,7 @@
 
 // Version is set by Makefile from VERSION file
 #ifndef AETHER_VERSION
-#define AETHER_VERSION "0.0.0-dev"
+#define AETHER_VERSION "0.5.0"
 #endif
 #define AE_VERSION AETHER_VERSION
 
@@ -310,6 +310,29 @@ found_root:
     }
 }
 
+// Check if aether.toml has [memory] mode = "manual"
+// Returns "--no-auto-free" if set, empty string otherwise
+static const char* get_memory_flag(void) {
+    static char flag[32] = "";
+    static bool checked = false;
+
+    if (checked) return flag;
+    checked = true;
+
+    if (!path_exists("aether.toml")) return flag;
+
+    TomlDocument* doc = toml_parse_file("aether.toml");
+    if (!doc) return flag;
+
+    const char* val = toml_get_value(doc, "memory", "mode");
+    if (val && strcmp(val, "manual") == 0) {
+        strncpy(flag, "--no-auto-free", sizeof(flag) - 1);
+    }
+
+    toml_free_document(doc);
+    return flag;
+}
+
 // Get link_flags from aether.toml [build] section
 // Returns empty string if not found or no aether.toml
 static const char* get_link_flags(void) {
@@ -365,9 +388,28 @@ static void build_gcc_cmd(char* cmd, size_t size,
 
 static int cmd_run(int argc, char** argv) {
     const char* file = NULL;
+    bool run_no_auto_free = false;
 
     for (int i = 0; i < argc; i++) {
-        if (argv[i][0] != '-') { file = argv[i]; break; }
+        if (strcmp(argv[i], "--no-auto-free") == 0) { run_no_auto_free = true; }
+        else if (argv[i][0] != '-') { file = argv[i]; break; }
+    }
+
+    // Resolve directory argument (e.g. "." or "myproject/") to src/main.ae
+    if (file && dir_exists(file)) {
+        static char resolved_run_file[512];
+        snprintf(resolved_run_file, sizeof(resolved_run_file), "%s/src/main.ae", file);
+        if (path_exists(resolved_run_file)) {
+            file = resolved_run_file;
+        } else {
+            char toml_path[512];
+            snprintf(toml_path, sizeof(toml_path), "%s/aether.toml", file);
+            if (path_exists(toml_path))
+                fprintf(stderr, "Error: No src/main.ae found in %s\n", file);
+            else
+                fprintf(stderr, "Error: '%s' is not an Aether project directory\n", file);
+            return 1;
+        }
     }
 
     // Project mode: no file argument, look for aether.toml
@@ -399,12 +441,13 @@ static int cmd_run(int argc, char** argv) {
 
     // Step 1: Compile .ae to .c
     if (tc.verbose) printf("Compiling %s...\n", file);
-    snprintf(cmd, sizeof(cmd), "%s %s %s %s",
-        tc.compiler, file, c_file,
+    const char* mem_flag = run_no_auto_free ? "--no-auto-free" : get_memory_flag();
+    snprintf(cmd, sizeof(cmd), "%s %s %s %s %s",
+        tc.compiler, mem_flag, file, c_file,
         tc.verbose ? "" : ">/dev/null 2>&1");
     if (run_cmd(cmd) != 0) {
         // Re-run with output visible so user can see the error
-        snprintf(cmd, sizeof(cmd), "%s %s %s 2>&1", tc.compiler, file, c_file);
+        snprintf(cmd, sizeof(cmd), "%s %s %s %s 2>&1", tc.compiler, mem_flag, file, c_file);
         run_cmd(cmd);
         fprintf(stderr, "Compilation failed.\n");
         return 1;
@@ -439,6 +482,7 @@ static int cmd_build(int argc, char** argv) {
     const char* output_name = NULL;
     char extra_files[2048] = "";
 
+    bool build_no_auto_free = false;
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             output_name = argv[++i];
@@ -446,8 +490,27 @@ static int cmd_build(int argc, char** argv) {
             // Append extra C files (space-separated)
             if (extra_files[0]) strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
             strncat(extra_files, argv[++i], sizeof(extra_files) - strlen(extra_files) - 1);
+        } else if (strcmp(argv[i], "--no-auto-free") == 0) {
+            build_no_auto_free = true;
         } else if (argv[i][0] != '-') {
             file = argv[i];
+        }
+    }
+
+    // Resolve directory argument (e.g. "." or "myproject/") to src/main.ae
+    if (file && dir_exists(file)) {
+        static char resolved_build_file[512];
+        snprintf(resolved_build_file, sizeof(resolved_build_file), "%s/src/main.ae", file);
+        if (path_exists(resolved_build_file)) {
+            file = resolved_build_file;
+        } else {
+            char toml_path[512];
+            snprintf(toml_path, sizeof(toml_path), "%s/aether.toml", file);
+            if (path_exists(toml_path))
+                fprintf(stderr, "Error: No src/main.ae found in %s\n", file);
+            else
+                fprintf(stderr, "Error: '%s' is not an Aether project directory\n", file);
+            return 1;
         }
     }
 
@@ -490,11 +553,12 @@ static int cmd_build(int argc, char** argv) {
     printf("Building %s...\n", file);
 
     // Step 1: .ae to .c
-    snprintf(cmd, sizeof(cmd), "%s %s %s %s",
-        tc.compiler, file, c_file,
+    const char* build_mem_flag = build_no_auto_free ? "--no-auto-free" : get_memory_flag();
+    snprintf(cmd, sizeof(cmd), "%s %s %s %s %s",
+        tc.compiler, build_mem_flag, file, c_file,
         tc.verbose ? "" : ">/dev/null 2>&1");
     if (run_cmd(cmd) != 0) {
-        snprintf(cmd, sizeof(cmd), "%s %s %s 2>&1", tc.compiler, file, c_file);
+        snprintf(cmd, sizeof(cmd), "%s %s %s %s 2>&1", tc.compiler, build_mem_flag, file, c_file);
         run_cmd(cmd);
         fprintf(stderr, "Compilation failed.\n");
         return 1;
@@ -618,7 +682,11 @@ static int cmd_test(int argc, char** argv) {
     } else {
         // Discover from directory
         const char* test_dir = "tests";
-        if (target && dir_exists(target)) test_dir = target;
+        if (target && dir_exists(target)) {
+            static char resolved_test_dir[512];
+            snprintf(resolved_test_dir, sizeof(resolved_test_dir), "%s/tests", target);
+            test_dir = dir_exists(resolved_test_dir) ? resolved_test_dir : target;
+        }
 
         if (!dir_exists(test_dir)) {
             printf("No tests/ directory found.\n");
@@ -797,49 +865,74 @@ static int cmd_add(int argc, char** argv) {
 }
 
 static int cmd_repl(void) {
-    char repl_path[1024];
+    printf("Aether %s REPL\n", AE_VERSION);
+    printf("Press Enter twice (or close a block) to run. 'exit' to quit.\n\n");
 
-    if (tc.dev_mode) {
-        snprintf(repl_path, sizeof(repl_path), "%s/build/aether_repl" EXE_EXT, tc.root);
-    } else {
-        snprintf(repl_path, sizeof(repl_path), "%s/bin/aether_repl" EXE_EXT, tc.root);
-    }
+    char session[16384] = {0};
+    char line[1024];
+    int brace_depth = 0;
 
-    // Set env vars so the REPL can find compiler and link flags
-    setenv("AETHERC", tc.compiler, 1);
-    setenv("AETHER_CFLAGS", tc.include_flags, 1);
+    char ae_file[256], c_file[256], exe_file[256];
+    snprintf(ae_file,  sizeof(ae_file),  "/tmp/_aether_repl_%d.ae",  (int)getpid());
+    snprintf(c_file,   sizeof(c_file),   "/tmp/_aether_repl_%d.c",   (int)getpid());
+    snprintf(exe_file, sizeof(exe_file), "/tmp/_aether_repl_%d" EXE_EXT, (int)getpid());
 
-    char ldflags[2048];
-    if (tc.has_lib) {
-        char lib_dir[1024];
-        strncpy(lib_dir, tc.lib, sizeof(lib_dir) - 1);
-        lib_dir[sizeof(lib_dir) - 1] = '\0';
-        char* slash = strrchr(lib_dir, '/');
-        if (slash) *slash = '\0';
-        snprintf(ldflags, sizeof(ldflags), "-L%s -laether", lib_dir);
-    } else {
-        strncpy(ldflags, tc.runtime_srcs, sizeof(ldflags) - 1);
-        ldflags[sizeof(ldflags) - 1] = '\0';
-    }
-    setenv("AETHER_LDFLAGS", ldflags, 1);
+    while (1) {
+        printf(brace_depth > 0 ? "...  " : "ae> ");
+        fflush(stdout);
+        if (!fgets(line, sizeof(line), stdin)) break;
+        line[strcspn(line, "\n")] = '\0';
 
-    if (path_exists(repl_path)) {
-        return run_cmd(repl_path);
-    }
+        if (strcmp(line, "exit") == 0 || strcmp(line, "quit") == 0) break;
 
-    // Try building it in dev mode
-    if (tc.dev_mode) {
-        printf("Building REPL...\n");
-        char cmd[2048];
-        snprintf(cmd, sizeof(cmd), "make -C %s repl 2>&1", tc.root);
-        if (run_cmd(cmd) == 0 && path_exists(repl_path)) {
-            return run_cmd(repl_path);
+        int prev_depth = brace_depth;
+        for (char* p = line; *p; p++) {
+            if (*p == '{') brace_depth++;
+            else if (*p == '}' && brace_depth > 0) brace_depth--;
+        }
+        int is_empty = (strlen(line) == 0);
+        int block_closed = (prev_depth > 0 && brace_depth == 0);
+
+        if (!is_empty) {
+            if (session[0]) strncat(session, "\n", sizeof(session) - strlen(session) - 1);
+            strncat(session, "    ", sizeof(session) - strlen(session) - 1);
+            strncat(session, line, sizeof(session) - strlen(session) - 1);
+        }
+
+        if ((is_empty || block_closed) && session[0]) {
+            FILE* f = fopen(ae_file, "w");
+            if (f) {
+                fprintf(f, "main() {\n%s\n}\n", session);
+                fclose(f);
+
+                char cmd[8192];
+                snprintf(cmd, sizeof(cmd), "%s %s %s >/dev/null 2>&1", tc.compiler, ae_file, c_file);
+                if (run_cmd(cmd) != 0) {
+                    snprintf(cmd, sizeof(cmd), "%s %s %s 2>&1", tc.compiler, ae_file, c_file);
+                    run_cmd(cmd);
+                } else {
+                    build_gcc_cmd(cmd, sizeof(cmd), c_file, exe_file, false, NULL);
+                    strncat(cmd, " >/dev/null 2>&1", sizeof(cmd) - strlen(cmd) - 1);
+                    if (run_cmd(cmd) == 0) {
+                        run_cmd(exe_file);
+                    } else {
+                        build_gcc_cmd(cmd, sizeof(cmd), c_file, exe_file, false, NULL);
+                        run_cmd(cmd);
+                    }
+                }
+                remove(c_file);
+                remove(exe_file);
+            }
+            session[0] = '\0';
+            brace_depth = 0;
         }
     }
 
-    fprintf(stderr, "Error: REPL binary not found at %s\n", repl_path);
-    fprintf(stderr, "Build it with: make repl\n");
-    return 1;
+    remove(ae_file);
+    remove(c_file);
+    remove(exe_file);
+    printf("\nGoodbye!\n");
+    return 0;
 }
 
 // --------------------------------------------------------------------------

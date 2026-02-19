@@ -111,12 +111,22 @@ static inline int __attribute__((hot)) mailbox_send_batch(
 
 // Zero-copy message helpers
 static inline Message message_create_zerocopy(int type, int sender_id, void* data, int size) {
-    Message msg = {type, sender_id, 0, NULL, {data, size, 1}};
+    Message msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = type;
+    msg.sender_id = sender_id;
+    msg.zerocopy.data = data;
+    msg.zerocopy.size = size;
+    msg.zerocopy.owned = 1;
     return msg;
 }
 
 static inline Message message_create_simple(int type, int sender_id, int payload) {
-    Message msg = {type, sender_id, payload, NULL, {NULL, 0, 0}};
+    Message msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = type;
+    msg.sender_id = sender_id;
+    msg.payload_int = payload;
     return msg;
 }
 

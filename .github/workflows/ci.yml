@@ -72,7 +72,25 @@ jobs:
       if: runner.os != 'Windows'
       run: |
         make test
-    
+
+    - name: Build ae CLI
+      if: runner.os != 'Windows'
+      run: make ae
+
+    - name: Run example programs
+      if: runner.os != 'Windows'
+      run: |
+        ./build/ae run examples/basics/hello.ae
+        ./build/ae run examples/actors/counter.ae
+        ./build/ae run examples/actors/ping-pong.ae
+
+    - name: Smoke test project creation
+      if: runner.os != 'Windows'
+      run: |
+        ./build/ae init smoketest
+        cd smoketest && ../build/ae run
+        cd .. && rm -rf smoketest
+
     - name: Upload Test Results
       if: always()
       uses: actions/upload-artifact@v4

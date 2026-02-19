@@ -1,5 +1,49 @@
 #include "codegen_internal.h"
 
+// Register an extern function's parameter types for call-site cast emission.
+// Called whenever generate_extern_declaration() processes a function.
+void register_extern_func(CodeGenerator* gen, ASTNode* ext) {
+    if (!ext || !ext->value) return;
+
+    // Grow registry if needed
+    if (gen->extern_registry_count >= gen->extern_registry_capacity) {
+        gen->extern_registry_capacity = gen->extern_registry_capacity * 2 + 8;
+        gen->extern_registry = realloc(gen->extern_registry,
+            gen->extern_registry_capacity * sizeof(*gen->extern_registry));
+    }
+
+    int idx = gen->extern_registry_count++;
+    gen->extern_registry[idx].name = strdup(ext->value);
+    gen->extern_registry[idx].param_count = ext->child_count;
+    gen->extern_registry[idx].params = NULL;
+
+    if (ext->child_count > 0) {
+        gen->extern_registry[idx].params = malloc(ext->child_count * sizeof(TypeKind));
+        for (int i = 0; i < ext->child_count; i++) {
+            ASTNode* param = ext->children[i];
+            if (param && param->node_type) {
+                gen->extern_registry[idx].params[i] = param->node_type->kind;
+            } else {
+                gen->extern_registry[idx].params[i] = TYPE_UNKNOWN;
+            }
+        }
+    }
+}
+
+// Look up the expected TypeKind for the nth parameter of an extern function.
+// Returns TYPE_UNKNOWN if the function or parameter is not found.
+TypeKind lookup_extern_param_kind(CodeGenerator* gen, const char* func_name, int param_idx) {
+    for (int i = 0; i < gen->extern_registry_count; i++) {
+        if (strcmp(gen->extern_registry[i].name, func_name) == 0) {
+            if (param_idx < gen->extern_registry[i].param_count && gen->extern_registry[i].params) {
+                return gen->extern_registry[i].params[param_idx];
+            }
+            return TYPE_UNKNOWN;
+        }
+    }
+    return TYPE_UNKNOWN;
+}
+
 // Check if an AST subtree contains a return statement with a value
 int has_return_value(ASTNode* node) {
     if (!node) return 0;
@@ -20,6 +64,9 @@ int has_return_value(ASTNode* node) {
 // extern printf(format: string) -> int  =>  extern int printf(const char*);
 void generate_extern_declaration(CodeGenerator* gen, ASTNode* ext) {
     if (!ext || ext->type != AST_EXTERN_FUNCTION) return;
+
+    // Register parameter types for call-site type-aware casting
+    register_extern_func(gen, ext);
 
     fprintf(gen->output, "// Extern C function: %s\n", ext->value);
 

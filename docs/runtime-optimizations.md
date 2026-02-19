@@ -390,28 +390,6 @@ The following optimizations are available but disabled by default. Enable them v
 - Auto-detected based on hardware capabilities
 - Trade-off: overhead exceeds benefit for small message batches
 
-## Benchmarking
-
-### Cross-Language Benchmarks
-
-```bash
-cd benchmarks/cross-language
-./run_benchmarks.sh
-```
-
-### Test Suite
-
-```bash
-make test  # Runs all 153 tests
-```
-
-### Methodology
-
-- Compiler: GCC or Clang with `-O3 -march=native -flto`
-- Multiple runs to account for variance
-- Median values reported to avoid outlier bias
-- Cold-start and warm-cache scenarios measured separately
-
 ## Compiler Optimizations
 
 The Aether compiler (`aetherc`) runs its own optimization passes on the AST before emitting C, separate from whatever the downstream C compiler does. All passes are safe-by-default: if a pattern is not recognized, the compiler falls through to normal code generation.
@@ -476,10 +454,61 @@ For constant-bound loops the Aether collapse is redundant with clang's scalar ev
 5. Bound expression is not modified by any loop body statement
 6. No function calls or actor sends in the loop body (sends get batch-send treatment instead)
 
+**Pure counter elimination** is a subcase handled automatically (zero accumulators):
+
+```aether
+i = 0
+while i < n { i = i + 1 }   // n can be a runtime variable
+```
+→ `if ((i) < (n)) { i = (n); }` — clang can collapse only when `n` is a compile-time constant.
+
 **Reported in optimization stats:**
 ```
 Optimization Statistics:
-  Series loops collapsed: 4
+  Series loops collapsed: 3
+```
+
+---
+
+### Linear Counter Sum (`compiler/codegen/codegen_stmt.c`)
+
+Detects loops where an accumulator adds the **counter variable itself** (or a scaled version of it):
+
+```aether
+j = 0
+total = 0
+while j < N {
+    total = total + j     // addend IS the induction variable
+    j = j + 1
+}
+```
+
+Replaced with the **triangular-number closed form**:
+
+```c
+if ((j) < (N)) {
+    total = total + ((N) * ((N) - 1) / 2 - j * (j - 1) / 2);
+    j = (N);
+}
+```
+
+This is the sum Σ(i = j₀ to N−1) i = N(N−1)/2 − j₀(j₀−1)/2.
+
+Also handles a scaled counter: `total = total + j * 3` → scale factor applied to the formula.
+
+**Why clang cannot do this:** LLVM's Scalar Evolution (SCEV) identifies induction variables but does not synthesize the triangular-number closed form in the code generator. Polly (an optional LLVM extension, rarely enabled) can do affine loop transformations but is not part of the standard `-O2` pipeline.
+
+| Loop type | Clang `-O2` | Aether collapse |
+|-----------|------------|-----------------|
+| `while j < n { total += 5; j++ }` | Cannot collapse (variable bound) | Series collapse |
+| `while j < n { total += j; j++ }` | Cannot collapse (addend = counter) | **Linear collapse** |
+| `while j < n { total += j * 3; j++ }` | Cannot collapse | **Linear collapse (scaled)** |
+| Mixed: `while j < n { a += 5; b += j; j++ }` | Cannot collapse | **Both in one pass** |
+
+**Reported in optimization stats:**
+```
+Optimization Statistics:
+  Linear loops collapsed: 3
 ```
 
 ## References

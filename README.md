@@ -1,6 +1,6 @@
 # Aether Programming Language
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
+[![CI](https://github.com/nicolasmd87/aether/actions/workflows/ci.yml/badge.svg)](https://github.com/nicolasmd87/aether/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)]()
 
@@ -30,7 +30,7 @@ The Aether runtime implements a native actor system with optimized message passi
 - **Arena allocators** for actor lifetimes
 - **Memory pools** with thread-local allocation
 - **Actor pooling** reducing allocation overhead
-- **Zero-copy message passing** for large messages
+- **Zero-copy message delivery** in single-actor main-thread mode (caller stack passed directly)
 
 ### Message Optimization
 - **Sender-side batching** for reduced overhead
@@ -119,21 +119,21 @@ ae run [file.ae]         # Compile and run (file or project)
 ae build [file.ae]       # Compile to executable
 ae test [file|dir]       # Discover and run tests
 ae add <package>         # Add a dependency
-ae repl                  # Start interactive REPL
+ae repl                  # Start interactive REPL (compile-and-run loop)
 ae version               # Show version
 ae help                  # Show all commands
 ```
 
-In a project directory (with `aether.toml`), `ae run` and `ae build` work without arguments.
+In a project directory (with `aether.toml`), `ae run` and `ae build` compile `src/main.ae` as the program entry point. You can also pass `.` as the directory: `ae run .` or `ae build .`.
 
 **Using Make (alternative):**
 
 ```bash
 make compiler                    # Build compiler only
 make ae                          # Build ae CLI tool
-make test                        # Run C test suite (165 tests)
-make test-ae                     # Run .ae source tests (15 tests)
-make test-all                    # Run all tests (C + .ae)
+make test                        # Run runtime C test suite (162 tests)
+make test-ae                     # Run .ae source tests (24 tests)
+make test-all                    # Run all tests
 make examples                    # Build all examples
 make -j8                         # Parallel build
 make help                        # Show all targets
@@ -286,16 +286,16 @@ The runtime employs a tiered optimization strategy:
 ### Running Tests
 
 ```bash
-# Runtime test suite (165 C tests)
+# Runtime C test suite
 make test
 
-# Aether source tests (15 tests)
+# Aether source tests
 make test-ae
 
-# All tests (C + .ae = 180 tests)
+# All tests
 make test-all
 
-# Build all examples (24 programs)
+# Build all examples
 make examples
 ```
 

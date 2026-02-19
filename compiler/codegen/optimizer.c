@@ -4,13 +4,14 @@
 #include <stdio.h>
 #include <math.h>
 
-OptimizationStats global_opt_stats = {0, 0, 0, 0};
+OptimizationStats global_opt_stats = {0, 0, 0, 0, 0};
 
 void reset_optimization_stats() {
     global_opt_stats.constants_folded = 0;
     global_opt_stats.dead_code_removed = 0;
     global_opt_stats.tail_calls_detected = 0;
     global_opt_stats.series_loops_collapsed = 0;
+    global_opt_stats.linear_loops_collapsed = 0;
 }
 
 void print_optimization_stats() {
@@ -19,6 +20,7 @@ void print_optimization_stats() {
     printf("  Dead code removed: %d\n", global_opt_stats.dead_code_removed);
     printf("  Tail calls detected: %d\n", global_opt_stats.tail_calls_detected);
     printf("  Series loops collapsed: %d\n", global_opt_stats.series_loops_collapsed);
+    printf("  Linear loops collapsed: %d\n", global_opt_stats.linear_loops_collapsed);
 }
 
 // Helper: check if node is a literal constant

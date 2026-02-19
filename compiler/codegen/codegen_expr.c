@@ -215,7 +215,18 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                     fprintf(gen->output, "%s(", c_func_name);
                     for (int i = 0; i < expr->child_count; i++) {
                         if (i > 0) fprintf(gen->output, ", ");
-                        generate_expression(gen, expr->children[i]);
+                        ASTNode* arg = expr->children[i];
+                        // Cast int→void* when the extern param expects void* (TYPE_PTR).
+                        // Uses (void*)(intptr_t) which is the well-defined C idiom.
+                        TypeKind expected = lookup_extern_param_kind(gen, c_func_name, i);
+                        if (expected == TYPE_PTR && arg->node_type &&
+                            (arg->node_type->kind == TYPE_INT || arg->node_type->kind == TYPE_BOOL)) {
+                            fprintf(gen->output, "(void*)(intptr_t)(");
+                            generate_expression(gen, arg);
+                            fprintf(gen->output, ")");
+                        } else {
+                            generate_expression(gen, arg);
+                        }
                     }
                     fprintf(gen->output, ")");
                 }

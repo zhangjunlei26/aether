@@ -186,7 +186,26 @@ ASTNode* parse_primary_expression(Parser* parser) {
         case TOKEN_IDENTIFIER: {
             // Could be identifier or struct literal
             Token* next = parser->tokens[parser->current_token + 1];
+            // Disambiguate: IDENTIFIER { could be a struct literal OR an identifier
+            // followed by a block (e.g., while i < n { ... }).
+            // A struct literal has the pattern: TypeName { field: value } or TypeName {}
+            // A block-preceding identifier has statements (not field:) after the {.
+            // Look 2-3 tokens ahead to check for the struct literal pattern.
+            bool looks_like_struct = false;
             if (next && next->type == TOKEN_LEFT_BRACE) {
+                Token* after_brace = peek_ahead(parser, 2);
+                if (after_brace && after_brace->type == TOKEN_RIGHT_BRACE) {
+                    // TypeName {} — empty struct literal
+                    looks_like_struct = true;
+                } else if (after_brace && after_brace->type == TOKEN_IDENTIFIER) {
+                    Token* after_field = peek_ahead(parser, 3);
+                    if (after_field && after_field->type == TOKEN_COLON) {
+                        // TypeName { field: value } — struct literal
+                        looks_like_struct = true;
+                    }
+                }
+            }
+            if (next && next->type == TOKEN_LEFT_BRACE && looks_like_struct) {
                 // Struct literal: TypeName{ field: value, ... }
                 char* struct_name = strdup(token->value);
                 int line = token->line;
@@ -592,6 +611,23 @@ ASTNode* parse_statement(Parser* parser) {
     if (!token) return NULL;
     
     switch (token->type) {
+        case TOKEN_AT: {
+            // @manual annotation: @manual x = expr  OR  @manual state x = expr
+            advance_token(parser);  // consume '@'
+            Token* annot = peek_token(parser);
+            if (!annot || annot->type != TOKEN_IDENTIFIER || strcmp(annot->value, "manual") != 0) {
+                parser_error(parser, "Expected 'manual' after '@'");
+                return NULL;
+            }
+            advance_token(parser);  // consume 'manual'
+            // Parse the statement that follows
+            ASTNode* decl = parse_statement(parser);
+            if (decl && (decl->type == AST_VARIABLE_DECLARATION || decl->type == AST_STATE_DECLARATION)) {
+                decl->is_manual = 1;
+            }
+            return decl;
+        }
+
         case TOKEN_LET:
         case TOKEN_VAR:
             // Optional 'let' or 'var' - skip it and parse as Python-style
@@ -1487,6 +1523,17 @@ ASTNode* parse_actor_definition(Parser* parser) {
             break;
         }
         
+        // Handle @manual annotation before state declarations
+        int actor_state_is_manual = 0;
+        if (peek_token(parser) && peek_token(parser)->type == TOKEN_AT) {
+            Token* at_peek = peek_ahead(parser, 1);
+            if (at_peek && at_peek->type == TOKEN_IDENTIFIER && strcmp(at_peek->value, "manual") == 0) {
+                advance_token(parser);  // consume '@'
+                advance_token(parser);  // consume 'manual'
+                actor_state_is_manual = 1;
+            }
+        }
+
         if (match_token(parser, TOKEN_STATE)) {
             // Check if there's an explicit type or Python-style
             Token* next_tok = peek_token(parser);
@@ -1514,6 +1561,7 @@ ASTNode* parse_actor_definition(Parser* parser) {
             
             if (state_decl) {
                 state_decl->type = AST_STATE_DECLARATION;
+                state_decl->is_manual = actor_state_is_manual;
                 add_child(actor, state_decl);
                 // Consume optional semicolon after state declaration
                 match_token(parser, TOKEN_SEMICOLON);

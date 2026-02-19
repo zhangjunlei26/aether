@@ -70,33 +70,7 @@ main() {
 }
 ```
 
-### Dynamic Arrays
-
-Use `make()` for runtime-sized arrays:
-
-```aether
-main() {
-    buffer = make([]int, 1000);
-
-    buffer[0] = 42;
-    buffer[999] = 100;
-
-    val = buffer[0];
-    print(val);  // Prints 42
-}
-```
-
-### Multi-Dimensional Arrays
-
-```aether
-main() {
-    int[3][3] matrix;
-
-    matrix[0][0] = 1;
-    matrix[1][1] = 5;
-    matrix[2][2] = 9;
-}
-```
+> **Note:** Array sizes are fixed at declaration. Dynamic allocation is not yet in the language.
 
 ### Arrays in Actors
 
@@ -227,15 +201,15 @@ actor Worker {
 }
 
 main() {
-    actors = make([]actor Worker, 100);
+    w1 = spawn(Worker())
+    w2 = spawn(Worker())
+    w3 = spawn(Worker())
 
-    for (i = 0; i < 100; i = i + 1) {
-        actors[i] = spawn(Worker())
-    }
+    w1 ! DoWork { value: 1 }
+    w2 ! DoWork { value: 2 }
+    w3 ! DoWork { value: 3 }
 
-    for (i = 0; i < 100; i = i + 1) {
-        actors[i] ! DoWork { value: i }
-    }
+    wait_for_idle()
 }
 ```
 

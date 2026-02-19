@@ -110,6 +110,7 @@ typedef struct ASTNode {
     int child_count;
     int line;
     int column;
+    int is_manual;              // 1 = @manual annotation: skip auto-free for this var
 } ASTNode;
 
 // Type functions
