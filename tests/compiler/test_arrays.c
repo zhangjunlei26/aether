@@ -5,7 +5,7 @@
 #include "../../compiler/parser/parser.h"
 #include "../../compiler/ast.h"
 #include "../../compiler/analysis/typechecker.h"
-#include "../../compiler/codegen.h"
+#include "../../compiler/codegen/codegen.h"
 
 // Helper function to create parser with error suppression
 static Parser* create_test_parser(Token** tokens, int token_count) {

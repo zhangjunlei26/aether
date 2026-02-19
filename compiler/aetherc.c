@@ -168,11 +168,10 @@ int compile_source(const char* input_path, const char* output_path) {
     
     printf("Type checking successful\n");
     
-    // Step 3.5: Optimization
+    // Step 3.5: Optimization (AST-level passes: constant folding, dead code, tail calls)
     printf("Step 3.5: Optimizing...\n");
     program = optimize_ast(program);
-    print_optimization_stats();
-    
+
     // Step 4: Code Generation
     printf("Step 4: Generating C code...\n");
     FILE *output = fopen(output_path, "w");
@@ -220,7 +219,10 @@ int compile_source(const char* input_path, const char* output_path) {
     }
 
     printf("Code generation successful\n");
-    
+    // Print all optimization stats here — series loop collapse happens during codegen,
+    // so stats must be printed after generate_program(), not before it.
+    print_optimization_stats();
+
     // Cleanup
     free_ast_node(program);
     for (int i = 0; i < token_count; i++) {

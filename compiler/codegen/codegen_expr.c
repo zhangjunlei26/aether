@@ -284,10 +284,18 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                             fprintf(gen->output, ", NULL, {NULL, 0, 0}}; ");
 
                             if (gen->in_main_loop) {
+                                // Main thread loop: batch sends to reduce atomics N→num_cores
                                 fprintf(gen->output, "scheduler_send_batch_add((ActorBase*)(");
                                 generate_expression(gen, target);
                                 fprintf(gen->output, "), _imsg); }");
+                            } else if (gen->current_actor == NULL) {
+                                // Main thread, non-loop: current_core_id is always -1, local path
+                                // is never taken — emit scheduler_send_remote directly (no dead branch)
+                                fprintf(gen->output, "scheduler_send_remote((ActorBase*)(");
+                                generate_expression(gen, target);
+                                fprintf(gen->output, "), _imsg, current_core_id); }");
                             } else {
+                                // Inside an actor handler: same-core vs cross-core branch is live
                                 fprintf(gen->output, "if (current_core_id >= 0 && current_core_id == ((ActorBase*)(");
                                 generate_expression(gen, target);
                                 fprintf(gen->output, "))->assigned_core) { scheduler_send_local((ActorBase*)(");

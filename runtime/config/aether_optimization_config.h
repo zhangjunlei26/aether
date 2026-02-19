@@ -234,9 +234,12 @@ static inline bool aether_inline_mode_active(void) {
 }
 
 // Check if main thread actor mode is active (synchronous processing)
-// This is the fastest path: no scheduler, no queues, direct function calls
+// This is the fastest path: no scheduler, no queues, direct function calls.
+// NOTE: No __builtin_expect here — in single-actor programs this is always true
+// (hinting it as unlikely would put the fast inline path in cold instruction cache).
+// The CPU branch predictor learns the correct bias quickly for both cases.
 static inline bool aether_main_thread_mode_active(void) {
-    return __builtin_expect(atomic_load_explicit(&g_aether_config.main_thread_mode, memory_order_relaxed), 0);
+    return atomic_load_explicit(&g_aether_config.main_thread_mode, memory_order_relaxed);
 }
 
 // Enable main thread mode for an actor (call after spawn, before any sends)

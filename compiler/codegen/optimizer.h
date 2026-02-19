@@ -25,6 +25,7 @@ typedef struct {
     int constants_folded;
     int dead_code_removed;
     int tail_calls_detected;
+    int series_loops_collapsed;  // arithmetic series loops replaced with closed-form expressions
 } OptimizationStats;
 
 extern OptimizationStats global_opt_stats;

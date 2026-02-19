@@ -2,64 +2,41 @@
 #include "../../compiler/parser/lexer.h"
 #include "../../compiler/parser/parser.h"
 #include <string.h>
+#include <stdlib.h>
 
-TEST(parser_basic_expressions) {
-    const char* source = "x = 1 + 2";
+// Helper: tokenize + parse using current API
+static ASTNode* parse_source(const char* source) {
     lexer_init(source);
-    Token tokens[64];
+    Token** tokens = malloc(sizeof(Token*) * 256);
     int count = 0;
     Token* tok;
-    while ((tok = next_token()) != NULL && tok->type != TOKEN_EOF && count < 63) {
-        tokens[count++] = *tok;
-        free(tok);
+    while ((tok = next_token()) != NULL && tok->type != TOKEN_EOF && count < 255) {
+        tokens[count++] = tok;
     }
-    if (tok) free(tok);
-    tokens[count].type = TOKEN_EOF;
-    tokens[count].value = NULL;
-    count++;
+    if (tok) tokens[count++] = tok;
+    Parser* parser = create_parser(tokens, count);
+    ASTNode* ast = parse_program(parser);
+    free_parser(parser);
+    for (int i = 0; i < count; i++) free_token(tokens[i]);
+    free(tokens);
+    return ast;
+}
 
-    ASTNode* ast = parse(tokens, count);
+TEST(parser_basic_expressions) {
+    ASTNode* ast = parse_source("main() { x = 1 + 2 }");
     ASSERT_NOT_NULL(ast);
     ASSERT_TRUE(ast->child_count > 0);
     free_ast_node(ast);
 }
 
 TEST(parser_for_loops) {
-    const char* source = "for i = 0; i < 10; i++ { x = i }";
-    lexer_init(source);
-    Token tokens[64];
-    int count = 0;
-    Token* tok;
-    while ((tok = next_token()) != NULL && tok->type != TOKEN_EOF && count < 63) {
-        tokens[count++] = *tok;
-        free(tok);
-    }
-    if (tok) free(tok);
-    tokens[count].type = TOKEN_EOF;
-    tokens[count].value = NULL;
-    count++;
-
-    ASTNode* ast = parse(tokens, count);
+    ASTNode* ast = parse_source("main() { for i = 0; i < 10; i++ { x = i } }");
     ASSERT_NOT_NULL(ast);
     free_ast_node(ast);
 }
 
 TEST(parser_while_loops) {
-    const char* source = "while x > 0 { x = x - 1 }";
-    lexer_init(source);
-    Token tokens[64];
-    int count = 0;
-    Token* tok;
-    while ((tok = next_token()) != NULL && tok->type != TOKEN_EOF && count < 63) {
-        tokens[count++] = *tok;
-        free(tok);
-    }
-    if (tok) free(tok);
-    tokens[count].type = TOKEN_EOF;
-    tokens[count].value = NULL;
-    count++;
-
-    ASTNode* ast = parse(tokens, count);
+    ASTNode* ast = parse_source("main() { while x > 0 { x = x - 1 } }");
     ASSERT_NOT_NULL(ast);
     free_ast_node(ast);
 }

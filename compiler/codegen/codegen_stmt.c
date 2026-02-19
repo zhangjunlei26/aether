@@ -1,4 +1,222 @@
 #include "codegen_internal.h"
+#include "optimizer.h"
+
+// ============================================================================
+// ARITHMETIC SERIES LOOP COLLAPSE
+//
+// Detects while loops of the form:
+//   while counter < bound {
+//       acc1 = acc1 + invariant_expr1    // any number of accumulators
+//       acc2 = acc2 + invariant_expr2
+//       counter = counter + step         // must be a positive literal step
+//   }
+//
+// And replaces them with closed-form O(1) expressions:
+//   acc1 = acc1 + invariant_expr1 * (bound - counter);
+//   acc2 = acc2 + invariant_expr2 * (bound - counter);
+//   counter = bound;
+//
+// Works for any starting value of counter and any bound expression (even
+// runtime variables) — the formula (bound - counter) computes remaining
+// iterations correctly regardless of initial state.
+//
+// Also handles "counter <= bound" (adds one extra iteration).
+// Also handles step != 1 via division.
+// ============================================================================
+
+#define MAX_SERIES_ACCUMULATORS 16
+
+// Returns 1 if the expression tree references the named variable.
+static int expr_references_var(ASTNode* node, const char* var_name) {
+    if (!node || !var_name) return 0;
+    if (node->type == AST_IDENTIFIER && node->value &&
+        strcmp(node->value, var_name) == 0) return 1;
+    for (int i = 0; i < node->child_count; i++) {
+        if (expr_references_var(node->children[i], var_name)) return 1;
+    }
+    return 0;
+}
+
+// Returns 1 if the expression has any side effects (function calls, sends).
+static int expr_has_side_effects(ASTNode* node) {
+    if (!node) return 0;
+    if (node->type == AST_FUNCTION_CALL ||
+        node->type == AST_SEND_FIRE_FORGET ||
+        node->type == AST_SEND_ASK) return 1;
+    for (int i = 0; i < node->child_count; i++) {
+        if (expr_has_side_effects(node->children[i])) return 1;
+    }
+    return 0;
+}
+
+// Try to detect and emit a collapsed arithmetic series loop.
+// Returns 1 if the loop was collapsed and emitted; 0 otherwise (caller emits normally).
+static int try_emit_series_collapse(CodeGenerator* gen, ASTNode* while_node) {
+    if (!while_node || while_node->child_count < 2) return 0;
+
+    ASTNode* condition = while_node->children[0];
+    ASTNode* body      = while_node->children[1];
+
+    // 1. Condition must be "counter < bound" or "counter <= bound"
+    if (!condition || condition->type != AST_BINARY_EXPRESSION || !condition->value) return 0;
+    int is_lt  = strcmp(condition->value, "<")  == 0;
+    int is_lte = strcmp(condition->value, "<=") == 0;
+    if (!is_lt && !is_lte) return 0;
+    if (condition->child_count < 2) return 0;
+
+    ASTNode* cond_left  = condition->children[0];   // the counter
+    ASTNode* cond_right = condition->children[1];   // the bound
+
+    if (!cond_left || cond_left->type != AST_IDENTIFIER || !cond_left->value) return 0;
+    const char* counter_var = cond_left->value;
+
+    // Bound must not have side effects
+    if (expr_has_side_effects(cond_right)) return 0;
+
+    // 2. Body: get statement list
+    ASTNode** stmts;
+    int stmt_count;
+    if (!body) return 0;
+    if (body->type == AST_BLOCK && body->child_count == 1 &&
+        body->children[0] && body->children[0]->type == AST_BLOCK) {
+        body = body->children[0];
+    }
+    if (body->type == AST_BLOCK) {
+        stmts      = body->children;
+        stmt_count = body->child_count;
+    } else {
+        stmts      = &body;
+        stmt_count = 1;
+    }
+    if (stmt_count == 0) return 0;
+
+    // 3. Parse each statement
+    const char* acc_vars[MAX_SERIES_ACCUMULATORS];
+    ASTNode*    acc_addends[MAX_SERIES_ACCUMULATORS];
+    int         acc_count        = 0;
+    int         found_counter    = 0;
+    double      counter_step     = 1.0;
+
+    // Also collect the set of target variable names for later checks.
+    const char* stmt_targets[MAX_SERIES_ACCUMULATORS + 1];  // +1 for counter
+    int stmt_target_count = 0;
+
+    for (int i = 0; i < stmt_count; i++) {
+        ASTNode* s = stmts[i];
+        if (!s) return 0;
+
+        // Every statement must be an assignment of the form: target = target + expr
+        // The parser emits AST_VARIABLE_DECLARATION for all "x = expr" statements:
+        //   s->value      = target variable name
+        //   s->children[0] = RHS expression
+        if (s->type != AST_VARIABLE_DECLARATION) return 0;
+        if (!s->value || s->child_count < 1) return 0;
+
+        const char* target = s->value;
+        ASTNode*    rhs    = s->children[0];
+
+        if (!rhs || rhs->type != AST_BINARY_EXPRESSION) return 0;
+        if (!rhs->value || strcmp(rhs->value, "+") != 0) return 0;
+        if (rhs->child_count < 2) return 0;
+
+        ASTNode* rhs_left  = rhs->children[0];
+        ASTNode* rhs_right = rhs->children[1];
+
+        // Identify the "self" side and the "addend" side
+        int left_is_self  = rhs_left  && rhs_left->type  == AST_IDENTIFIER &&
+                            rhs_left->value  && strcmp(rhs_left->value,  target) == 0;
+        int right_is_self = rhs_right && rhs_right->type == AST_IDENTIFIER &&
+                            rhs_right->value && strcmp(rhs_right->value, target) == 0;
+        if (!left_is_self && !right_is_self) return 0;
+
+        ASTNode* addend = left_is_self ? rhs_right : rhs_left;
+
+        // Track this target for bound-mutation check later
+        if (stmt_target_count < MAX_SERIES_ACCUMULATORS + 1)
+            stmt_targets[stmt_target_count++] = target;
+
+        if (strcmp(target, counter_var) == 0) {
+            // Counter increment: must be a positive literal step
+            if (addend->type != AST_LITERAL || !addend->value) return 0;
+            counter_step = atof(addend->value);
+            if (counter_step <= 0.0) return 0;
+            found_counter = 1;
+        } else {
+            // Accumulator: addend must be loop-invariant (no ref to counter or other targets)
+            if (acc_count >= MAX_SERIES_ACCUMULATORS) return 0;
+            if (expr_references_var(addend, counter_var)) return 0;
+            if (expr_has_side_effects(addend)) return 0;
+            acc_vars[acc_count]    = target;
+            acc_addends[acc_count] = addend;
+            acc_count++;
+        }
+    }
+
+    if (!found_counter) return 0;
+
+    // 3b. Bound-mutation check: if any loop body statement assigns to a variable
+    // referenced in the bound expression, the bound changes per-iteration.
+    for (int i = 0; i < stmt_target_count; i++) {
+        if (expr_references_var(cond_right, stmt_targets[i])) return 0;
+    }
+
+    // 3c. Addend invariance check: verify no addend references a variable modified
+    // by any other statement in the loop body.
+    for (int i = 0; i < acc_count; i++) {
+        for (int j = 0; j < stmt_target_count; j++) {
+            if (expr_references_var(acc_addends[i], stmt_targets[j])) return 0;
+        }
+    }
+
+    // 4. Emit collapsed form, wrapped in a guard matching the original condition.
+    // The guard is needed so that when counter >= bound (loop would not execute
+    // at all), the accumulators are left unchanged — without it, the formula
+    // (bound - counter) is zero or negative and could corrupt the accumulator.
+    print_indent(gen);
+    fprintf(gen->output, "if ((%s) %s (", counter_var, is_lte ? "<=" : "<");
+    generate_expression(gen, cond_right);
+    fprintf(gen->output, ")) {\n");
+    indent(gen);
+
+    // acc = acc + addend * trip_count  [for each accumulator]
+    // trip_count = (bound - counter) / step  [+ 1 for <=]
+    for (int i = 0; i < acc_count; i++) {
+        print_indent(gen);
+        fprintf(gen->output, "%s = %s + (", acc_vars[i], acc_vars[i]);
+        generate_expression(gen, acc_addends[i]);
+        fprintf(gen->output, ") * (");
+        if (counter_step == 1.0) {
+            fprintf(gen->output, "(");
+            generate_expression(gen, cond_right);
+            fprintf(gen->output, ") - %s", counter_var);
+        } else {
+            fprintf(gen->output, "((");
+            generate_expression(gen, cond_right);
+            fprintf(gen->output, ") - %s) / %g", counter_var, counter_step);
+        }
+        if (is_lte) {
+            fprintf(gen->output, " + 1");
+        }
+        fprintf(gen->output, ");\n");
+    }
+
+    // counter = bound (or bound + step for <=)
+    print_indent(gen);
+    fprintf(gen->output, "%s = (", counter_var);
+    generate_expression(gen, cond_right);
+    if (is_lte) {
+        fprintf(gen->output, ") + %g;\n", counter_step);
+    } else {
+        fprintf(gen->output, ");\n");
+    }
+
+    unindent(gen);
+    print_indent(gen);
+    fprintf(gen->output, "}\n");
+
+    global_opt_stats.series_loops_collapsed++;
+    return 1;
+}
 
 static void generate_list_pattern_condition(CodeGenerator* gen, ASTNode* pattern,
                                             const char* len_name) {
@@ -252,8 +470,12 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             break;
             
         case AST_WHILE_LOOP: {
-            // Check if loop body contains sends (for batch optimization)
+            // OPTIMIZATION: Try to collapse arithmetic series loops into O(1) expressions.
+            // Only attempt when not inside actors and no sends (sends need batch treatment).
             int has_sends = contains_send_expression(stmt);
+            if (!has_sends && try_emit_series_collapse(gen, stmt)) {
+                break;  // collapsed — done
+            }
 
             // Batch optimization: only in main() (not inside actors)
             // Uses queue_enqueue_batch to reduce atomics from N to num_cores

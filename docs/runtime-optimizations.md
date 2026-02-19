@@ -412,6 +412,76 @@ make test  # Runs all 153 tests
 - Median values reported to avoid outlier bias
 - Cold-start and warm-cache scenarios measured separately
 
+## Compiler Optimizations
+
+The Aether compiler (`aetherc`) runs its own optimization passes on the AST before emitting C, separate from whatever the downstream C compiler does. All passes are safe-by-default: if a pattern is not recognized, the compiler falls through to normal code generation.
+
+### Hot/Cold Path Fixes (scheduler-level)
+
+**Problem A — `aether_main_thread_mode_active()` branch hint** (`runtime/config/aether_optimization_config.h`)
+
+The inline accessor previously carried `__builtin_expect(..., 0)`, marking the main-thread path as *unlikely*. For single-actor programs this path is always taken, so the hint put the fast code in the cold instruction-cache section. Removed the hint; the C compiler now places the branch neutrally.
+
+**Problem B — Dead branch in generated send code** (`compiler/codegen/codegen_expr.c`)
+
+Generated code for `actor ! Msg` from the main thread previously emitted:
+```c
+if (current_core_id >= 0 && current_core_id == actor->assigned_core) {
+    scheduler_send_local(...);   // never taken: main thread has core_id = -1
+} else {
+    scheduler_send_remote(...);  // always taken
+}
+```
+When the codegen is in a main-function context (`gen->current_actor == NULL`), it now emits the always-taken branch directly, eliminating the dead conditional.
+
+### Arithmetic Series Loop Collapse (`compiler/codegen/codegen_stmt.c`)
+
+Detects `while` loops of the form:
+
+```aether
+while counter < N {
+    acc1 = acc1 + C1   // loop-invariant addend
+    acc2 = acc2 + C2
+    counter = counter + step
+}
+```
+
+And replaces them with O(1) closed-form assignments:
+
+```c
+if ((counter) < (N)) {
+    acc1 = acc1 + (C1) * ((N) - counter);
+    acc2 = acc2 + (C2) * ((N) - counter);
+    counter = (N);
+}
+```
+
+The guard prevents the collapsed form from running when the loop would not have executed at all (counter ≥ bound). The formula `(N - counter)` computes remaining trip count correctly for any initial counter value.
+
+**What this handles that the C compiler cannot:**
+
+| Loop type | Clang `-O2` | Aether collapse |
+|-----------|------------|-----------------|
+| `while i < 10 { total += 5; i++ }` | Collapses (constant bound, scalar evolution) | Collapses |
+| `while i < n { total += 5; i++ }` | Cannot collapse (variable bound) | **Collapses** |
+| Multi-accumulator `while i < n { a += 3; b += 7; i++ }` | Cannot collapse | **Collapses** |
+
+For constant-bound loops the Aether collapse is redundant with clang's scalar evolution pass, so both emit equivalent O(1) code. The unique value is for *variable-bound* loops, which clang cannot analyze without the semantics that Aether's type system provides (no aliasing, no pointers, no side effects in the body).
+
+**Detection requirements (all must hold):**
+1. Condition is `var < bound` or `var <= bound`
+2. Every body statement is `target = target + expr` (no other forms)
+3. One statement increments the counter variable by a positive literal step
+4. All addend expressions are loop-invariant (no reference to counter or other modified variables)
+5. Bound expression is not modified by any loop body statement
+6. No function calls or actor sends in the loop body (sends get batch-send treatment instead)
+
+**Reported in optimization stats:**
+```
+Optimization Statistics:
+  Series loops collapsed: 4
+```
+
 ## References
 
 - Lock-Free Programming: Harris, "A Pragmatic Implementation of Non-Blocking Linked-Lists"
