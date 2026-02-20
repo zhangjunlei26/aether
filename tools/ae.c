@@ -607,6 +607,7 @@ static void build_gcc_cmd(char* cmd, size_t size,
         return;
     }
     // Windows (MinGW): no -pthread (Win32 threads via aether_thread.h), no -lm (CRT).
+    // -lws2_32 is required for Winsock2 (aether_http/net always compiled into runtime).
     // Quote s_gcc_bin in case the path contains spaces.
     const char* opt = optimize ? "-O2" : "-O0";
     char lib_dir[1024];
@@ -617,11 +618,11 @@ static void build_gcc_cmd(char* cmd, size_t size,
         if (!slash) slash = strrchr(lib_dir, '/');
         if (slash) *slash = '\0';
         snprintf(cmd, size,
-            "\"%s\" %s %s %s %s -L%s -laether -o %s %s",
+            "\"%s\" %s %s %s %s -L%s -laether -o %s -lws2_32 %s",
             s_gcc_bin, opt, tc.include_flags, c_file, extra, lib_dir, out_file, link_flags);
     } else {
         snprintf(cmd, size,
-            "\"%s\" %s %s %s %s %s -o %s %s",
+            "\"%s\" %s %s %s %s %s -o %s -lws2_32 %s",
             s_gcc_bin, opt, tc.include_flags, c_file, extra, tc.runtime_srcs, out_file, link_flags);
     }
 #else
