@@ -1,16 +1,27 @@
 .PHONY: all clean test compiler examples examples-run
 
-# Detect OS
+# Detect OS and shell environment.
+# WINDOWS_NATIVE is set only for pure Windows (mingw32-make + cmd.exe).
+# MSYS2/MinGW/Cygwin with bash get the Unix tool paths even when OS=Windows_NT.
+WINDOWS_NATIVE :=
 ifeq ($(OS),Windows_NT)
-    DETECTED_OS := Windows
-    EXE_EXT := .exe
-    PATH_SEP := \\
-    MKDIR := if not exist
-    RM := del /Q
-    RM_DIR := rd /S /Q
+    _UNAME_S := $(shell uname -s 2>&1)
+    ifneq ($(findstring MINGW,$(_UNAME_S)),)
+        DETECTED_OS := $(_UNAME_S)
+        EXE_EXT := .exe
+    else ifneq ($(findstring MSYS,$(_UNAME_S)),)
+        DETECTED_OS := $(_UNAME_S)
+        EXE_EXT := .exe
+    else ifneq ($(findstring CYGWIN,$(_UNAME_S)),)
+        DETECTED_OS := $(_UNAME_S)
+        EXE_EXT := .exe
+    else
+        DETECTED_OS := Windows
+        EXE_EXT := .exe
+        WINDOWS_NATIVE := 1
+    endif
 else
     DETECTED_OS := $(shell uname -s)
-    # Check if we're in MSYS2/MinGW (common on GitHub Actions Windows)
     ifneq ($(findstring MINGW,$(DETECTED_OS)),)
         EXE_EXT := .exe
     else ifneq ($(findstring MSYS,$(DETECTED_OS)),)
@@ -20,6 +31,14 @@ else
     else
         EXE_EXT :=
     endif
+endif
+
+ifdef WINDOWS_NATIVE
+    PATH_SEP := \\
+    MKDIR := if not exist
+    RM := del /Q
+    RM_DIR := rd /S /Q
+else
     PATH_SEP := /
     MKDIR := mkdir -p
     RM := rm -f
@@ -27,22 +46,35 @@ else
 endif
 
 # Parallel job count (override with: make test-ae NPROC=8)
+ifdef WINDOWS_NATIVE
+NPROC ?= $(shell echo %NUMBER_OF_PROCESSORS% 2>nul || echo 4)
+else
 NPROC ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+endif
 
 # Version from VERSION file (single source of truth)
+ifdef WINDOWS_NATIVE
+VERSION := $(shell type VERSION 2>nul || echo 0.0.0)
+else
 VERSION := $(shell cat VERSION 2>/dev/null || echo "0.0.0")
+endif
 
 # Compiler configuration with ccache support
+ifdef WINDOWS_NATIVE
+CC := gcc
+else
 CC := $(shell command -v ccache 2>/dev/null && echo "ccache gcc" || echo "gcc")
-CFLAGS = -O2 -Icompiler -Iruntime -Iruntime/actors -Iruntime/scheduler -Iruntime/utils -Iruntime/memory -Iruntime/config -Istd -Istd/string -Istd/io -Istd/math -Istd/net -Istd/collections -Istd/json -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -MMD -MP -DAETHER_VERSION=\"$(VERSION)\"
+endif
+EXTRA_CFLAGS ?=
+CFLAGS = -O2 -Icompiler -Iruntime -Iruntime/actors -Iruntime/scheduler -Iruntime/utils -Iruntime/memory -Iruntime/config -Istd -Istd/string -Istd/io -Istd/math -Istd/net -Istd/collections -Istd/json -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -MMD -MP -DAETHER_VERSION=\"$(VERSION)\" $(EXTRA_CFLAGS)
 LDFLAGS = -pthread -lm
 
 # Zero warnings achieved - ready for -Werror
 BUILD_DIR = build
 OBJ_DIR = $(BUILD_DIR)/obj
 
-# Windows-specific libraries (check both OS variable and uname for MSYS2)
-ifeq ($(OS),Windows_NT)
+# Windows-specific libraries
+ifdef WINDOWS_NATIVE
     LDFLAGS += -lws2_32
 else ifneq ($(findstring MINGW,$(DETECTED_OS)),)
     LDFLAGS += -lws2_32
@@ -103,7 +135,11 @@ all: compiler ae stdlib
 
 # Create object directories
 $(OBJ_DIR)/compiler $(OBJ_DIR)/compiler/parser $(OBJ_DIR)/compiler/codegen $(OBJ_DIR)/compiler/analysis $(OBJ_DIR)/runtime $(OBJ_DIR)/runtime/actors $(OBJ_DIR)/runtime/scheduler $(OBJ_DIR)/runtime/memory $(OBJ_DIR)/runtime/config $(OBJ_DIR)/runtime/simd $(OBJ_DIR)/runtime/utils $(OBJ_DIR)/std $(OBJ_DIR)/std/string $(OBJ_DIR)/std/io $(OBJ_DIR)/std/math $(OBJ_DIR)/std/net $(OBJ_DIR)/std/fs $(OBJ_DIR)/std/log $(OBJ_DIR)/std/collections $(OBJ_DIR)/std/json $(OBJ_DIR)/tests $(OBJ_DIR)/tests/compiler $(OBJ_DIR)/tests/memory $(OBJ_DIR)/tests/runtime:
+ifdef WINDOWS_NATIVE
+	@if not exist "$(subst /,\,$@)" mkdir "$(subst /,\,$@)"
+else
 	@mkdir -p $@
+endif
 
 # Pattern rule for object files
 $(OBJ_DIR)/%.o: %.c | $(OBJ_DIR)/compiler $(OBJ_DIR)/compiler/parser $(OBJ_DIR)/compiler/codegen $(OBJ_DIR)/compiler/analysis $(OBJ_DIR)/runtime $(OBJ_DIR)/runtime/actors $(OBJ_DIR)/runtime/scheduler $(OBJ_DIR)/runtime/memory $(OBJ_DIR)/runtime/config $(OBJ_DIR)/runtime/simd $(OBJ_DIR)/runtime/utils $(OBJ_DIR)/std $(OBJ_DIR)/std/string $(OBJ_DIR)/std/io $(OBJ_DIR)/std/math $(OBJ_DIR)/std/net $(OBJ_DIR)/std/fs $(OBJ_DIR)/std/log $(OBJ_DIR)/std/collections $(OBJ_DIR)/std/json $(OBJ_DIR)/tests $(OBJ_DIR)/tests/compiler $(OBJ_DIR)/tests/memory $(OBJ_DIR)/tests/runtime
@@ -118,7 +154,7 @@ compiler: $(COMPILER_OBJS) $(STD_OBJS) $(COLLECTIONS_OBJS)
 
 # Fast compiler target (monolithic, for clean builds)
 compiler-fast:
-ifeq ($(OS),Windows_NT)
+ifdef WINDOWS_NATIVE
 	@if not exist "build" mkdir "build"
 else
 	@$(MKDIR) build
@@ -508,6 +544,12 @@ ifeq ($(DETECTED_OS),Darwin)
 else ifeq ($(DETECTED_OS),Linux)
 	@$(CC) $(CFLAGS) tools/aether_repl.c -o build/aether_repl$(EXE_EXT) -lreadline 2>/dev/null || \
 	(echo "readline not found. Install with: sudo apt-get install libreadline-dev" && exit 1)
+else ifneq ($(findstring MINGW,$(DETECTED_OS)),)
+	@$(CC) $(CFLAGS) tools/aether_repl.c -o build/aether_repl$(EXE_EXT) -lreadline 2>/dev/null || \
+	(echo "readline not found. Install with: pacman -S mingw-w64-x86_64-readline" && exit 1)
+else ifneq ($(findstring MSYS,$(DETECTED_OS)),)
+	@$(CC) $(CFLAGS) tools/aether_repl.c -o build/aether_repl$(EXE_EXT) -lreadline 2>/dev/null || \
+	(echo "readline not found. Install with: pacman -S readline" && exit 1)
 else
 	@echo "Error: REPL not supported on $(DETECTED_OS)"
 	@exit 1
@@ -552,7 +594,11 @@ test-parallel:
 	@echo "All parallel tests complete!"
 
 clean:
+ifdef WINDOWS_NATIVE
+	@if exist build $(RM_DIR) build
+else
 	$(RM_DIR) build
+endif
 
 help:
 	@echo "Aether Build System ($(DETECTED_OS))"
@@ -648,7 +694,7 @@ ci: clean
 	@echo "==================================="
 	@echo ""
 	@echo "[1/8] Building compiler (-Werror)..."
-	@$(MAKE) compiler CFLAGS="$(CFLAGS) -Werror"
+	@$(MAKE) compiler EXTRA_CFLAGS=-Werror
 	@echo ""
 	@echo "[2/8] Building ae CLI..."
 	@$(MAKE) ae
@@ -656,20 +702,36 @@ ci: clean
 	@echo "[3/8] Building stdlib..."
 	@$(MAKE) stdlib
 	@echo ""
+ifdef WINDOWS_NATIVE
+	@echo "[4/8] Building REPL... SKIPPED (Windows — no readline)"
+else
 	@echo "[4/8] Building REPL..."
 	@$(MAKE) repl
+endif
 	@echo ""
 	@echo "[5/8] Running C unit tests..."
 	@$(MAKE) test
 	@echo ""
+ifdef WINDOWS_NATIVE
+	@echo "[6/8] Running .ae integration tests... SKIPPED (Windows — requires bash)"
+else
 	@echo "[6/8] Running .ae integration tests..."
 	@$(MAKE) test-ae
+endif
 	@echo ""
+ifdef WINDOWS_NATIVE
+	@echo "[7/8] Building examples... SKIPPED (Windows — requires bash)"
+else
 	@echo "[7/8] Building examples..."
 	@$(MAKE) examples
+endif
 	@echo ""
+ifdef WINDOWS_NATIVE
+	@echo "[8/8] Running benchmark smoke test... SKIPPED (Windows — requires bash)"
+else
 	@echo "[8/8] Running benchmark smoke test..."
 	@$(MAKE) benchmark-smoke
+endif
 	@echo ""
 	@echo "==================================="
 	@echo "  CI PASSED — all checks green"

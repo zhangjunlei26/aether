@@ -48,6 +48,28 @@ jobs:
       run: CC=${{ matrix.cc }} make ci
 
   # ============================================================
+  # Windows CI — MinGW via MSYS2
+  # Builds compiler, ae, stdlib, REPL (with readline), and
+  # runs the full 162-test C unit test suite on Windows.
+  # ============================================================
+  ci-windows:
+    name: Windows / GCC (MSYS2)
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: false
+        install: mingw-w64-x86_64-gcc make mingw-w64-x86_64-readline bc
+
+    - name: Run CI suite
+      shell: msys2 {0}
+      run: make ci
+
+  # ============================================================
   # Memory safety — Valgrind + AddressSanitizer on Linux/GCC
   # Separate from main CI because it needs special build flags
   # and is slower. Runs in parallel with the ci job.
