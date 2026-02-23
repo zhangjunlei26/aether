@@ -311,7 +311,7 @@ bool compile_and_run(REPLState* state, const char* code, bool is_expression, Inp
     }
 
     char compile_output[4096] = {0};
-    fread(compile_output, 1, sizeof(compile_output) - 1, compile_proc);
+    (void)fread(compile_output, 1, sizeof(compile_output) - 1, compile_proc);
     int compile_status = pclose(compile_proc);
 
     if (compile_status != 0) {
@@ -342,7 +342,7 @@ bool compile_and_run(REPLState* state, const char* code, bool is_expression, Inp
     }
 
     char gcc_output[4096] = {0};
-    fread(gcc_output, 1, sizeof(gcc_output) - 1, gcc_proc);
+    (void)fread(gcc_output, 1, sizeof(gcc_output) - 1, gcc_proc);
     int gcc_status = pclose(gcc_proc);
 
     if (gcc_status != 0) {
@@ -366,7 +366,7 @@ bool compile_and_run(REPLState* state, const char* code, bool is_expression, Inp
     }
 
     char run_output[4096] = {0};
-    fread(run_output, 1, sizeof(run_output) - 1, run_proc);
+    (void)fread(run_output, 1, sizeof(run_output) - 1, run_proc);
     pclose(run_proc);
 
     // Print output

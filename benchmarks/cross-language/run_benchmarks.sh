@@ -65,6 +65,13 @@ if [ -d "/usr/local/lib/ponyc/bin" ]; then
     export PATH="/usr/local/lib/ponyc/bin:$PATH"
 fi
 
+# Platform-specific time command: BSD time uses -l (bytes), GNU time uses -v (kbytes)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    TIME_CMD='/usr/bin/time -l'
+else
+    TIME_CMD='/usr/bin/time -v'
+fi
+
 # Auto-detect Java 17+ for Scala (portable across macOS/Linux)
 detect_java() {
     if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
@@ -165,7 +172,15 @@ check_and_install "Rust" "cargo" "brew install rust" "curl --proto '=https' --tl
 check_and_install "Zig" "zig" "brew install zig" "sudo snap install zig --classic --beta" "Required for Zig benchmark"
 check_and_install "Erlang" "erl" "brew install erlang" "sudo apt-get install erlang" "Required for Erlang benchmark"
 check_and_install "Elixir" "elixir" "brew install elixir" "sudo apt-get install elixir" "Required for Elixir benchmark"
-check_and_install "Pony" "ponyc" "brew install ponyc" "sudo add-apt-repository ppa:ponylang/ponylang && sudo apt-get update && sudo apt-get install ponyc" "Required for Pony benchmark"
+# Pony: PPA does not support Ubuntu 24.04+ (Noble); detect and use alternative install
+PONY_LINUX_INSTALL="sudo add-apt-repository ppa:ponylang/ponylang && sudo apt-get update && sudo apt-get install ponyc"
+if [[ "$OSTYPE" == "linux-gnu"* ]] && [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ -n "$VERSION_ID" ] && [ "${VERSION_ID%%.*}" -ge 24 ] 2>/dev/null; then
+        PONY_LINUX_INSTALL="echo 'Pony PPA unavailable for Ubuntu ${VERSION_ID}. Install from source: https://github.com/ponylang/ponyc' && false"
+    fi
+fi
+check_and_install "Pony" "ponyc" "brew install ponyc" "$PONY_LINUX_INSTALL" "Required for Pony benchmark"
 
 echo ""
 echo "Starting benchmarks..."
@@ -210,9 +225,14 @@ parse_output() {
         msg_per_sec=0
     fi
 
-    # Memory: macOS reports bytes, Linux reports kilobytes
-    local memory_raw=$(echo "$output" | grep -E "maximum resident set size|Maximum resident" | awk '{print $1}' | head -1)
-    if [ -n "$memory_raw" ]; then
+    # Memory: BSD time (macOS) prints number first in bytes; GNU time (Linux) prints number last in kbytes
+    local memory_raw
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        memory_raw=$(echo "$output" | grep -E "maximum resident set size" | awk '{print $1}' | head -1)
+    else
+        memory_raw=$(echo "$output" | grep -E "Maximum resident set size" | awk '{print $NF}' | head -1)
+    fi
+    if [ -n "$memory_raw" ] && [ "$memory_raw" != "0" ]; then
         if [[ "$OSTYPE" == "darwin"* ]]; then
             memory_mb=$(echo "scale=2; $memory_raw / 1024 / 1024" | bc 2>/dev/null | awk '{printf "%.2f", ($0 == "" ? 0 : $0)}')
         else
@@ -263,7 +283,7 @@ EOF
     if [ -f "aether/${pattern}.ae" ]; then
         echo -n "  Aether... "
         if (cd aether && make clean &>/dev/null && make $pattern &>/dev/null); then
-            output=$(cd aether && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l ./$pattern 2>&1 || true)
+            output=$(cd aether && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD ./$pattern 2>&1 || true)
             parsed=$(parse_output "$output")
             ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
             msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)
@@ -294,7 +314,7 @@ EOF
     if [ -f "c/${pattern}.c" ]; then
         echo -n "  C (pthread)... "
         if (cd c && make clean &>/dev/null && make $pattern &>/dev/null); then
-            output=$(cd c && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l ./$pattern 2>&1 || true)
+            output=$(cd c && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD ./$pattern 2>&1 || true)
             parsed=$(parse_output "$output")
             ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
             msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)
@@ -325,7 +345,7 @@ EOF
     if [ -f "cpp/${pattern}.cpp" ]; then
         echo -n "  C++... "
         if (cd cpp && g++ -O3 -std=c++17 -march=native ${pattern}.cpp -o $pattern -pthread &>/dev/null); then
-            output=$(cd cpp && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l ./$pattern 2>&1 || true)
+            output=$(cd cpp && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD ./$pattern 2>&1 || true)
             parsed=$(parse_output "$output")
             ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
             msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)
@@ -356,7 +376,7 @@ EOF
     if command -v go &>/dev/null && [ -f "go/${pattern}.go" ]; then
         echo -n "  Go... "
         if (cd go && go build -o $pattern ${pattern}.go &>/dev/null); then
-            output=$(cd go && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l ./$pattern 2>&1 || true)
+            output=$(cd go && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD ./$pattern 2>&1 || true)
             parsed=$(parse_output "$output")
             ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
             msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)
@@ -387,7 +407,7 @@ EOF
     if command -v cargo &>/dev/null && [ -f "rust/src/${pattern}.rs" ]; then
         echo -n "  Rust... "
         if (cd rust && cargo build --release --bin $pattern &>/dev/null); then
-            output=$(cd rust && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l ./target/release/$pattern 2>&1 || true)
+            output=$(cd rust && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD ./target/release/$pattern 2>&1 || true)
             parsed=$(parse_output "$output")
             ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
             msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)
@@ -419,7 +439,7 @@ EOF
     if command -v javac &>/dev/null && [ -f "java/${java_class}.java" ]; then
         echo -n "  Java... "
         if (cd java && javac ${java_class}.java &>/dev/null); then
-            output=$(cd java && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l java $java_class 2>&1 || true)
+            output=$(cd java && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD java $java_class 2>&1 || true)
             parsed=$(parse_output "$output")
             ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
             msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)
@@ -450,7 +470,7 @@ EOF
     if command -v zig &>/dev/null && [ -f "zig/${pattern}.zig" ]; then
         echo -n "  Zig... "
         if (cd zig && make $pattern &>/dev/null); then
-            output=$(cd zig && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l ./$pattern 2>&1 || true)
+            output=$(cd zig && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD ./$pattern 2>&1 || true)
             parsed=$(parse_output "$output")
             ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
             msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)
@@ -480,7 +500,7 @@ EOF
     # Elixir
     if command -v elixir &>/dev/null && [ -f "elixir/${pattern}.exs" ]; then
         echo -n "  Elixir... "
-        output=$(cd elixir && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l elixir ${pattern}.exs 2>&1 || true)
+        output=$(cd elixir && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD elixir ${pattern}.exs 2>&1 || true)
         parsed=$(parse_output "$output")
         ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
         msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)
@@ -508,7 +528,7 @@ EOF
     if command -v erlc &>/dev/null && [ -f "erlang/${pattern}.erl" ]; then
         echo -n "  Erlang... "
         if (cd erlang && erlc ${pattern}.erl &>/dev/null); then
-            output=$(cd erlang && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l erl -noshell -s ${pattern} start 2>&1 || true)
+            output=$(cd erlang && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD erl -noshell -s ${pattern} start 2>&1 || true)
             parsed=$(parse_output "$output")
             ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
             msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)
@@ -539,7 +559,7 @@ EOF
     if command -v ponyc &>/dev/null && [ -d "pony/${pattern}" ]; then
         echo -n "  Pony... "
         if (cd pony/${pattern} && ponyc . -o . &>/dev/null); then
-            output=$(cd pony/${pattern} && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES /usr/bin/time -l ./${pattern} 2>&1 || true)
+            output=$(cd pony/${pattern} && BENCHMARK_MESSAGES=$BENCHMARK_MESSAGES $TIME_CMD ./${pattern} 2>&1 || true)
             parsed=$(parse_output "$output")
             ns_per_msg=$(echo "$parsed" | cut -d'|' -f1)
             msg_per_sec=$(echo "$parsed" | cut -d'|' -f2)

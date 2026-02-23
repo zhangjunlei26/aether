@@ -100,9 +100,12 @@ void* aether_numa_alloc(size_t size, int node) {
 void aether_numa_free(void* ptr, size_t size) {
     if (!ptr) return;
 
-    // Try VirtualFree first (for NUMA allocations)
+    if (!g_topology.available) {
+        free(ptr);
+        return;
+    }
+
     if (!VirtualFree(ptr, 0, MEM_RELEASE)) {
-        // If that fails, assume it was a malloc allocation
         free(ptr);
     }
 }
