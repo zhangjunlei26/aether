@@ -2,9 +2,11 @@
 
 # Detect OS and shell environment.
 # WINDOWS_NATIVE is set only for pure Windows (mingw32-make + cmd.exe).
-# MSYS2/MinGW/Cygwin with bash get the Unix tool paths even when OS=Windows_NT.
+# IS_WINDOWS is set for any Windows variant (native, MSYS2, MinGW, Cygwin).
 WINDOWS_NATIVE :=
+IS_WINDOWS :=
 ifeq ($(OS),Windows_NT)
+    IS_WINDOWS := 1
     _UNAME_S := $(shell uname -s 2>&1)
     ifneq ($(findstring MINGW,$(_UNAME_S)),)
         DETECTED_OS := $(_UNAME_S)
@@ -24,10 +26,13 @@ else
     DETECTED_OS := $(shell uname -s)
     ifneq ($(findstring MINGW,$(DETECTED_OS)),)
         EXE_EXT := .exe
+        IS_WINDOWS := 1
     else ifneq ($(findstring MSYS,$(DETECTED_OS)),)
         EXE_EXT := .exe
+        IS_WINDOWS := 1
     else ifneq ($(findstring CYGWIN,$(DETECTED_OS)),)
         EXE_EXT := .exe
+        IS_WINDOWS := 1
     else
         EXE_EXT :=
     endif
@@ -712,15 +717,15 @@ endif
 	@echo "[5/7] Running C unit tests..."
 	@$(MAKE) test
 	@echo ""
-ifdef WINDOWS_NATIVE
-	@echo "[6/7] Running .ae integration tests... SKIPPED (Windows — requires bash)"
+ifdef IS_WINDOWS
+	@echo "[6/7] Running .ae integration tests... SKIPPED (Windows)"
 else
 	@echo "[6/7] Running .ae integration tests..."
 	@$(MAKE) test-ae
 endif
 	@echo ""
-ifdef WINDOWS_NATIVE
-	@echo "[7/7] Building examples... SKIPPED (Windows — requires bash)"
+ifdef IS_WINDOWS
+	@echo "[7/7] Building examples... SKIPPED (Windows)"
 else
 	@echo "[7/7] Building examples..."
 	@$(MAKE) examples
