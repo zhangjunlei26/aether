@@ -164,8 +164,8 @@ int apkg_install(const char* package) {
     long size = ftell(toml);
     fseek(toml, 0, SEEK_SET);
     char* content = malloc(size + 1024);
-    fread(content, 1, size, toml);
-    content[size] = '\0';
+    size_t nread = fread(content, 1, size, toml);
+    content[nread] = '\0';
     fclose(toml);
     
     // Find [dependencies] section or add it

@@ -778,9 +778,15 @@ void http_serve_file(HttpServerResponse* res, const char* filepath) {
         return;
     }
 
-    fread(content, 1, size, f);
-    content[size] = '\0';
+    size_t bytes_read = fread(content, 1, size, f);
     fclose(f);
+    if (bytes_read == 0 && size > 0) {
+        free(content);
+        http_response_set_status(res, 500);
+        http_response_set_body(res, "500 - Server Error");
+        return;
+    }
+    content[bytes_read] = '\0';
 
     // Set response
     http_response_set_status(res, 200);

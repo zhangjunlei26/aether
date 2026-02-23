@@ -1138,8 +1138,8 @@ static int cmd_add(int argc, char** argv) {
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
     char* content = malloc(sz + 1);
-    fread(content, 1, sz, f);
-    content[sz] = '\0';
+    size_t nread = fread(content, 1, sz, f);
+    content[nread] = '\0';
     fclose(f);
 
     if (strstr(content, package)) {
