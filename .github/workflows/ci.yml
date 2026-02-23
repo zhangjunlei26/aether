@@ -9,12 +9,12 @@ on:
 
 jobs:
   # ============================================================
-  # Core build + smoke tests — Linux (GCC) and Linux (Clang)
-  # and macOS (Clang). GCC and Clang have different warning sets
-  # so both are worth testing on Linux to catch compiler-specific
-  # issues early.
+  # Full CI suite — Linux (GCC), Linux (Clang), macOS (Clang)
+  # Runs `make ci` which is the single source of truth:
+  #   compiler (-Werror), ae, stdlib, repl, unit tests,
+  #   .ae integration tests, examples, benchmark smoke.
   # ============================================================
-  build-and-test:
+  ci:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
 
@@ -25,17 +25,17 @@ jobs:
           - name: Linux / GCC
             os: ubuntu-22.04
             cc: gcc
-            install: sudo apt-get update && sudo apt-get install -y gcc make
+            install: sudo apt-get update && sudo apt-get install -y gcc make libreadline-dev bc
 
           - name: Linux / Clang
             os: ubuntu-22.04
             cc: clang
-            install: sudo apt-get update && sudo apt-get install -y clang make
+            install: sudo apt-get update && sudo apt-get install -y clang make libreadline-dev bc
 
           - name: macOS / Clang
             os: macos-latest
             cc: clang
-            install: ""   # Xcode CLT already present on macOS runners
+            install: ""
 
     steps:
     - uses: actions/checkout@v4
@@ -44,29 +44,13 @@ jobs:
       if: matrix.install != ''
       run: ${{ matrix.install }}
 
-    - name: Build compiler
-      run: CC=${{ matrix.cc }} make compiler
-
-    - name: Build ae CLI
-      run: CC=${{ matrix.cc }} make ae
-
-    - name: Run runtime test suite
-      run: make test
-
-    - name: Smoke test — example programs
-      run: |
-        ./build/ae run examples/basics/hello.ae
-        ./build/ae run examples/actors/counter.ae
-        ./build/ae run examples/actors/ping-pong.ae
-
-    - name: Smoke test — project init + run
-      run: |
-        ./build/ae init smoketest
-        cd smoketest && ../build/ae run
-        cd .. && rm -rf smoketest
+    - name: Run full CI suite
+      run: CC=${{ matrix.cc }} make ci
 
   # ============================================================
   # Memory safety — Valgrind + AddressSanitizer on Linux/GCC
+  # Separate from main CI because it needs special build flags
+  # and is slower. Runs in parallel with the ci job.
   # ============================================================
   memory-checks:
     name: Memory Safety (Valgrind + ASan)

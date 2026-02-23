@@ -23,8 +23,8 @@ run-benchmarks:
 
 # Build the visualization server (Aether)
 build-ui:
-	@lsof -ti :8080 | xargs kill -9 2>/dev/null || true
 	@pkill -9 -f "visualize/server" 2>/dev/null || true
+	@fuser -k 8080/tcp 2>/dev/null || true
 	@sleep 1
 	@echo "Building Aether HTTP server..."
 	@cd visualize && ../../../build/aetherc server.ae server_generated.c && \

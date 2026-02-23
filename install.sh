@@ -153,6 +153,25 @@ if [ "$EDITOR_ONLY" -eq 0 ]; then
 
     # Build REPL (optional — needs readline)
     info "Building REPL..."
+    if [ "$(uname -s)" = "Linux" ]; then
+        if ! echo 'int main(){return 0;}' | gcc -x c - -lreadline -o /dev/null 2>/dev/null; then
+            distro=$(detect_linux_distro)
+            case "$distro" in
+                ubuntu|debian|pop|mint|elementary)
+                    info "  Installing libreadline-dev for REPL..."
+                    sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq libreadline-dev >/dev/null 2>&1 || true
+                    ;;
+                fedora)
+                    info "  Installing readline-devel for REPL..."
+                    sudo dnf install -y readline-devel >/dev/null 2>&1 || true
+                    ;;
+                arch|manjaro|endeavouros)
+                    info "  Installing readline for REPL..."
+                    sudo pacman -S --noconfirm readline >/dev/null 2>&1 || true
+                    ;;
+            esac
+        fi
+    fi
     make repl 2>&1 | tail -1 || warn "  REPL build skipped (install libreadline-dev to enable)"
     echo ""
 

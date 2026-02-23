@@ -210,7 +210,8 @@ test-ae: compiler ae stdlib
 	total=$$((passed + failed)); \
 	rm -rf "$$tmpdir"; \
 	echo ""; \
-	echo "Aether Tests: $$passed passed, $$failed failed, $$total total"
+	echo "Aether Tests: $$passed passed, $$failed failed, $$total total"; \
+	if [ "$$failed" -gt 0 ]; then exit 1; fi
 
 # Run both C unit tests and .ae integration tests
 test-all: test test-ae
@@ -256,7 +257,8 @@ examples: compiler
 	done; \
 	echo ""; \
 	echo "  $$pass passed, $$fail failed"; \
-	echo "  Binaries in $(BUILD_DIR)/examples/"
+	echo "  Binaries in $(BUILD_DIR)/examples/"; \
+	if [ "$$fail" -gt 0 ]; then exit 1; fi
 
 examples-run: examples
 	@echo "==================================="
@@ -642,33 +644,36 @@ docker-ci: docker-build-ci
 
 ci: clean
 	@echo "==================================="
-	@echo "Running Full CI Suite"
+	@echo "  Aether CI — Full Test Suite"
 	@echo "==================================="
-	@echo "Building compiler..."
-	@$(MAKE) compiler CFLAGS="-O2 -Wall -Wextra -Werror"
 	@echo ""
-	@echo "Building tests..."
-	@$(MAKE) test-build CFLAGS="-O0 -g"
+	@echo "[1/8] Building compiler (-Werror)..."
+	@$(MAKE) compiler CFLAGS="$(CFLAGS) -Werror"
 	@echo ""
-	@echo "Running tests..."
-	@./build/test_runner$(EXE_EXT)
+	@echo "[2/8] Building ae CLI..."
+	@$(MAKE) ae
 	@echo ""
-	@echo "Building Docker CI image..."
-	@$(MAKE) docker-build-ci
+	@echo "[3/8] Building stdlib..."
+	@$(MAKE) stdlib
 	@echo ""
-	@echo "Running Valgrind in Docker..."
-	@docker run --rm -v $(PWD):/aether -w /aether aether-ci bash -c "\
-		make clean && \
-		make compiler CFLAGS='-O0 -g' && \
-		make test-build CFLAGS='-O0 -g' && \
-		valgrind --leak-check=full \
-			--show-leak-kinds=all \
-			--track-origins=yes \
-			--error-exitcode=1 \
-			--suppressions=.valgrind-suppressions \
-			./build/test_runner || (echo 'Valgrind errors detected!' && exit 1)"
+	@echo "[4/8] Building REPL..."
+	@$(MAKE) repl
 	@echo ""
-	@echo "✓ CI passed — Valgrind clean"
+	@echo "[5/8] Running C unit tests..."
+	@$(MAKE) test
+	@echo ""
+	@echo "[6/8] Running .ae integration tests..."
+	@$(MAKE) test-ae
+	@echo ""
+	@echo "[7/8] Building examples..."
+	@$(MAKE) examples
+	@echo ""
+	@echo "[8/8] Running benchmark smoke test..."
+	@$(MAKE) benchmark-smoke
+	@echo ""
+	@echo "==================================="
+	@echo "  CI PASSED — all checks green"
+	@echo "==================================="
 
 valgrind-check: clean
 	@echo "==================================="
@@ -684,7 +689,7 @@ valgrind-check: clean
 		./build/test_runner$(EXE_EXT) || (echo "Valgrind errors detected!" && exit 1)
 	@echo "✓ Valgrind clean — no leaks or uninitialised reads"
 
-.PHONY: all compiler lsp apkg ae profiler docgen docs-server docs docs-serve test test-build test-valgrind test-asan test-memory test-manual-runtime benchmark benchmark-ui examples run compile repl clean help self-test release install stats stdlib ci docker-ci docker-build-ci valgrind-check bump-patch bump-minor bump-major
+.PHONY: all compiler lsp apkg ae profiler docgen docs-server docs docs-serve test test-build test-valgrind test-asan test-memory test-manual-runtime benchmark benchmark-smoke benchmark-ui examples run compile repl clean help self-test release install stats stdlib ci docker-ci docker-build-ci valgrind-check bump-patch bump-minor bump-major
 
 # --------------------------------------------------------------------------
 # Version management (CI/CD only -- do not run manually)
@@ -706,6 +711,30 @@ bump-patch bump-minor bump-major:
 	esac; \
 	echo "$$new" > VERSION; \
 	echo "Version bumped: $$old → $$new"
+
+# Benchmark smoke test — runs Aether benchmarks and verifies results
+benchmark-smoke: compiler ae stdlib
+	@echo "==================================="
+	@echo "  Benchmark Smoke Test"
+	@echo "==================================="
+	@cd benchmarks/cross-language && ./run_benchmarks.sh
+	@echo ""
+	@echo "Verifying Aether results..."
+	@fail=0; \
+	for pattern in ping_pong counting thread_ring fork_join; do \
+		file="benchmarks/cross-language/visualize/results_$${pattern}.json"; \
+		if [ ! -f "$$file" ]; then \
+			echo "  FAIL: Missing $$file"; fail=1; \
+		elif grep -q '"Aether"' "$$file"; then \
+			echo "  OK: $$pattern"; \
+		else \
+			echo "  FAIL: $$pattern — no Aether results"; fail=1; \
+		fi; \
+	done; \
+	if [ "$$fail" -ne 0 ]; then \
+		echo ""; echo "Benchmark smoke FAILED"; exit 1; \
+	fi
+	@echo "Benchmark smoke passed"
 
 # Cross-language benchmark UI
 benchmark-ui:
