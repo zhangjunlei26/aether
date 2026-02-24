@@ -317,7 +317,7 @@ void scan_module_for_destructors(CodeGenerator* gen, ASTNode* mod_ast) {
             memcpy(prefix, name, prefix_len);
             prefix[prefix_len] = '\0';
 
-            char expected_dtor[256];
+            char expected_dtor[sizeof(prefix) + 16];
             snprintf(expected_dtor, sizeof(expected_dtor), "%s%s", prefix, dtor_suf);
 
             for (int j = 0; j < mod_ast->child_count; j++) {
@@ -333,7 +333,7 @@ void scan_module_for_destructors(CodeGenerator* gen, ASTNode* mod_ast) {
 
         // Special case: functions that return allocated data but don't follow
         // _new/_create convention (e.g., dir_list -> dir_list_free)
-        char special_dtor[256];
+        char special_dtor[512];
         snprintf(special_dtor, sizeof(special_dtor), "%s_free", name);
         for (int j = 0; j < mod_ast->child_count; j++) {
             ASTNode* other = mod_ast->children[j];
