@@ -640,8 +640,9 @@ static void build_gcc_cmd(char* cmd, size_t size,
     if (tc.has_lib) {
         strncpy(lib_dir, tc.lib, sizeof(lib_dir) - 1);
         lib_dir[sizeof(lib_dir) - 1] = '\0';
-        char* slash = strrchr(lib_dir, '\\');
-        if (!slash) slash = strrchr(lib_dir, '/');
+        char* bs = strrchr(lib_dir, '\\');
+        char* fs = strrchr(lib_dir, '/');
+        char* slash = (!bs) ? fs : (!fs) ? bs : (bs > fs ? bs : fs);
         if (slash) *slash = '\0';
         snprintf(cmd, size,
             "\"%s\" %s %s %s %s -L%s -laether -o %s -lws2_32 %s",

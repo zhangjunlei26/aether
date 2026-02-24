@@ -1,6 +1,6 @@
 // Actor with Stdlib State — @manual on state variables
 //
-// Actor state variables initialized with *_new() must use @manual
+// Actor state variables initialized with .new() must use @manual
 // because they outlive any single message handler. The actor arena
 // handles final cleanup when the actor is destroyed.
 //
@@ -12,14 +12,14 @@ message Add { value: int }
 message Size {}
 
 actor Accumulator {
-    @manual state items = list_new();
+    @manual state items = list.new();
 
     receive {
         Add(value) -> {
-            list_add(items, value);
+            list.add(items, value);
         }
         Size() -> {
-            n = list_size(items);
+            n = list.size(items);
             print("Accumulated ");
             print(n);
             print(" items\n");

@@ -360,13 +360,13 @@ Allocate, immediately defer the free, then use the resource. Cleanup runs at sco
 import std.list
 
 main() {
-    items = list_new()
-    defer list_free(items)
+    items = list.new()
+    defer list.free(items)
 
-    list_add(items, "hello")
-    print(list_size(items))
+    list.add(items, "hello")
+    print(list.size(items))
     print("\n")
-    // list_free(items) runs here (scope exit)
+    // list.free(items) runs here (scope exit)
 }
 ```
 
@@ -380,10 +380,10 @@ The caller receives ownership and is responsible for cleanup:
 import std.list
 
 build_list(n) : ptr {
-    result = list_new()
+    result = list.new()
     i = 0
     while i < n {
-        list_add(result, i)
+        list.add(result, i)
         i = i + 1
     }
     return result
@@ -391,16 +391,16 @@ build_list(n) : ptr {
 
 main() {
     items = build_list(10)
-    defer list_free(items)
+    defer list.free(items)
 
-    print(list_size(items))
+    print(list.size(items))
     print("\n")
 }
 ```
 
 ### Auto-Free Mode (opt-in)
 
-For convenience in scripts, auto-free mode can be enabled. The compiler injects `_free()` calls at scope exit for variables initialized from recognized constructors.
+For convenience in scripts, auto-free mode can be enabled. The compiler injects the matching `.free()` call at scope exit for variables initialized from recognized constructors (e.g. `list.new()` gets a `list.free()`).
 
 ```toml
 # aether.toml
@@ -661,15 +661,15 @@ receive {
 ### Standard Library Imports
 
 ```aether
-import std.fs;           // File system
+import std.file;         // File operations
 import std.string;       // String utilities
-import std.collections;  // Lists, maps
-import std.net;          // Networking
+import std.list;         // ArrayList
+import std.http;         // HTTP client & server
 import std.json;         // JSON parsing
 
 // Use with namespace syntax
 result = string.new("hello");
-if (fs.file_exists("config.txt") == 1) { }
+if (file.exists("config.txt") == 1) { }
 ```
 
 ### Import with Alias
@@ -678,7 +678,7 @@ if (fs.file_exists("config.txt") == 1) { }
 import std.collections as col;
 import std.string as str;
 
-list = col.list_new();
+list = col.list.new();
 s = str.new("hello");
 ```
 
@@ -693,16 +693,20 @@ result = utils.double_value(21);
 
 ### Available Standard Library Modules
 
-| Module | Description |
-|--------|-------------|
-| `std.fs` | File operations |
-| `std.string` | String manipulation |
-| `std.collections` | Lists, maps, sets |
-| `std.net` | TCP/UDP networking |
-| `std.json` | JSON encoding/decoding |
-| `std.io` | Input/output |
-| `std.math` | Math functions |
-| `std.log` | Logging utilities |
+| Module | Namespace | Description |
+|--------|-----------|-------------|
+| `std.file` | `file` | File operations (`file.open()`, `file.exists()`) |
+| `std.dir` | `dir` | Directory operations (`dir.list()`, `dir.create()`) |
+| `std.path` | `path` | Path utilities (`path.join()`, `path.basename()`) |
+| `std.string` | `string` | String manipulation (`string.new()`, `string.length()`) |
+| `std.list` | `list` | Dynamic array (`list.new()`, `list.add()`) |
+| `std.map` | `map` | Hash map (`map.new()`, `map.put()`) |
+| `std.json` | `json` | JSON encoding/decoding (`json.parse()`, `json.free()`) |
+| `std.http` | `http` | HTTP client & server (`http.get()`, `http.server_create()`) |
+| `std.tcp` | `tcp` | TCP sockets (`tcp.connect()`, `tcp.send()`) |
+| `std.math` | `math` | Math functions (`math.sqrt()`, `math.sin()`) |
+| `std.log` | `log` | Logging utilities (`log.init()`, `log.info()`) |
+| `std.io` | `io` | Input/output (`io.read_line()`, `io.getenv()`) |
 
 ---
 

@@ -10,10 +10,10 @@
 import std.list
 
 build_list(n) : ptr {
-    result = list_new();
+    result = list.new();
     i = 0;
     while i < n {
-        list_add(result, i);
+        list.add(result, i);
         i = i + 1;
     }
     return result;
@@ -21,9 +21,9 @@ build_list(n) : ptr {
 
 main() {
     items = build_list(5);
-    defer list_free(items);
+    defer list.free(items);
 
-    size = list_size(items);
+    size = list.size(items);
     print("List has ");
     print(size);
     print(" items\n");

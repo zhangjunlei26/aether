@@ -9,24 +9,24 @@ import std.list
 import std.map
 
 main() {
-    m = map_new();
-    defer map_free(m);
+    m = map.new();
+    defer map.free(m);
 
-    items = list_new();
-    defer list_free(items);
+    items = list.new();
+    defer list.free(items);
 
-    map_put(m, "language", "Aether");
-    map_put(m, "model", "actors");
+    map.put(m, "language", "Aether");
+    map.put(m, "model", "actors");
 
-    list_add(items, "one");
-    list_add(items, "two");
-    list_add(items, "three");
+    list.add(items, "one");
+    list.add(items, "two");
+    list.add(items, "three");
 
     print("Map key 'language': ");
-    print(map_get(m, "language"));
+    print(map.get(m, "language"));
     print("\n");
 
     print("List size: ");
-    print(list_size(items));
+    print(list.size(items));
     print("\n");
 }

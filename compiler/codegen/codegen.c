@@ -891,7 +891,10 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "#include <stdbool.h>");
     print_line(gen, "#include <stdatomic.h>");
     print_line(gen, "#include <stdint.h>");
-    print_line(gen, "#ifndef _WIN32");
+    print_line(gen, "#ifdef _WIN32");
+    print_line(gen, "#define NOMINMAX");
+    print_line(gen, "#include <windows.h>");
+    print_line(gen, "#else");
     print_line(gen, "#include <unistd.h>");
     print_line(gen, "#endif");
     /* aligned_alloc: C11 POSIX; Windows uses _aligned_malloc with swapped args */

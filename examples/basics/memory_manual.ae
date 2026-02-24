@@ -1,7 +1,7 @@
 // Memory Management — Default behavior
 //
 // Manual mode is the default. You manage allocations explicitly
-// using defer (recommended) or direct _free() calls.
+// using defer (recommended) or direct .free() calls.
 //
 // This is the same as Go's approach: allocate, defer the free,
 // use the resource. Cleanup runs at scope exit in LIFO order.
@@ -11,13 +11,13 @@
 import std.list
 
 main() {
-    items = list_new();
-    defer list_free(items);
+    items = list.new();
+    defer list.free(items);
 
-    list_add(items, "hello");
-    list_add(items, "world");
+    list.add(items, "hello");
+    list.add(items, "world");
 
-    n = list_size(items);
+    n = list.size(items);
     print("List has ");
     print(n);
     print(" items\n");

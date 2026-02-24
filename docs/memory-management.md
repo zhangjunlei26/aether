@@ -17,7 +17,7 @@ but the default is explicit `defer` because:
 3. **Predictable** -- no special naming conventions, no hidden registry, no surprises
 4. **Familiar** -- same pattern as Go's `defer` and Zig's `defer`
 
-The one-line cost (`defer type_free(x)`) is the price for knowing exactly what your program does.
+The one-line cost (`defer type.free(x)`) is the price for knowing exactly what your program does.
 
 ---
 
@@ -28,29 +28,40 @@ Aether uses two allocation mechanisms:
 | Layer | What | When |
 |-------|------|------|
 | **Actor arena** | Actor state, message queues | Freed when actor is destroyed |
-| **Stdlib heap** | `map_new()`, `list_new()`, etc. | Freed via `defer` or explicit `_free()` call |
+| **Stdlib heap** | `map.new()`, `list.new()`, etc. | Freed via `defer` or explicit `.free()` call |
 
 There is **no garbage collector**.
+
+### Arena vs defer: when to use which
+
+They solve different problems and are used in different layers:
+
+| | Arena | defer |
+|---|--------|--------|
+| **What** | A region of memory; many small allocations share one region. One "free" destroys the whole region. | A language construct: run cleanup when leaving the current scope. |
+| **Who uses it** | The **runtime** uses arenas for actor state and message queues. You don't allocate from arenas directly. | **You** use it in Aether code for stdlib types (`list.new`/`list.free`, `map.new`/`map.free`) and FFI buffers. |
+| **Lifetime** | Everything in the arena lives until the arena is destroyed (e.g. when the actor is destroyed). | The resource lives until scope exit; the deferred call runs then. |
+| **Typical use** | Actor internals: the runtime allocates actor state and messages from an arena; when the actor goes away, the arena is freed in one shot. No per-field frees. | Any heap allocation you make: `items = list.new(); defer list.free(items);` so the list is freed when the function (or block) exits. |
 
 ---
 
 ## Stdlib Convention
 
-All stdlib types follow one consistent naming pattern:
+All stdlib types follow one consistent naming pattern. In Aether you call them with dot syntax; the underlying C functions use underscores (`type_new`/`type_free`):
 
 ```
-type_new()    -> allocates on the heap, returns a pointer (must be freed)
-type_free(t)  -> frees the allocation
+type.new()    -> allocates on the heap, returns a pointer (must be freed)
+type.free(t)  -> frees the allocation
 ```
 
 | Module | Constructor | Destructor |
 |--------|-------------|------------|
-| `std.map` | `map_new()` | `map_free(m)` |
-| `std.list` | `list_new()` | `list_free(l)` |
-| `std.string` | `string_new()` | `string_free(s)` |
-| `std.fs` | `dir_list(path)` | `dir_list_free(l)` |
+| `std.map` | `map.new()` | `map.free(m)` |
+| `std.list` | `list.new()` | `list.free(l)` |
+| `std.string` | `string.new()` | `string.free(s)` |
+| `std.dir` | `dir.list(path)` | `dir.list_free(l)` |
 
-**Rule**: Any function whose name ends in `_new()` or `_create()` returns an allocated object. Its matching `_free()` is its destructor.
+**Rule**: Any function whose name ends in `_new()` or `_create()` (at the C level) returns an allocated object. Its matching `_free()` is its destructor. In Aether, use `type.new()` and `type.free(x)`.
 
 ---
 
@@ -62,13 +73,13 @@ Aether's primary memory management pattern is `defer`: allocate, immediately def
 import std.map
 
 main() {
-    m = map_new()
-    defer map_free(m)
+    m = map.new()
+    defer map.free(m)
 
-    map_put(m, "k", "v")
-    print(map_get(m, "k"))
+    map.put(m, "k", "v")
+    print(map.get(m, "k"))
     print("\n")
-    // map_free(m) runs here (scope exit)
+    // map.free(m) runs here (scope exit)
 }
 ```
 
@@ -81,14 +92,14 @@ import std.list
 import std.map
 
 main() {
-    m = map_new()
-    defer map_free(m)
+    m = map.new()
+    defer map.free(m)
 
-    items = list_new()
-    defer list_free(items)
+    items = list.new()
+    defer list.free(items)
 
     // Use both...
-    // At scope exit: list_free(items) runs first (LIFO), then map_free(m)
+    // At scope exit: list.free(items) runs first (LIFO), then map.free(m)
 }
 ```
 
@@ -100,10 +111,10 @@ When a function allocates and returns a value, the caller receives ownership:
 import std.list
 
 build_items(n) : ptr {
-    result = list_new()
+    result = list.new()
     i = 0
     while i < n {
-        list_add(result, i)
+        list.add(result, i)
         i = i + 1
     }
     return result
@@ -111,9 +122,9 @@ build_items(n) : ptr {
 
 main() {
     items = build_items(10)
-    defer list_free(items)
+    defer list.free(items)
 
-    print(list_size(items))
+    print(list.size(items))
     print("\n")
 }
 ```
@@ -122,7 +133,7 @@ main() {
 
 ## Auto-Free Mode (opt-in)
 
-For convenience in scripts and small programs, auto-free mode can be enabled. The compiler automatically injects `_free()` calls at scope exit for local variables initialized from recognized constructors.
+For convenience in scripts and small programs, auto-free mode can be enabled. The compiler automatically injects the matching `.free()` call at scope exit for local variables initialized from recognized constructors (e.g. `list.new()` gets a `list.free()` at scope exit).
 
 Enable in `aether.toml`:
 
@@ -142,7 +153,7 @@ ae run --auto-free file.ae
 ae build --auto-free file.ae
 ```
 
-In auto mode, the compiler scans imported modules for constructor/destructor pairs (functions matching `_new`/`_free` or `_create`/`_free`) and injects the corresponding free at scope exit.
+In auto mode, the compiler scans imported modules for constructor/destructor pairs (`.new()`/`.free()` or `.create()`/`.free()`) and injects the corresponding free at scope exit.
 
 **When using auto mode**, use `@manual` on variables that must outlive their declaration scope:
 
@@ -150,10 +161,10 @@ In auto mode, the compiler scans imported modules for constructor/destructor pai
 import std.list
 
 build_items(n) : ptr {
-    @manual result = list_new()
+    @manual result = list.new()
     i = 0
     while i < n {
-        list_add(result, i)
+        list.add(result, i)
         i = i + 1
     }
     return result
@@ -164,7 +175,7 @@ build_items(n) : ptr {
 
 ## Actor State
 
-Actor `state` variables initialized with `*_new()` **must always be `@manual`** (in auto mode) because they outlive any single message handler:
+Actor `state` variables initialized with `*.new()` **must always be `@manual`** (in auto mode) because they outlive any single message handler:
 
 ```aether
 import std.map
@@ -173,14 +184,14 @@ message Store { key: string, value: string }
 message Lookup { key: string }
 
 actor Cache {
-    @manual state data = map_new()
+    @manual state data = map.new()
 
     receive {
         Store(key, value) -> {
-            map_put(data, key, value)
+            map.put(data, key, value)
         }
         Lookup(key) -> {
-            print(map_get(data, key))
+            print(map.get(data, key))
             print("\n")
         }
     }
@@ -196,16 +207,16 @@ The actor runtime frees the actor's arena (and its internal state) when the acto
 **Forgetting `defer` after allocation:**
 
 ```aether
-m = map_new()
-map_put(m, "k", "v")
+m = map.new()
+map.put(m, "k", "v")
 // LEAK: m is never freed
 ```
 
 Fix: always pair allocation with `defer`:
 
 ```aether
-m = map_new()
-defer map_free(m)
+m = map.new()
+defer map.free(m)
 ```
 
 **Deferring before the allocation succeeds:**
@@ -219,9 +230,9 @@ loop, free explicitly at the end of each iteration instead:
 
 ```aether
 while i < n {
-    item = list_new()
+    item = list.new()
     // ... use item ...
-    list_free(item)
+    list.free(item)
     i = i + 1
 }
 ```
@@ -232,10 +243,10 @@ while i < n {
 
 | Situation | Approach |
 |-----------|----------|
-| Typical local allocation | `defer type_free(x)` right after allocation |
+| Typical local allocation | `defer type.free(x)` right after allocation |
 | Value returned from function | Caller defers the free |
 | Value passed to an actor via `!` | Actor owns it; no defer in sender |
-| Actor `state` initialized with `*_new()` | `@manual state ...` (auto mode) |
+| Actor `state` initialized with `*.new()` | `@manual state ...` (auto mode) |
 | Scripts / small programs | `[memory] mode = "auto"` for convenience |
 
 ---
@@ -254,6 +265,6 @@ See the following runnable examples:
 
 ## Future Work (post v0.5.0)
 
-**Arena-per-actor for stdlib types**: Actor state variables using `map_new()` / `list_new()` would automatically allocate from the actor's arena. Actor death -> total cleanup, zero explicit `*_free()` needed anywhere in actor code.
+**Arena-per-actor for stdlib types**: Actor state variables using `map.new()` / `list.new()` would automatically allocate from the actor's arena. Actor death -> total cleanup, zero explicit `*.free()` needed anywhere in actor code.
 
 Requires threading an allocator parameter through the stdlib C implementations.

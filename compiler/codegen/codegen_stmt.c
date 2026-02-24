@@ -352,11 +352,19 @@ static int has_list_patterns(ASTNode* match_stmt) {
 
 // Look up destructor for a constructor call using the dynamic registry
 // (populated from imported module.ae extern declarations).
+// Handles both underscore calls (list_new) and dot calls (list.new).
 static const char* lookup_destructor(CodeGenerator* gen, ASTNode* init_expr) {
     if (!init_expr || init_expr->type != AST_FUNCTION_CALL || !init_expr->value) return NULL;
 
+    char normalized[256];
+    strncpy(normalized, init_expr->value, sizeof(normalized) - 1);
+    normalized[sizeof(normalized) - 1] = '\0';
+    for (char* p = normalized; *p; p++) {
+        if (*p == '.') *p = '_';
+    }
+
     for (int i = 0; i < gen->destructor_count; i++) {
-        if (strcmp(init_expr->value, gen->destructor_registry[i].constructor) == 0) {
+        if (strcmp(normalized, gen->destructor_registry[i].constructor) == 0) {
             return gen->destructor_registry[i].destructor;
         }
     }
