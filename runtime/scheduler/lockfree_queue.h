@@ -5,8 +5,11 @@
 #include <stdlib.h>
 #include "../actors/actor_state_machine.h"
 
-// Reduced from 65536 to 16384 - still handles high throughput (saves ~2MB per core)
-#define QUEUE_SIZE 16384  // Queue for cross-core message passing
+// Per-direction queue size: 512 slots per sender→receiver SPSC channel.
+// With MAX_CORES+1 channels per receiver, total capacity per core = 17×512 = 8704.
+// Smaller than the old single 16384-slot queue but correctly partitioned so
+// each channel has exactly one producer (SPSC invariant maintained).
+#define QUEUE_SIZE 512   // Slots per sender→receiver SPSC channel
 #define QUEUE_MASK (QUEUE_SIZE - 1)
 
 typedef struct {

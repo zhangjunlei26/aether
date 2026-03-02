@@ -51,7 +51,10 @@ void send_buffer_flush(void) {
         actors[i] = actor;  // All messages to same actor
     }
     
-    if (queue_enqueue_batch(&schedulers[target_core].incoming_queue, 
+    // Use the per-sender SPSC channel for this thread (SPSC invariant: only this thread writes here).
+    int from_idx = (g_send_buffer.core_id >= 0 && g_send_buffer.core_id < MAX_CORES)
+                   ? g_send_buffer.core_id : MAX_CORES;
+    if (queue_enqueue_batch(&schedulers[target_core].from_queues[from_idx],
                             actors, g_send_buffer.buffer, g_send_buffer.count)) {
         // Success - update work count once for entire batch
         atomic_fetch_add(&schedulers[target_core].work_count, g_send_buffer.count);

@@ -341,7 +341,7 @@ void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
     print_line(gen, "scheduler_register_actor((ActorBase*)actor, -1);");
     unindent(gen);
     print_line(gen, "}");
-    print_line(gen, "actor->active = 1;");
+    print_line(gen, "actor->active = 0;  // inactive until first message send");
     print_line(gen, "actor->auto_process = 0;");
     print_line(gen, "");
     

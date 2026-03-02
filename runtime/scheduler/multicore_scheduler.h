@@ -72,7 +72,10 @@ typedef struct {
     ActorBase** actors;
     int actor_count;
     int capacity;
-    LockFreeQueue incoming_queue;
+    // Per-sender SPSC channels: from_queues[src] is written ONLY by core src
+    // (or by the main thread when src == MAX_CORES).  Each channel is a true
+    // SPSC queue, so no CAS or locks are needed on the producer side.
+    LockFreeQueue from_queues[MAX_CORES + 1];
     atomic_int running;
     atomic_int work_count;  // For work stealing - approximate message count
     atomic_int steal_attempts;  // Statistics

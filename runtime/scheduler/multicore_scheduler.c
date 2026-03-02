@@ -26,6 +26,12 @@
 // Forward declaration to avoid header cycle with aether_send_message.h
 extern void aether_send_message(void* actor_ptr, void* message_data, size_t message_size);
 
+// Forward declaration: TLS guard set by aether_send_message_sync while an
+// actor's step() is executing synchronously on the main thread.  Used to
+// defer main_thread_only=0 in scheduler_spawn_pooled and prevent a scheduler
+// thread from entering the same step() concurrently.
+extern AETHER_TLS ActorBase* g_sync_step_actor;
+
 #ifdef __APPLE__
 #include <mach/mach.h>
 #include <mach/thread_policy.h>
@@ -114,11 +120,20 @@ void* AETHER_HOT scheduler_thread(void* arg) {
         if (batch_size > COALESCE_THRESHOLD) batch_size = COALESCE_THRESHOLD;
         
         // TIER 1 ALWAYS ON: Message coalescing (batch dequeue reduces atomics from N to 1)
-        sched->coalesce_buffer.count = queue_dequeue_batch(
-            &sched->incoming_queue,
-            sched->coalesce_buffer.actors,
-            sched->coalesce_buffer.messages,
-            batch_size);
+        // Drain all per-sender SPSC channels round-robin into the coalesce buffer.
+        // Each channel has exactly one producer (SPSC), so no locks needed.
+        {
+            int total = 0;
+            for (int q = 0; q <= MAX_CORES && total < batch_size; q++) {
+                int got = queue_dequeue_batch(
+                    &sched->from_queues[q],
+                    sched->coalesce_buffer.actors + total,
+                    sched->coalesce_buffer.messages + total,
+                    batch_size - total);
+                total += got;
+            }
+            sched->coalesce_buffer.count = total;
+        }
         
         // Process coalesced batch with minimal overhead
         for (int i = 0; i < sched->coalesce_buffer.count; i++) {
@@ -131,9 +146,11 @@ void* AETHER_HOT scheduler_thread(void* arg) {
             if (unlikely(atomic_load_explicit(&actor->assigned_core, memory_order_acquire) != sched->core_id)) {
                 int new_core = atomic_load_explicit(&actor->assigned_core, memory_order_relaxed);
                 if (new_core >= 0 && new_core < num_cores) {
-                    // Spin-retry: must not drop messages during redirect
+                    // Spin-retry: must not drop messages during redirect.
+                    // This scheduler thread (sched->core_id) is the sender, so
+                    // write to the target's from_queues[sched->core_id] channel (SPSC).
                     int retries = 0;
-                    while (!queue_enqueue(&schedulers[new_core].incoming_queue, actor, msg)) {
+                    while (!queue_enqueue(&schedulers[new_core].from_queues[sched->core_id], actor, msg)) {
                         // Actor may have migrated again — re-read destination
                         int cur = atomic_load_explicit(&actor->assigned_core, memory_order_relaxed);
                         if (cur >= 0 && cur < num_cores) new_core = cur;
@@ -148,8 +165,8 @@ void* AETHER_HOT scheduler_thread(void* arg) {
             // deliver via SPSC queue (thread-safe) instead of mailbox.
             if (unlikely(actor->auto_process)) {
                 if (!spsc_enqueue(&actor->spsc_queue, msg)) {
-                    // SPSC full - re-queue for next iteration
-                    queue_enqueue(&sched->incoming_queue, actor, msg);
+                    // SPSC full - re-queue for next iteration via self-channel (SPSC).
+                    queue_enqueue(&sched->from_queues[sched->core_id], actor, msg);
                 } else {
                     work_done = 1;
                 }
@@ -179,7 +196,7 @@ void* AETHER_HOT scheduler_thread(void* arg) {
             if (unlikely(atomic_load_explicit(&actor->assigned_core, memory_order_relaxed) != sched->core_id)) {
                 int new_core = atomic_load_explicit(&actor->assigned_core, memory_order_relaxed);
                 if (new_core >= 0 && new_core < num_cores) {
-                    while (!queue_enqueue(&schedulers[new_core].incoming_queue, actor, msg)) {
+                    while (!queue_enqueue(&schedulers[new_core].from_queues[sched->core_id], actor, msg)) {
                         int cur = atomic_load_explicit(&actor->assigned_core, memory_order_relaxed);
                         if (cur >= 0 && cur < num_cores) new_core = cur;
                         sched_yield();
@@ -191,8 +208,8 @@ void* AETHER_HOT scheduler_thread(void* arg) {
 
             // Now try to deliver message
             if (!mailbox_send(&actor->mailbox, msg)) {
-                // Still full - re-queue for later
-                queue_enqueue(&sched->incoming_queue, actor, msg);
+                // Still full - re-queue for later via self-channel (SPSC)
+                queue_enqueue(&sched->from_queues[sched->core_id], actor, msg);
             } else {
                 // Successfully delivered
                 actor->active = 1;
@@ -260,9 +277,18 @@ void* AETHER_HOT scheduler_thread(void* arg) {
             // THEN: Message-driven migration — move actor to the core that
             // communicates with it most.  Processing first ensures the actor
             // makes progress even under constant migration pressure.
+            //
+            // SAFETY: Only migrate actors that have been initialized (have
+            // messages in their mailbox or have been active).  Migrating a
+            // freshly-spawned actor whose setup messages are still in-flight
+            // in a remote queue causes a race: subsequent messages from the
+            // spawner can reach the actor via the fast local (inline) path
+            // before the in-flight setup messages are delivered, executing the
+            // actor's step() before initialization is complete.
             if (unlikely(actor->migrate_to >= 0 &&
                          actor->migrate_to != sched->core_id &&
-                         actor->migrate_to < num_cores)) {
+                         actor->migrate_to < num_cores &&
+                         (actor->active || actor->mailbox.count > 0))) {
                 int dst_core = actor->migrate_to;
                 Scheduler* dst = &schedulers[dst_core];
 
@@ -415,7 +441,9 @@ void scheduler_init(int cores) {
         memset(schedulers[i].actors, 0, MAX_ACTORS_PER_CORE * sizeof(ActorBase*));
         schedulers[i].actor_count = 0;
         schedulers[i].capacity = MAX_ACTORS_PER_CORE;
-        queue_init(&schedulers[i].incoming_queue);
+        for (int q = 0; q <= MAX_CORES; q++) {
+            queue_init(&schedulers[i].from_queues[q]);
+        }
         atomic_store(&schedulers[i].running, 0);
         atomic_store(&schedulers[i].work_count, 0);
         atomic_store(&schedulers[i].steal_attempts, 0);
@@ -467,9 +495,9 @@ void scheduler_stop() {
     // Wake threads by writing to monitored addresses (wakes MWAIT)
     // On non-MWAIT platforms, threads wake quickly from short sleep
     for (int i = 0; i < num_cores; i++) {
-        // Write to the incoming queue tail to trigger MWAIT wake
-        atomic_store_explicit(&schedulers[i].incoming_queue.tail,
-                            atomic_load_explicit(&schedulers[i].incoming_queue.tail, memory_order_relaxed),
+        // Touch the main-thread from_queue tail to trigger MWAIT wake
+        atomic_store_explicit(&schedulers[i].from_queues[MAX_CORES].tail,
+                            atomic_load_explicit(&schedulers[i].from_queues[MAX_CORES].tail, memory_order_relaxed),
                             memory_order_release);
     }
 }
@@ -479,7 +507,9 @@ static inline int count_pending_messages(void) {
     int total = 0;
     for (int i = 0; i < num_cores; i++) {
         Scheduler* core = &schedulers[i];
-        total += queue_size(&core->incoming_queue);
+        for (int q = 0; q <= MAX_CORES; q++) {
+            total += queue_size(&core->from_queues[q]);
+        }
         for (int j = 0; j < core->actor_count; j++) {
             ActorBase* actor = core->actors[j];
             if (actor) {
@@ -594,33 +624,38 @@ int scheduler_register_actor(ActorBase* actor, int preferred_core) {
     }
     
     Scheduler* sched = &schedulers[preferred_core];
-    
+
+    spinlock_lock(&sched->actor_lock);
+
     if (sched->actor_count >= sched->capacity) {
         // Dynamically grow actor array with NUMA-aware reallocation
         int numa_node = aether_numa_node_of_cpu(preferred_core);
         size_t old_size = sched->capacity * sizeof(ActorBase*);
         size_t new_size = sched->capacity * 2 * sizeof(ActorBase*);
-        
+
         ActorBase** new_actors = aether_numa_alloc(new_size, numa_node);
         if (!new_actors) {
+            spinlock_unlock(&sched->actor_lock);
             fprintf(stderr, "Fatal: Failed to grow actor array for core %d\n", preferred_core);
             return -1;
         }
-        
+
         // Copy old data and free old array
         memcpy(new_actors, sched->actors, old_size);
         aether_numa_free(sched->actors, old_size);
-        
+
         sched->actors = new_actors;
         sched->capacity *= 2;
     }
-    
+
     atomic_store_explicit(&actor->assigned_core, preferred_core, memory_order_relaxed);
 
     // Initialize SPSC queue for same-core messaging
     spsc_queue_init(&actor->spsc_queue);
 
     sched->actors[sched->actor_count++] = actor;
+
+    spinlock_unlock(&sched->actor_lock);
 
     return preferred_core;
 }
@@ -721,9 +756,10 @@ void scheduler_send_remote(ActorBase* actor, Message msg, int from_core) {
         }
     }
 
-    // Enqueue to target core's incoming queue
+    // Enqueue to target core's per-sender SPSC channel (SPSC: only current_core_id writes here).
+    int from_idx = (current_core_id >= 0 && current_core_id < MAX_CORES) ? current_core_id : MAX_CORES;
     int retries = 0;
-    while (!queue_enqueue(&schedulers[target_core].incoming_queue, actor, msg)) {
+    while (!queue_enqueue(&schedulers[target_core].from_queues[from_idx], actor, msg)) {
         if (++retries % 1000 == 0) {
             sched_yield();
         }
@@ -833,9 +869,10 @@ void scheduler_send_batch_flush(void) {
         int count = g_batch_buffer->by_core[c];
         if (count == 0) continue;
 
-        // Use queue_enqueue_batch: single atomic_store for entire batch!
+        // Batch send is always called from main thread (current_core_id = -1),
+        // so use the main-thread SPSC channel (from_queues[MAX_CORES]).
         int enqueued = queue_enqueue_batch(
-            &schedulers[c].incoming_queue,
+            &schedulers[c].from_queues[MAX_CORES],
             &sorted_actors[start],
             &sorted_msgs[start],
             count
@@ -880,7 +917,7 @@ ActorBase* scheduler_spawn_pooled(int preferred_core, void (*step)(void*), size_
     
     actor->id = atomic_fetch_add(&next_actor_id, 1);
     actor->step = step;
-    actor->active = 1;
+    actor->active = 0;  // inactive until first message send
     actor->thread = 0;
     actor->auto_process = 0;
     atomic_init(&actor->assigned_core, preferred_core);
@@ -900,10 +937,20 @@ ActorBase* scheduler_spawn_pooled(int preferred_core, void (*step)(void*), size_
         aether_enable_main_thread_mode(actor);
         atomic_store_explicit(&actor->main_thread_only, 1, memory_order_release);
     } else if (prev_count == 1 && prev_main_actor != NULL) {
-        // Second actor: disable main thread mode on the first actor
-        // so scheduler threads can process both actors normally
-        // Use atomic store to prevent data race with scheduler thread reads
-        atomic_store_explicit(&prev_main_actor->main_thread_only, 0, memory_order_release);
+        // Second actor: disable main thread mode on the first actor so scheduler
+        // threads can process both actors normally.
+        //
+        // RACE GUARD: If the main thread is currently executing prev_main_actor's
+        // step() synchronously (g_sync_step_actor == prev_main_actor), we must NOT
+        // clear main_thread_only here.  Doing so would allow a scheduler thread to
+        // call step() on the same actor concurrently — undefined behaviour.
+        //
+        // aether_send_message_sync() clears main_thread_only after step() returns,
+        // so deferred clearing is always safe.
+        if (g_sync_step_actor != prev_main_actor) {
+            atomic_store_explicit(&prev_main_actor->main_thread_only, 0, memory_order_release);
+        }
+        // else: aether_send_message_sync will clear it once step() unwinds.
     }
 
     scheduler_register_actor(actor, preferred_core);

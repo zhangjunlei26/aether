@@ -767,6 +767,14 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
         }
         fprintf(gen->output, ");\n");
     }
+
+    // Forward declarations for actor spawn functions (actors can spawn other actors
+    // from within receive handlers, which appear before the spawn function definition)
+    for (int i = 0; i < program->child_count; i++) {
+        ASTNode* child = program->children[i];
+        if (!child || child->type != AST_ACTOR_DEFINITION || !child->value) continue;
+        fprintf(gen->output, "struct %s* spawn_%s();\n", child->value, child->value);
+    }
     print_line(gen, "");
 
     // Pre-pass: build request->reply type map from actor receive handlers.
