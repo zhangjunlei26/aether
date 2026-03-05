@@ -159,7 +159,7 @@ int compile_source(const char* input_path, const char* output_path) {
         free(source);
         return 0;
     }
-    
+
     if (verbose_mode) printf("Parse successful\n");
 
     // Step 2.5: Module Orchestration
