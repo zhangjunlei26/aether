@@ -669,9 +669,7 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "#include <stdbool.h>");
     print_line(gen, "#include <stdatomic.h>");
     print_line(gen, "#include <stdint.h>");
-    print_line(gen, "#ifndef _WIN32");
     print_line(gen, "#include <time.h>");
-    print_line(gen, "#endif");
     print_line(gen, "#ifdef _WIN32");
     print_line(gen, "#define NOMINMAX");
     print_line(gen, "#include <windows.h>");
