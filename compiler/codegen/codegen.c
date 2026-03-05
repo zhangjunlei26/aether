@@ -487,9 +487,14 @@ const char* get_c_type(Type* type) {
             }
             return buffer;
         }
-        case TYPE_UNKNOWN:
-            // TYPE_UNKNOWN is common for pattern variables - silently default to int
+        case TYPE_UNKNOWN: {
+            AetherError w = {NULL, NULL, 0, 0,
+                             "unresolved type in codegen, defaulting to int",
+                             "add explicit type annotation or check that the variable is initialized",
+                             NULL, AETHER_ERR_NONE};
+            aether_warning_report(&w);
             return "int";
+        }
         default: {
             char wbuf[128];
             snprintf(wbuf, sizeof(wbuf), "internal: unknown type kind %d in codegen, defaulting to void", type->kind);

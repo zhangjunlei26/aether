@@ -96,19 +96,38 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
 
                 int is_assignment = (expr->value && strcmp(expr->value, "=") == 0);
 
-                if (!skip_parens) fprintf(gen->output, "(");
-
-                if (is_assignment) {
-                    gen->generating_lvalue = 1;
+                // String comparison: emit strcmp instead of pointer ==
+                int is_string_cmp = 0;
+                if (expr->value && (strcmp(expr->value, "==") == 0 || strcmp(expr->value, "!=") == 0)) {
+                    Type* lhs_type = expr->children[0]->node_type;
+                    if (lhs_type && lhs_type->kind == TYPE_STRING) {
+                        is_string_cmp = 1;
+                    }
                 }
-                generate_expression(gen, expr->children[0]);
-                if (is_assignment) {
-                    gen->generating_lvalue = 0;
-                }
 
-                fprintf(gen->output, " %s ", get_c_operator(expr->value));
-                generate_expression(gen, expr->children[1]);
-                if (!skip_parens) fprintf(gen->output, ")");
+                if (is_string_cmp) {
+                    if (!skip_parens) fprintf(gen->output, "(");
+                    fprintf(gen->output, "strcmp(");
+                    generate_expression(gen, expr->children[0]);
+                    fprintf(gen->output, ", ");
+                    generate_expression(gen, expr->children[1]);
+                    fprintf(gen->output, ") %s 0", get_c_operator(expr->value));
+                    if (!skip_parens) fprintf(gen->output, ")");
+                } else {
+                    if (!skip_parens) fprintf(gen->output, "(");
+
+                    if (is_assignment) {
+                        gen->generating_lvalue = 1;
+                    }
+                    generate_expression(gen, expr->children[0]);
+                    if (is_assignment) {
+                        gen->generating_lvalue = 0;
+                    }
+
+                    fprintf(gen->output, " %s ", get_c_operator(expr->value));
+                    generate_expression(gen, expr->children[1]);
+                    if (!skip_parens) fprintf(gen->output, ")");
+                }
             }
             break;
             
@@ -309,6 +328,15 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                 else if (strcmp(func_name, "atoi") == 0 && expr->child_count == 1) {
                     fprintf(gen->output, "atoi(");
                     generate_expression(gen, expr->children[0]);
+                    fprintf(gen->output, ")");
+                }
+                else if (strcmp(func_name, "exit") == 0) {
+                    fprintf(gen->output, "exit(");
+                    if (expr->child_count == 1) {
+                        generate_expression(gen, expr->children[0]);
+                    } else {
+                        fprintf(gen->output, "0");
+                    }
                     fprintf(gen->output, ")");
                 }
                 else if (strcmp(func_name, "clock_ns") == 0 && expr->child_count == 0) {

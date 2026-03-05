@@ -702,10 +702,20 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                             print_indent(gen);
                             fprintf(gen->output, "if (");
                         }
-                        generate_expression(gen, match_expr);
-                        fprintf(gen->output, " == ");
-                        generate_expression(gen, pattern);
-                        fprintf(gen->output, ") {\n");
+                        // Use strcmp for string match arms
+                        Type* mexpr_type = match_expr->node_type;
+                        if (mexpr_type && mexpr_type->kind == TYPE_STRING) {
+                            fprintf(gen->output, "strcmp(");
+                            generate_expression(gen, match_expr);
+                            fprintf(gen->output, ", ");
+                            generate_expression(gen, pattern);
+                            fprintf(gen->output, ") == 0) {\n");
+                        } else {
+                            generate_expression(gen, match_expr);
+                            fprintf(gen->output, " == ");
+                            generate_expression(gen, pattern);
+                            fprintf(gen->output, ") {\n");
+                        }
                     }
 
                     indent(gen);
@@ -804,13 +814,7 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                     print_indent(gen);
                     // Determine return type from expression
                     Type* ret_type = stmt->children[0]->node_type;
-                    if (ret_type && ret_type->kind == TYPE_STRING) {
-                        fprintf(gen->output, "const char* _defer_ret = ");
-                    } else if (ret_type && ret_type->kind == TYPE_FLOAT) {
-                        fprintf(gen->output, "double _defer_ret = ");
-                    } else {
-                        fprintf(gen->output, "int _defer_ret = ");
-                    }
+                    fprintf(gen->output, "%s _defer_ret = ", get_c_type(ret_type));
                     generate_expression(gen, stmt->children[0]);
                     fprintf(gen->output, ";\n");
                     emit_all_defers(gen);

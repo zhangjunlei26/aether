@@ -834,9 +834,9 @@ static void build_gcc_cmd(char* cmd, size_t size,
     // Quote s_gcc_bin in case the path contains spaces.
     char opt[600];
     if (user_cflags[0])
-        snprintf(opt, sizeof(opt), "%s %s", optimize ? "-O2" : "-O0", user_cflags);
+        snprintf(opt, sizeof(opt), "%s %s", optimize ? "-O2" : "-O0 -g", user_cflags);
     else
-        snprintf(opt, sizeof(opt), "%s", optimize ? "-O2" : "-O0");
+        snprintf(opt, sizeof(opt), "%s", optimize ? "-O2" : "-O0 -g");
     char lib_dir[1024];
     if (tc.has_lib) {
         strncpy(lib_dir, tc.lib, sizeof(lib_dir) - 1);
@@ -857,9 +857,9 @@ static void build_gcc_cmd(char* cmd, size_t size,
     // POSIX (Linux/macOS): -pthread for POSIX threads, -lm for math
     char opt[600];
     if (user_cflags[0])
-        snprintf(opt, sizeof(opt), "%s %s", optimize ? "-O2 -pipe" : "-O0 -pipe", user_cflags);
+        snprintf(opt, sizeof(opt), "%s %s", optimize ? "-O2 -pipe" : "-O0 -g -pipe", user_cflags);
     else
-        snprintf(opt, sizeof(opt), "%s", optimize ? "-O2 -pipe" : "-O0 -pipe");
+        snprintf(opt, sizeof(opt), "%s", optimize ? "-O2 -pipe" : "-O0 -g -pipe");
     if (tc.has_lib) {
         char lib_dir[1024];
         strncpy(lib_dir, tc.lib, sizeof(lib_dir) - 1);
@@ -2199,7 +2199,7 @@ static void print_usage(void) {
     printf("  add <package>        Add a dependency\n");
     printf("  cache [clear]        Show or clear build cache\n");
     printf("  repl                 Start interactive REPL\n");
-    printf("  fmt [file]           Format source code\n");
+    // fmt: hidden from help until implemented
     printf("  version              Show version / manage installed versions\n");
     printf("  version list         List all available releases\n");
     printf("  version install <v>  Download and install a specific version\n");

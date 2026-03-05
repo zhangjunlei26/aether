@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`exit()` builtin**: `exit(code)` terminates the program with the given exit code — no `extern` declaration needed; `exit()` with no argument defaults to 0
+- **`--dump-ast` compiler flag**: `aetherc --dump-ast file.ae` prints the parsed AST tree and exits without generating C code — useful for debugging parser behavior and understanding program structure
+- **`-g` debug symbols in dev builds**: `ae run` now compiles with `-g` flag, enabling `gdb`/`lldb` debugging on crashes without requiring manual gcc flags
+- **`NO_COLOR` and `isatty()` support**: Error/warning output respects the `NO_COLOR` environment variable ([no-color.org](https://no-color.org/)) and automatically disables ANSI colors when stderr is not a terminal (e.g. piped to a file or CI log)
 - **`null` keyword**: `null` is now a first-class literal typed as `ptr` — eliminates the need for C `null_ptr()` helpers; `x = null` and `if x == null` work as expected
 - **Bitwise operators**: `&`, `|`, `^`, `~`, `<<`, `>>` with C-compatible precedence — enables bitmask flags, hash functions, and protocol parsing without C shim functions
 - **Top-level constants**: `const NAME = value` at module scope — codegen emits `#define`; supports int, float, and string constant values
@@ -43,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`AETHER_GCC_COMPAT` macro override support**: Both the generated C preamble and `aether_compiler.h` now use `#ifndef AETHER_GCC_COMPAT` so users and tests can force a specific value via `-D` flag or early `#define`
 - **std.http segfault on string arguments**: `http_get`, `http_post`, `http_put`, `http_delete` took `AetherString*` but the compiler passed raw `const char*` string literals — dereferencing `url->data` on a plain `char*` caused immediate segfault; all four functions changed to accept `const char*`
 - **std.io, std.net, std.json, std.collections `AetherString*` mismatch**: 37 stdlib functions across IO, networking, JSON, and collections modules took `AetherString*` parameters but received `const char*` from compiled `.ae` code — all public APIs changed to `const char*`; internal storage (e.g. HashMap keys) still uses `AetherString*` with wrapping at the boundary
+- **`defer` return type truncation**: `defer` blocks stored the return value in `int _defer_ret` regardless of actual return type — functions returning `ptr`, `long`, or `float` had values silently truncated; now uses `get_c_type()` to emit the correct type
+- **String `==`/`!=` pointer comparison instead of content comparison**: `a == b` on two `string` variables emitted C pointer comparison (`==`) instead of `strcmp()` — two strings with identical content but different addresses compared as unequal; now emits `strcmp(a, b) == 0` for `TYPE_STRING` operands
+- **`match` on strings used pointer comparison**: Match arms comparing string expressions used `==` instead of `strcmp()` — match against string literals always fell through to the default arm; now emits `strcmp()` for `TYPE_STRING` match expressions
+- **`TYPE_UNKNOWN` silent fallback to `int`**: `get_c_type()` silently returned `"int"` for unresolved types, masking upstream inference failures — now emits a compiler warning with suggestion to add explicit type annotations
+- **Pattern list element bindings hardcoded to `int`**: List pattern match codegen (`[h|t]`, `[a,b,c]`) always emitted `int` element types regardless of actual list element type — now uses `get_c_type()` from the element's `node_type`
+- **Token overflow silent truncation**: Source files exceeding `MAX_TOKENS` (10,000) silently stopped lexing with no error — now emits a clear error message with suggestion to split into multiple files
+- **`ae fmt` stub shown in help output**: `ae help` listed `fmt [file]` as a command even though the formatter is not implemented — removed from help output until the feature is ready
 - **String interp return type lost through implicit arrow returns**: `f(x) -> { msg = "text ${x}"; msg }` generated C with `int` return type instead of `const char*` — type inference now unwraps `AST_EXPRESSION_STATEMENT` in implicit return nodes and resolves local variable types by scanning preceding block statements
 - **`install.sh` silent build failures**: `make` errors piped through `wc -l` were silently swallowed; added `set -eo pipefail` so pipe failures propagate correctly
 - **`install.sh` unsolicited sudo**: Installer ran `sudo apt-get install libreadline-dev` without asking — replaced with a printed install instruction so users retain control

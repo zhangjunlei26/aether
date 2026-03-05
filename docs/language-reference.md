@@ -360,6 +360,19 @@ match (value) {
 }
 ```
 
+### String Matching
+
+Strings are compared by content (via `strcmp`), so string literal arms work correctly:
+
+```aether
+match (command) {
+    "start" -> { println("starting...") }
+    "stop" -> { println("stopping...") }
+    "help" -> { println("available: start, stop, help") }
+    _ -> { println("unknown command") }
+}
+```
+
 ### List Pattern Matching
 
 Arrays can be matched with list patterns. Requires a corresponding `_len` variable:
@@ -699,6 +712,8 @@ receive {
 | `<=` | Less or equal | `a <= b` |
 | `>=` | Greater or equal | `a >= b` |
 
+> **String comparison:** When both operands are strings, `==` and `!=` compare by content (using `strcmp` in the generated C), not by pointer identity. Two strings with the same content are always equal regardless of how they were allocated.
+
 ### Bitwise Operators
 
 | Operator | Description | Example |
@@ -899,6 +914,14 @@ When used directly inside `print`/`println`, the compiler optimizes to a `printf
 | `spawn(ActorName())` | Create actor instance |
 | `wait_for_idle()` | Wait for all actors to finish |
 
+### Environment & Process
+
+| Function | Description |
+|----------|-------------|
+| `getenv(name)` | Get environment variable (returns string) |
+| `atoi(s)` | Convert string to int |
+| `exit(code)` | Terminate program with exit code (defaults to 0) |
+
 ---
 
 ## Keywords
@@ -967,6 +990,9 @@ aetherc program.ae output.c
 # Emit a C header for embedding Aether actors in a C application
 # Generates message structs, MSG_* constants, and spawn function prototypes
 aetherc program.ae output.c --emit-header
+
+# Print parsed AST (for debugging, no code generation)
+aetherc --dump-ast program.ae
 ```
 
 ---
