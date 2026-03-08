@@ -7,8 +7,8 @@
 // - http_server_* : HTTP server operations
 
 // TCP Client
-extern tcp_connect(host: ptr, port: int) -> ptr
-extern tcp_send(sock: ptr, data: ptr) -> int
+extern tcp_connect(host: string, port: int) -> ptr
+extern tcp_send(sock: ptr, data: string) -> int
 extern tcp_receive(sock: ptr, max_bytes: int) -> ptr
 extern tcp_close(sock: ptr) -> int
 
@@ -18,10 +18,10 @@ extern tcp_accept(server: ptr) -> ptr
 extern tcp_server_close(server: ptr) -> int
 
 // HTTP Client
-extern http_get(url: ptr) -> ptr
-extern http_post(url: ptr, body: ptr, content_type: ptr) -> ptr
-extern http_put(url: ptr, body: ptr, content_type: ptr) -> ptr
-extern http_delete(url: ptr) -> ptr
+extern http_get(url: string) -> ptr
+extern http_post(url: string, body: string, content_type: string) -> ptr
+extern http_put(url: string, body: string, content_type: string) -> ptr
+extern http_delete(url: string) -> ptr
 extern http_response_free(response: ptr)
 
 // HTTP Server - lifecycle

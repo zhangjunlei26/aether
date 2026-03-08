@@ -14,7 +14,7 @@ number (e.g. `[0.18.0]`) before tagging the release.
 ### Added
 
 - **`--emit-c` compiler flag**: `aetherc --emit-c file.ae` prints the generated C code to stdout — useful for debugging codegen, inspecting optimizer output, and verifying MSVC compatibility guards
-- **14 new integration tests** (46→60):
+- **20 new integration tests** (46→66):
   - `test_print_null.ae` — 5 tests for `print`/`println` with NULL string values
   - `test_match_complex.ae` — 8 tests for match statement edge cases (NULL strings, many arms, sequential matches)
   - `test_series_long.ae` — 4 tests for series collapse optimizer with `long` (int64) types
@@ -29,6 +29,12 @@ number (e.g. `[0.18.0]`) before tagging the release.
   - `test_reserved_words.ae` — 5 tests for C reserved word collision (functions named `double`, `auto`, `register`, `volatile`)
   - `test_edge_cases.ae` — 6 tests for nested loops, break, while-in-for, many variables, wildcard match, deep arithmetic
   - `test_actor_self_send.ae` — 4 tests for actor self-send pattern (finite loop, multiple self-sends, animation/stop, immediate exit)
+  - `test_math_stdlib.ae` — 8 tests for math namespace functions (sqrt, abs, min/max, clamp, sin/cos, pow, floor/ceil/round, random)
+  - `test_operator_precedence.ae` — 8 tests for operator precedence (mul/div before add/sub, parentheses, modulo, comparisons, logical ops, negation)
+  - `test_string_compare_null.ae` — 3 tests for string comparison NULL safety (normal comparison, ordering, empty strings)
+  - `test_nested_functions.ae` — 5 tests for nested/chained function calls (deep nesting, clamp composition, calls in conditions/arithmetic)
+  - `test_logical_ops.ae` — 5 tests for logical operators (AND, OR, NOT, with comparisons, complex combinations)
+  - `test_defer_advanced.ae` — 3 tests for defer edge cases (LIFO ordering, nested scopes, conditional defer)
 - **3 new examples**: `recursion.ae` (factorial, fibonacci, GCD, fast exponentiation), `long-arithmetic.ae` (64-bit values, nanosecond timing, large multiplication), `string-processing.ae` (interpolation, escapes, multi-type printing)
 
 ### Fixed
@@ -76,6 +82,18 @@ number (e.g. `[0.18.0]`) before tagging the release.
 - **Codegen NULL dereference in match arm iteration**: `match_arm->type` dereferenced without checking if `match_arm` was NULL — added `!match_arm ||` guard
 - **Codegen NULL dereference in reply statement**: `reply_expr->value` passed to `lookup_message()` without NULL check — added `&& reply_expr->value` guard
 - **Codegen NULL message name in error comments**: Two error-path `fprintf` calls used `message->value` which could be NULL — added ternary fallback to `"<?>"`
+- **float/double ABI mismatch in std.math**: All 18 math functions (`sqrt`, `sin`, `cos`, `pow`, `floor`, `ceil`, `round`, `abs_float`, etc.) used C `float` with `f`-suffixed implementations (`sqrtf`, `sinf`, etc.) but Aether's `float` type maps to C `double` — caused wrong return values on ARM64 (e.g. `math.sqrt(16.0)` returned `0.0`); changed all signatures and implementations to `double`
+- **float/double mismatch in `io_print_float`**: `io_print_float` took `float` parameter but received `double` from compiled Aether code — changed to `double`
+- **`log_get_stats()` struct-by-value ABI mismatch**: Function returned `LogStats` struct by value but Aether's codegen expects pointer returns for non-primitive types — changed to return `LogStats*` (pointer to static storage)
+- **Unary `!` operator precedence bug**: `!(a || b)` generated `!a || b` in C — the `!` only applied to the first operand because `AST_UNARY_EXPRESSION` codegen did not parenthesize complex subexpressions; now wraps binary/unary subexpressions in parentheses
+- **String comparison NULL crash**: `strcmp()` in string equality/ordering codegen crashed on NULL string values — wrapped both operands with `_aether_safe_str()` to return `""` for NULL
+- **io module.ae param type mismatches**: 8 functions (`io_print`, `io_print_line`, `io_read_file`, `io_write_file`, `io_append_file`, `io_file_exists`, `io_delete_file`, `io_file_info`) declared `ptr` parameters in module.ae but the C implementations take `const char*` — changed to `string` to match
+- **collections module.ae map key type mismatch**: `map_put`, `map_get`, `map_has`, `map_remove` declared `ptr` for key parameter but the C implementations take `const char*` — changed to `string`
+- **Lexer silently accepts unterminated strings**: Strings missing a closing `"` were lexed without error — now returns `TOKEN_ERROR` with "unterminated string literal"
+- **Lexer silently accepts unterminated multi-line comments**: `/* ...` without `*/` was silently ignored — now prints error to stderr
+- **Lexer missing `\0` escape sequence**: `\0` in string literals was not recognized — added null byte escape
+- **Array index type not validated**: Array access like `arr["hello"]` passed through the type checker without error — added validation that array indices must be `int` or `long`
+- **Extern function argument types not validated**: Calling an extern function with wrong argument types (e.g. passing `int` to a `string` parameter) produced no type error — added type validation for extern function arguments using declared parameter types
 - **Type inference missing `long` (int64) arithmetic promotion**: `infer_from_binary_op()` only handled `TYPE_INT` and `TYPE_FLOAT` — mixed `int`/`long` arithmetic silently inferred as `TYPE_INT` instead of `TYPE_INT64`; now promotes to `TYPE_INT64` when either operand is int64
 - **Type inference memory leak in binary expression**: `node->node_type` was overwritten without freeing the old type when reassigning from `infer_from_binary_op()` — added `free_type()` before reassignment
 - **Type inference NULL guard in `has_unresolved_types`**: `ctx->constraints` could be NULL if no constraints were collected — added defensive NULL check

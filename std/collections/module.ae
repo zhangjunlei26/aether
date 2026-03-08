@@ -13,10 +13,10 @@ extern list_free(list: ptr)
 
 // HashMap operations
 extern map_new() -> ptr
-extern map_put(map: ptr, key: ptr, value: ptr)
-extern map_get(map: ptr, key: ptr) -> ptr
-extern map_has(map: ptr, key: ptr) -> int
-extern map_remove(map: ptr, key: ptr)
+extern map_put(map: ptr, key: string, value: ptr)
+extern map_get(map: ptr, key: string) -> ptr
+extern map_has(map: ptr, key: string) -> int
+extern map_remove(map: ptr, key: string)
 extern map_size(map: ptr) -> int
 extern map_clear(map: ptr)
 extern map_free(map: ptr)

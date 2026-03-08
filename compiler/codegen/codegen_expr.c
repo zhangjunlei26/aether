@@ -129,11 +129,11 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
 
                 if (is_string_cmp) {
                     if (!skip_parens) fprintf(gen->output, "(");
-                    fprintf(gen->output, "strcmp(");
+                    fprintf(gen->output, "strcmp(_aether_safe_str(");
                     generate_expression(gen, expr->children[0]);
-                    fprintf(gen->output, ", ");
+                    fprintf(gen->output, "), _aether_safe_str(");
                     generate_expression(gen, expr->children[1]);
-                    fprintf(gen->output, ") %s 0", get_c_operator(expr->value));
+                    fprintf(gen->output, ")) %s 0", get_c_operator(expr->value));
                     if (!skip_parens) fprintf(gen->output, ")");
                 } else {
                     if (!skip_parens) fprintf(gen->output, "(");
@@ -156,7 +156,13 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
         case AST_UNARY_EXPRESSION:
             if (expr->child_count >= 1) {
                 fprintf(gen->output, "%s", get_c_operator(expr->value));
+                // Wrap complex subexpressions in parens to prevent precedence issues
+                // e.g., !(a || b) must generate !(a || b), not !a || b
+                int needs_parens = (expr->children[0]->type == AST_BINARY_EXPRESSION ||
+                                    expr->children[0]->type == AST_UNARY_EXPRESSION);
+                if (needs_parens) fprintf(gen->output, "(");
                 generate_expression(gen, expr->children[0]);
+                if (needs_parens) fprintf(gen->output, ")");
             }
             break;
             
@@ -260,12 +266,58 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                             generate_expression(gen, a);
                             fprintf(gen->output, ")");
                         }
-                    } else {
-                        fprintf(gen->output, "printf(");
-                        for (int i = 0; i < expr->child_count; i++) {
-                            if (i > 0) fprintf(gen->output, ", ");
-                            generate_expression(gen, expr->children[i]);
+                    } else if (expr->child_count >= 2 && expr->children[0]->type == AST_LITERAL &&
+                               expr->children[0]->node_type && expr->children[0]->node_type->kind == TYPE_STRING &&
+                               expr->children[0]->value) {
+                        // Multi-arg with literal format string: auto-fix specifiers
+                        const char* fmt = expr->children[0]->value;
+                        fprintf(gen->output, "printf(\"");
+                        int arg_idx = 1;
+                        for (int fi = 0; fmt[fi]; fi++) {
+                            if (fmt[fi] == '%' && fmt[fi + 1]) {
+                                fi++;
+                                while (fmt[fi] == '-' || fmt[fi] == '+' || fmt[fi] == ' ' ||
+                                       fmt[fi] == '#' || fmt[fi] == '0') fi++;
+                                while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++;
+                                if (fmt[fi] == '.') { fi++; while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++; }
+                                if (fmt[fi] == '%') {
+                                    fprintf(gen->output, "%%%%");
+                                } else if (arg_idx < expr->child_count) {
+                                    Type* atype = expr->children[arg_idx]->node_type;
+                                    if (atype && atype->kind == TYPE_FLOAT) fprintf(gen->output, "%%f");
+                                    else if (atype && atype->kind == TYPE_INT64) fprintf(gen->output, "%%lld");
+                                    else if (atype && (atype->kind == TYPE_STRING || atype->kind == TYPE_PTR)) fprintf(gen->output, "%%s");
+                                    else if (atype && atype->kind == TYPE_BOOL) fprintf(gen->output, "%%s");
+                                    else fprintf(gen->output, "%%d");
+                                    arg_idx++;
+                                } else {
+                                    fprintf(gen->output, "%%%c", fmt[fi]);
+                                }
+                            } else {
+                                switch (fmt[fi]) {
+                                    case '\n': fprintf(gen->output, "\\n"); break;
+                                    case '\t': fprintf(gen->output, "\\t"); break;
+                                    case '\r': fprintf(gen->output, "\\r"); break;
+                                    case '\\': fprintf(gen->output, "\\\\"); break;
+                                    case '"':  fprintf(gen->output, "\\\""); break;
+                                    default:   fprintf(gen->output, "%c", fmt[fi]); break;
+                                }
+                            }
                         }
+                        fprintf(gen->output, "\", ");
+                        for (int i = 1; i < expr->child_count; i++) {
+                            if (i > 1) fprintf(gen->output, ", ");
+                            Type* atype = expr->children[i]->node_type;
+                            if (atype && atype->kind == TYPE_INT64) { fprintf(gen->output, "(long long)"); generate_expression(gen, expr->children[i]); }
+                            else if (atype && atype->kind == TYPE_BOOL) { generate_expression(gen, expr->children[i]); fprintf(gen->output, " ? \"true\" : \"false\""); }
+                            else if (atype && (atype->kind == TYPE_STRING || atype->kind == TYPE_PTR)) { fprintf(gen->output, "_aether_safe_str("); generate_expression(gen, expr->children[i]); fprintf(gen->output, ")"); }
+                            else generate_expression(gen, expr->children[i]);
+                        }
+                        fprintf(gen->output, ")");
+                    } else {
+                        // Non-literal format string — use %s to prevent format injection
+                        fprintf(gen->output, "printf(\"%%s\", ");
+                        generate_expression(gen, expr->children[0]);
                         fprintf(gen->output, ")");
                     }
                 }
@@ -337,13 +389,59 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                         }
                     } else if (expr->child_count == 0) {
                         fprintf(gen->output, "putchar('\\n')");
-                    } else {
-                        fprintf(gen->output, "printf(");
-                        for (int i = 0; i < expr->child_count; i++) {
-                            if (i > 0) fprintf(gen->output, ", ");
-                            generate_expression(gen, expr->children[i]);
+                    } else if (expr->child_count >= 2 && expr->children[0]->type == AST_LITERAL &&
+                               expr->children[0]->node_type && expr->children[0]->node_type->kind == TYPE_STRING &&
+                               expr->children[0]->value) {
+                        // Multi-arg with literal format: auto-fix specifiers + newline
+                        const char* fmt = expr->children[0]->value;
+                        fprintf(gen->output, "printf(\"");
+                        int arg_idx = 1;
+                        for (int fi = 0; fmt[fi]; fi++) {
+                            if (fmt[fi] == '%' && fmt[fi + 1]) {
+                                fi++;
+                                while (fmt[fi] == '-' || fmt[fi] == '+' || fmt[fi] == ' ' ||
+                                       fmt[fi] == '#' || fmt[fi] == '0') fi++;
+                                while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++;
+                                if (fmt[fi] == '.') { fi++; while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++; }
+                                if (fmt[fi] == '%') {
+                                    fprintf(gen->output, "%%%%");
+                                } else if (arg_idx < expr->child_count) {
+                                    Type* atype = expr->children[arg_idx]->node_type;
+                                    if (atype && atype->kind == TYPE_FLOAT) fprintf(gen->output, "%%f");
+                                    else if (atype && atype->kind == TYPE_INT64) fprintf(gen->output, "%%lld");
+                                    else if (atype && (atype->kind == TYPE_STRING || atype->kind == TYPE_PTR)) fprintf(gen->output, "%%s");
+                                    else if (atype && atype->kind == TYPE_BOOL) fprintf(gen->output, "%%s");
+                                    else fprintf(gen->output, "%%d");
+                                    arg_idx++;
+                                } else {
+                                    fprintf(gen->output, "%%%c", fmt[fi]);
+                                }
+                            } else {
+                                switch (fmt[fi]) {
+                                    case '\n': fprintf(gen->output, "\\n"); break;
+                                    case '\t': fprintf(gen->output, "\\t"); break;
+                                    case '\r': fprintf(gen->output, "\\r"); break;
+                                    case '\\': fprintf(gen->output, "\\\\"); break;
+                                    case '"':  fprintf(gen->output, "\\\""); break;
+                                    default:   fprintf(gen->output, "%c", fmt[fi]); break;
+                                }
+                            }
                         }
-                        fprintf(gen->output, "); putchar('\\n')");
+                        fprintf(gen->output, "\\n\", ");
+                        for (int i = 1; i < expr->child_count; i++) {
+                            if (i > 1) fprintf(gen->output, ", ");
+                            Type* atype = expr->children[i]->node_type;
+                            if (atype && atype->kind == TYPE_INT64) { fprintf(gen->output, "(long long)"); generate_expression(gen, expr->children[i]); }
+                            else if (atype && atype->kind == TYPE_BOOL) { generate_expression(gen, expr->children[i]); fprintf(gen->output, " ? \"true\" : \"false\""); }
+                            else if (atype && (atype->kind == TYPE_STRING || atype->kind == TYPE_PTR)) { fprintf(gen->output, "_aether_safe_str("); generate_expression(gen, expr->children[i]); fprintf(gen->output, ")"); }
+                            else generate_expression(gen, expr->children[i]);
+                        }
+                        fprintf(gen->output, ")");
+                    } else {
+                        // Non-literal format string — use %s to prevent format injection
+                        fprintf(gen->output, "printf(\"%%s\\n\", ");
+                        generate_expression(gen, expr->children[0]);
+                        fprintf(gen->output, ")");
                     }
                 }
                 else if (strcmp(func_name, "wait_for_idle") == 0) {

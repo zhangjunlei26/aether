@@ -79,13 +79,18 @@ int skip_comment() {
         // Multi-line comment
         advance(); // skip /
         advance(); // skip *
+        int found_end = 0;
         while (current_pos < source_length) {
             if (peek() == '*' && current_pos + 1 < source_length && source[current_pos + 1] == '/') {
                 advance(); // skip *
                 advance(); // skip /
+                found_end = 1;
                 break;
             }
             advance();
+        }
+        if (!found_end) {
+            fprintf(stderr, "Error: unterminated multi-line comment at line %d\n", current_line);
         }
         return 1;
     }
@@ -124,6 +129,7 @@ Token* read_string() {
                     case 'n': buffer[i++] = '\n'; break;
                     case 't': buffer[i++] = '\t'; break;
                     case 'r': buffer[i++] = '\r'; break;
+                    case '0': buffer[i++] = '\0'; break;
                     case '\\': buffer[i++] = '\\'; break;
                     case '"': buffer[i++] = '"'; break;
                     default: buffer[i++] = c; break;
@@ -134,8 +140,12 @@ Token* read_string() {
         }
     }
 
-    if (peek() == '"') {
+    if (current_pos < source_length && peek() == '"') {
         advance(); // skip closing quote
+    } else {
+        // Unterminated string
+        free(buffer);
+        return create_token(TOKEN_ERROR, "unterminated string literal", current_line, current_column);
     }
 
     buffer[i] = '\0';

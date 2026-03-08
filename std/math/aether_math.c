@@ -4,122 +4,122 @@
 #include <time.h>
 
 // Basic math operations
-int abs_int(int x) {
+int math_abs_int(int x) {
     return x < 0 ? -x : x;
 }
 
-float abs_float(float x) {
-    return fabsf(x);
+double math_abs_float(double x) {
+    return fabs(x);
 }
 
-int min_int(int a, int b) {
+int math_min_int(int a, int b) {
     return a < b ? a : b;
 }
 
-int max_int(int a, int b) {
+int math_max_int(int a, int b) {
     return a > b ? a : b;
 }
 
-float min_float(float a, float b) {
+double math_min_float(double a, double b) {
     return a < b ? a : b;
 }
 
-float max_float(float a, float b) {
+double math_max_float(double a, double b) {
     return a > b ? a : b;
 }
 
-int clamp_int(int x, int min, int max) {
+int math_clamp_int(int x, int min, int max) {
     if (x < min) return min;
     if (x > max) return max;
     return x;
 }
 
-float clamp_float(float x, float min, float max) {
+double math_clamp_float(double x, double min, double max) {
     if (x < min) return min;
     if (x > max) return max;
     return x;
 }
 
 // Advanced math
-float math_sqrt(float x) {
-    return sqrtf(x);
+double math_sqrt(double x) {
+    return sqrt(x);
 }
 
-float math_pow(float base, float exp) {
-    return powf(base, exp);
+double math_pow(double base, double exp) {
+    return pow(base, exp);
 }
 
-float math_sin(float x) {
-    return sinf(x);
+double math_sin(double x) {
+    return sin(x);
 }
 
-float math_cos(float x) {
-    return cosf(x);
+double math_cos(double x) {
+    return cos(x);
 }
 
-float math_tan(float x) {
-    return tanf(x);
+double math_tan(double x) {
+    return tan(x);
 }
 
-float math_asin(float x) {
-    return asinf(x);
+double math_asin(double x) {
+    return asin(x);
 }
 
-float math_acos(float x) {
-    return acosf(x);
+double math_acos(double x) {
+    return acos(x);
 }
 
-float math_atan(float x) {
-    return atanf(x);
+double math_atan(double x) {
+    return atan(x);
 }
 
-float math_atan2(float y, float x) {
-    return atan2f(y, x);
+double math_atan2(double y, double x) {
+    return atan2(y, x);
 }
 
-float math_floor(float x) {
-    return floorf(x);
+double math_floor(double x) {
+    return floor(x);
 }
 
-float math_ceil(float x) {
-    return ceilf(x);
+double math_ceil(double x) {
+    return ceil(x);
 }
 
-float math_round(float x) {
-    return roundf(x);
+double math_round(double x) {
+    return round(x);
 }
 
-float math_log(float x) {
-    return logf(x);
+double math_log(double x) {
+    return log(x);
 }
 
-float math_log10(float x) {
-    return log10f(x);
+double math_log10(double x) {
+    return log10(x);
 }
 
-float math_exp(float x) {
-    return expf(x);
+double math_exp(double x) {
+    return exp(x);
 }
 
 // Random numbers
 static int random_initialized = 0;
 
-void random_seed(unsigned int seed) {
+void math_random_seed(unsigned int seed) {
     srand(seed);
     random_initialized = 1;
 }
 
-int random_int(int min, int max) {
+int math_random_int(int min, int max) {
     if (!random_initialized) {
-        random_seed((unsigned int)time(NULL));
+        math_random_seed((unsigned int)time(NULL));
     }
     if (min >= max) return min;
     return min + (rand() % (max - min + 1));
 }
 
-float random_float(void) {
+double math_random_float(void) {
     if (!random_initialized) {
-        random_seed((unsigned int)time(NULL));
+        math_random_seed((unsigned int)time(NULL));
     }
-    return (float)rand() / (float)RAND_MAX;
+    return (double)rand() / (double)RAND_MAX;
 }

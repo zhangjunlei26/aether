@@ -13,6 +13,9 @@
 #include <time.h>
 #ifdef _WIN32
 #include <process.h>
+#  if defined(_MSC_VER) && !defined(getpid)
+#    define getpid _getpid
+#  endif
 #else
 #include <unistd.h>
 #endif

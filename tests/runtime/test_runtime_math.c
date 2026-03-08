@@ -23,37 +23,37 @@ TEST_CATEGORY(math_pow_zero_exponent, TEST_CATEGORY_STDLIB) {
 }
 
 TEST_CATEGORY(math_abs_positive, TEST_CATEGORY_STDLIB) {
-    int result = abs_int(42);
+    int result = math_abs_int(42);
     ASSERT_EQ(42, result);
 }
 
 TEST_CATEGORY(math_abs_negative, TEST_CATEGORY_STDLIB) {
-    int result = abs_int(-42);
+    int result = math_abs_int(-42);
     ASSERT_EQ(42, result);
 }
 
 TEST_CATEGORY(math_abs_zero, TEST_CATEGORY_STDLIB) {
-    int result = abs_int(0);
+    int result = math_abs_int(0);
     ASSERT_EQ(0, result);
 }
 
 TEST_CATEGORY(math_min_basic, TEST_CATEGORY_STDLIB) {
-    int result = min_int(5, 10);
+    int result = math_min_int(5, 10);
     ASSERT_EQ(5, result);
 }
 
 TEST_CATEGORY(math_min_equal, TEST_CATEGORY_STDLIB) {
-    int result = min_int(7, 7);
+    int result = math_min_int(7, 7);
     ASSERT_EQ(7, result);
 }
 
 TEST_CATEGORY(math_max_basic, TEST_CATEGORY_STDLIB) {
-    int result = max_int(5, 10);
+    int result = math_max_int(5, 10);
     ASSERT_EQ(10, result);
 }
 
 TEST_CATEGORY(math_max_equal, TEST_CATEGORY_STDLIB) {
-    int result = max_int(7, 7);
+    int result = math_max_int(7, 7);
     ASSERT_EQ(7, result);
 }
 
@@ -100,12 +100,12 @@ TEST_CATEGORY(math_round_positive_down, TEST_CATEGORY_STDLIB) {
 TEST_CATEGORY(math_random_int_range, TEST_CATEGORY_STDLIB) {
     // Test random integer generation
     for (int i = 0; i < 10; i++) {
-        int result = random_int(1, 10);
+        int result = math_random_int(1, 10);
         ASSERT_TRUE(result >= 1 && result <= 10);
     }
 }
 
 TEST_CATEGORY(math_random_int_single, TEST_CATEGORY_STDLIB) {
-    int result = random_int(5, 5);
+    int result = math_random_int(5, 5);
     ASSERT_EQ(5, result);
 }

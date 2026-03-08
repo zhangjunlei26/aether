@@ -105,6 +105,49 @@ main() {
 
 Reference-counted strings with comprehensive operations.
 
+### String Types: `string` vs Managed Strings
+
+Aether has two string representations:
+
+| | `string` (raw) | Managed (`ptr` via `std.string`) |
+|---|---|---|
+| **C type** | `const char*` | `AetherString*` |
+| **Allocation** | Static (literals) or manual | Heap (reference-counted) |
+| **Memory** | None needed | `string.release()` or `defer string.free()` |
+| **Knows length?** | No (`O(n)` via `strlen`) | Yes (`O(1)`) |
+| **Manipulation** | Not possible | Full API (`trim`, `split`, `concat`, etc.) |
+
+**`string`** — raw C string. String literals like `"hello"` are this type. Use for message fields, constants, and passing text to extern functions.
+
+**Managed strings** — heap-allocated objects returned by `std.string` functions (`string.new`, `string.trim`, `string.split`, etc.). Typed as `ptr` in Aether code. Required for any string manipulation.
+
+**Converting between them:**
+
+```aether
+import std.string
+
+main() {
+    // Raw literal → managed: use string.new()
+    raw = "  hello  "
+    managed = string.new(raw)
+    trimmed = string.trim(managed)
+
+    // Managed → raw: use string.to_cstr()
+    print(string.to_cstr(trimmed))
+
+    defer string.free(managed)
+    defer string.free(trimmed)
+}
+```
+
+**Best practices:**
+- Use `string` for message fields — keeps payloads simple
+- Use managed strings when you need to manipulate text (trim, split, concat)
+- Always `defer string.free()` immediately after creating a managed string
+- Use `string.to_cstr()` when passing managed strings to `print` or message fields
+
+### Usage Examples
+
 ```aether
 import std.string
 
@@ -131,30 +174,69 @@ main() {
     // Substrings
     sub = string.substring(s, 0, 3);  // "Hel"
 
+    // Splitting
+    csv = string.new("a,b,c");
+    parts = string.split(csv, ",");
+    count = string.array_size(parts);  // 3
+    first = string.array_get(parts, 0); // "a"
+    string.array_free(parts);
+    string.release(csv);
+
+    // Conversion
+    n = string.from_int(42);       // "42"
+    f = string.from_float(3.14);   // "3.14"
+    cstr = string.to_cstr(s);     // raw C string pointer
+
     // Memory management
     string.release(s);
     string.release(s2);
 }
 ```
 
-**Functions:**
+**Creation:**
 - `string.new(cstr)` - Create from C string
+- `string.from_literal(cstr)` - Create from string literal (alias for `new`)
+- `string.from_cstr(cstr)` - Create from C string (alias for `new`)
 - `string.empty()` - Create empty string
+
+**Operations:**
 - `string.length(str)` - Get length
-- `string.concat(a, b)` - Concatenate strings
-- `string.char_at(str, index)` - Get character
-- `string.equals(a, b)` - Check equality
-- `string.compare(a, b)` - Compare (-1, 0, 1)
-- `string.starts_with(str, prefix)` - Check prefix
-- `string.ends_with(str, suffix)` - Check suffix
-- `string.contains(str, sub)` - Search for substring
-- `string.index_of(str, sub)` - Find position
+- `string.concat(a, b)` - Concatenate two strings (returns new string)
+- `string.char_at(str, index)` - Get character at index
+- `string.equals(a, b)` - Check equality (returns 1/0)
+- `string.compare(a, b)` - Lexicographic compare (returns -1, 0, 1)
+
+**Searching:**
+- `string.starts_with(str, prefix)` - Check prefix (returns 1/0)
+- `string.ends_with(str, suffix)` - Check suffix (returns 1/0)
+- `string.contains(str, sub)` - Check if substring exists (returns 1/0)
+- `string.index_of(str, sub)` - Find position of substring (returns -1 if not found)
+
+**Transformation:**
 - `string.substring(str, start, end)` - Extract substring
-- `string.to_upper(str)` - Convert to uppercase
-- `string.to_lower(str)` - Convert to lowercase
-- `string.trim(str)` - Remove whitespace
+- `string.to_upper(str)` - Convert to uppercase (returns new string)
+- `string.to_lower(str)` - Convert to lowercase (returns new string)
+- `string.trim(str)` - Remove leading/trailing whitespace
+
+**Splitting:**
+- `string.split(str, delimiter)` - Split string by delimiter (returns array)
+- `string.array_size(arr)` - Get number of parts in split result
+- `string.array_get(arr, index)` - Get string at index from split result
+- `string.array_free(arr)` - Free split result array
+
+**Conversion:**
+- `string.to_cstr(str)` - Get raw C string pointer
+- `string.from_int(value)` - Create string from integer
+- `string.from_float(value)` - Create string from float
+
+**Parsing:**
+- `string.to_int(str, out_ptr)` - Parse integer (returns 1 on success, 0 on failure)
+- `string.to_float(str, out_ptr)` - Parse float (returns 1 on success, 0 on failure)
+
+**Memory:**
 - `string.retain(str)` - Increment reference count
-- `string.release(str)` - Decrement and free if zero
+- `string.release(str)` - Decrement reference count (frees when zero)
+- `string.free(str)` - Alias for `release`
 
 ---
 
@@ -200,6 +282,8 @@ main() {
 - `file.size(path)` - Get file size in bytes
 - `file.delete(path)` - Delete file
 
+> **Note:** `file.read_all()` returns a managed string — use `defer string.release(content)` to free it.
+
 ### Directories (`std.dir`)
 
 ```aether
@@ -207,22 +291,22 @@ import std.dir
 
 main() {
     // Check and create
-    if (dir.exists("output") == 0) {
-        dir.create("output");
+    if dir.exists("output") == 0 {
+        dir.create("output")
     }
 
     // List contents
-    list = dir.list(".");
+    list = dir.list(".")
     // Process list...
-    dir.list_free(list);
+    dir.list_free(list)
 
     // Delete
-    dir.delete("temp_dir");
+    dir.delete("temp_dir")
 }
 ```
 
 **Functions:**
-- `dir.exists(path)` - Check if directory exists
+- `dir.exists(path)` - Check if directory exists (returns 1/0)
 - `dir.create(path)` - Create directory
 - `dir.delete(path)` - Delete empty directory
 - `dir.list(path)` - List directory contents
@@ -230,116 +314,166 @@ main() {
 
 ### Paths (`std.path`)
 
+Path functions return managed strings — use `defer string.release()` or `defer string.free()` to free them.
+
 ```aether
 import std.path
+import std.string
 
 main() {
-    joined = path.join("dir", "file.txt");
-    dirname = path.dirname("/a/b/file.txt");  // "/a/b"
-    basename = path.basename("/a/b/file.txt"); // "file.txt"
-    ext = path.extension("file.txt");          // "txt"
-    is_abs = path.is_absolute("/usr/bin");     // 1
+    joined = path.join("dir", "file.txt")
+    defer string.release(joined)
+    dirname = path.dirname("/a/b/file.txt")   // "/a/b"
+    defer string.release(dirname)
+    basename = path.basename("/a/b/file.txt")  // "file.txt"
+    defer string.release(basename)
+    ext = path.extension("file.txt")           // ".txt" (includes dot)
+    defer string.release(ext)
+    is_abs = path.is_absolute("/usr/bin")      // 1
 }
 ```
 
 **Functions:**
-- `path.join(a, b)` - Join path components
-- `path.dirname(path)` - Get directory name
-- `path.basename(path)` - Get file name
-- `path.extension(path)` - Get file extension
-- `path.is_absolute(path)` - Check if absolute path
+- `path.join(a, b)` - Join path components (returns managed string)
+- `path.dirname(path)` - Get directory name (returns managed string)
+- `path.basename(path)` - Get file name (returns managed string)
+- `path.extension(path)` - Get file extension including dot (returns managed string)
+- `path.is_absolute(path)` - Check if absolute path (returns 1/0)
 
 ---
 
 ## JSON (`std.json`)
 
-JSON parsing and creation.
+JSON parsing, creation, and serialization.
 
 ```aether
 import std.json
+import std.string
 
 main() {
+    // Parse JSON string
+    data = json.parse("{\"name\": \"Aether\", \"version\": 1}")
+    name = json.object_get(data, "name")
+    println(string.to_cstr(json.get_string(name)))  // "Aether"
+
     // Create values
-    num = json.create_number(42.5);
-    str = json.create_string("hello");
-    bool_val = json.create_bool(1);
-    null_val = json.create_null();
+    obj = json.create_object()
+    json.object_set(obj, "key", json.create_string("value"))
+    json.object_set(obj, "count", json.create_number(42.0))
 
     // Arrays
-    arr = json.create_array();
-    json.array_add(arr, json.create_number(1.0));
-    json.array_add(arr, json.create_number(2.0));
-    size = json.array_size(arr);
-    item = json.array_get(arr, 0);
+    arr = json.create_array()
+    json.array_add(arr, json.create_number(1.0))
+    json.array_add(arr, json.create_number(2.0))
+    size = json.array_size(arr)
 
-    // Objects
-    obj = json.create_object();
-    json.object_set(obj, "key", json.create_string("value"));
-    val = json.object_get(obj, "key");
+    // Serialize to string
+    output = json.stringify(obj)
+    println(string.to_cstr(output))
+    string.release(output)
 
     // Type checking
-    type = json.type(num);  // JSON_NUMBER = 2
-    is_null = json.is_null(null_val);
-
-    // Get values
-    n = json.get_number(num);
-    b = json.get_bool(bool_val);
-    s = json.get_string(str);
+    type = json.type(json.create_number(3.0))  // 2 = JSON_NUMBER
 
     // Cleanup
-    json.free(num);
-    json.free(arr);
-    json.free(obj);
+    json.free(data)
+    json.free(obj)
+    json.free(arr)
 }
 ```
 
 **JSON Type Constants:**
-- `JSON_NULL` = 0
-- `JSON_BOOL` = 1
-- `JSON_NUMBER` = 2
-- `JSON_STRING` = 3
-- `JSON_ARRAY` = 4
-- `JSON_OBJECT` = 5
+- `0` = NULL, `1` = BOOL, `2` = NUMBER, `3` = STRING, `4` = ARRAY, `5` = OBJECT
+
+**Parsing / Serialization:**
+- `json.parse(json_str)` - Parse JSON string into value tree
+- `json.stringify(value)` - Serialize to JSON string (returns managed string, call `string.release()`)
+- `json.free(value)` - Free a JSON value tree
+
+**Type Checking:**
+- `json.type(value)` - Get type constant (0-5)
+- `json.is_null(value)` - Check if null (returns 1/0)
+
+**Value Getters:**
+- `json.get_number(value)` - Get float value
+- `json.get_int(value)` - Get integer value
+- `json.get_bool(value)` - Get boolean (1/0)
+- `json.get_string(value)` - Get string (returns managed string)
+
+**Object Operations:**
+- `json.object_get(obj, key)` - Get value by key (key is a raw string)
+- `json.object_set(obj, key, value)` - Set key-value pair
+- `json.object_has(obj, key)` - Check if key exists (returns 1/0)
+
+**Array Operations:**
+- `json.array_get(arr, index)` - Get value at index
+- `json.array_add(arr, value)` - Append value
+- `json.array_size(arr)` - Get array length
+
+**Value Creation:**
+- `json.create_null()`, `json.create_bool(value)`, `json.create_number(value)`
+- `json.create_string(value)`, `json.create_array()`, `json.create_object()`
 
 ---
 
 ## Networking
 
-### HTTP (`std.http`)
+### HTTP (`std.net`)
+
+> **Note:** HTTP and TCP are both in `std.net`. Use `import std.net` and call with `http.*` or `tcp.*` prefix.
 
 ```aether
-import std.http
+import std.net
 
 main() {
     // HTTP Client
-    response = http.get("http://example.com");
-    if (response != 0) {
-        // Process response
-        http.response_free(response);
+    response = http.get("http://example.com")
+    if response != 0 {
+        http.response_free(response)
     }
 
     // HTTP Server
-    server = http.server_create(8080);
-    http.server_bind(server, "127.0.0.1", 8080);
-    // Register handlers...
-    http.server_start(server);  // Blocking
-    http.server_free(server);
+    server = http.server_create(8080)
+    http.server_bind(server, "127.0.0.1", 8080)
+    http.server_start(server)
+    http.server_free(server)
 }
 ```
 
-**Client Functions:**
+**Client:**
 - `http.get(url)` - HTTP GET request
 - `http.post(url, body, content_type)` - HTTP POST
 - `http.put(url, body, content_type)` - HTTP PUT
 - `http.delete(url)` - HTTP DELETE
 - `http.response_free(response)` - Free response
 
-**Server Functions:**
+**Server Lifecycle:**
 - `http.server_create(port)` - Create server
 - `http.server_bind(server, host, port)` - Bind to address
-- `http.server_start(server)` - Start serving
+- `http.server_start(server)` - Start serving (blocking)
 - `http.server_stop(server)` - Stop server
 - `http.server_free(server)` - Free server
+
+**Server Routing:**
+- `http.server_get(server, path, handler, user_data)` - Register GET route
+- `http.server_post(server, path, handler, user_data)` - Register POST route
+- `http.server_put(server, path, handler, user_data)` - Register PUT route
+- `http.server_delete(server, path, handler, user_data)` - Register DELETE route
+- `http.server_use_middleware(server, middleware, user_data)` - Add middleware
+
+**Request Accessors:**
+- `http.get_header(req, name)` - Get request header
+- `http.get_query_param(req, name)` - Get query parameter
+- `http.get_path_param(req, name)` - Get URL path parameter
+- `http.request_free(req)` - Free request
+
+**Response Building:**
+- `http.response_create()` - Create response
+- `http.response_set_status(res, code)` - Set HTTP status code
+- `http.response_set_header(res, name, value)` - Set response header
+- `http.response_set_body(res, body)` - Set response body
+- `http.response_json(res, json)` - Set JSON response
+- `http.server_response_free(res)` - Free response
 
 ### TCP (`std.tcp`)
 
@@ -381,67 +515,104 @@ Structured logging with levels.
 import std.log
 
 main() {
-    log.init("app.log", 0);  // 0 = LOG_DEBUG
+    log.init("app.log", 0)  // 0 = LOG_DEBUG
 
-    log.debug("Debug message");
-    log.info("Info message");
-    log.warn("Warning message");
-    log.error("Error message");
+    log.write(0, "Debug message")
+    log.write(1, "Info message")
+    log.write(2, "Warning message")
+    log.write(3, "Error message")
 
-    log.shutdown();
+    log.print_stats()
+    log.shutdown()
 }
 ```
 
 **Log Levels:**
-- `LOG_DEBUG` = 0
-- `LOG_INFO` = 1
-- `LOG_WARN` = 2
-- `LOG_ERROR` = 3
+- `0` = DEBUG
+- `1` = INFO
+- `2` = WARN
+- `3` = ERROR
+- `4` = FATAL
 
 **Functions:**
-- `log.init(filename, level)` - Initialize logging
+- `log.init(filename, level)` - Initialize logging to file with minimum level
 - `log.shutdown()` - Shutdown logging
+- `log.write(level, message)` - Write a log message at the given level
 - `log.set_level(level)` - Set minimum level
-- `log.debug(msg)` - Debug message
-- `log.info(msg)` - Info message
-- `log.warn(msg)` - Warning message
-- `log.error(msg)` - Error message
+- `log.set_colors(enabled)` - Enable/disable colored output (1/0)
+- `log.set_timestamps(enabled)` - Enable/disable timestamps (1/0)
+- `log.print_stats()` - Print logging statistics
 
 ---
 
 ## Math (`std.math`)
 
-Mathematical functions.
+Mathematical functions. Note: `abs`, `min`, `max`, and `clamp` have separate int/float variants.
 
 ```aether
 import std.math
 
 main() {
-    // Basic operations
-    a = math.abs(-5);       // 5
-    min = math.min(3, 7);   // 3
-    max = math.max(3, 7);   // 7
+    // Basic operations (type-specific variants)
+    a = math.abs_int(-5)           // 5
+    af = math.abs_float(-3.14)     // 3.14
+    lo = math.min_int(3, 7)        // 3
+    hi = math.max_int(3, 7)        // 7
+    c = math.clamp_int(15, 0, 10)  // 10
 
     // Trigonometry
-    s = math.sin(0.5);
-    c = math.cos(0.5);
-    t = math.tan(0.5);
+    s = math.sin(0.5)
+    c = math.cos(0.5)
+    t = math.tan(0.5)
 
-    // Power and roots
-    sq = math.sqrt(16.0);   // 4.0
-    p = math.pow(2.0, 3.0); // 8.0
+    // Inverse trig
+    as = math.asin(0.5)
+    ac = math.acos(0.5)
+    at = math.atan2(1.0, 1.0)
+
+    // Power, roots, logarithms
+    sq = math.sqrt(16.0)    // 4.0
+    p = math.pow(2.0, 3.0)  // 8.0
+    l = math.log(2.718)     // ~1.0
+    e = math.exp(1.0)       // ~2.718
 
     // Rounding
-    fl = math.floor(3.7);   // 3.0
-    ce = math.ceil(3.2);    // 4.0
-    ro = math.round(3.5);   // 4.0
+    fl = math.floor(3.7)    // 3.0
+    ce = math.ceil(3.2)     // 4.0
+    ro = math.round(3.5)    // 4.0
 
     // Random
-    math.random_seed(12345);
-    r = math.random_int(1, 100);
-    f = math.random_float();
+    math.random_seed(12345)
+    r = math.random_int(1, 100)
+    f = math.random_float()
 }
 ```
+
+**Basic (int/float variants):**
+- `math.abs_int(x)` / `math.abs_float(x)` - Absolute value
+- `math.min_int(a, b)` / `math.min_float(a, b)` - Minimum
+- `math.max_int(a, b)` / `math.max_float(a, b)` - Maximum
+- `math.clamp_int(x, min, max)` / `math.clamp_float(x, min, max)` - Clamp to range
+
+**Trigonometry:**
+- `math.sin(x)`, `math.cos(x)`, `math.tan(x)` - Trig functions
+- `math.asin(x)`, `math.acos(x)`, `math.atan(x)` - Inverse trig
+- `math.atan2(y, x)` - Two-argument arctangent
+
+**Power / Logarithms:**
+- `math.sqrt(x)` - Square root
+- `math.pow(base, exp)` - Power
+- `math.log(x)` - Natural logarithm
+- `math.log10(x)` - Base-10 logarithm
+- `math.exp(x)` - Exponential (e^x)
+
+**Rounding:**
+- `math.floor(x)`, `math.ceil(x)`, `math.round(x)`
+
+**Random:**
+- `math.random_seed(seed)` - Seed RNG
+- `math.random_int(min, max)` - Random integer in range
+- `math.random_float()` - Random float 0.0-1.0
 
 ---
 

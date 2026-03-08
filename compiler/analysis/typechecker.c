@@ -239,6 +239,9 @@ int is_type_compatible(Type* from, Type* to) {
     // int promotes to long without loss
     if (from->kind == TYPE_INT && to->kind == TYPE_INT64) return 1;
     if (from->kind == TYPE_INT64 && to->kind == TYPE_INT) return 1;
+    // long <-> float compatibility
+    if (from->kind == TYPE_INT64 && to->kind == TYPE_FLOAT) return 1;
+    if (from->kind == TYPE_FLOAT && to->kind == TYPE_INT64) return 1;
     
     // Array compatibility
     if (from->kind == TYPE_ARRAY && to->kind == TYPE_ARRAY) {
@@ -1365,6 +1368,24 @@ int typecheck_expression(ASTNode* expr, SymbolTable* table) {
             expr->node_type = create_type(TYPE_STRING);
             return 1;
 
+        case AST_ARRAY_ACCESS:
+            // Type check array access — validate index is integer
+            if (expr->child_count >= 2) {
+                typecheck_expression(expr->children[0], table);
+                typecheck_expression(expr->children[1], table);
+                Type* idx_type = infer_type(expr->children[1], table);
+                if (idx_type && idx_type->kind != TYPE_INT && idx_type->kind != TYPE_INT64
+                    && idx_type->kind != TYPE_UNKNOWN) {
+                    char error_msg[256];
+                    snprintf(error_msg, sizeof(error_msg),
+                             "Array index must be an integer, got %s",
+                             type_name(idx_type));
+                    type_error(error_msg, expr->line, expr->column);
+                }
+                if (idx_type) free_type(idx_type);
+            }
+            return 1;
+
         case AST_STRUCT_LITERAL:
             // Type check struct literal field initializers
             for (int i = 0; i < expr->child_count; i++) {
@@ -1558,9 +1579,38 @@ int typecheck_function_call(ASTNode* call, SymbolTable* table) {
         }
     }
 
-    // Type check arguments
+    // Type check arguments and validate types against parameters
     for (int i = 0; i < call->child_count; i++) {
         typecheck_expression(call->children[i], table);
+    }
+
+    // Validate argument types for extern functions (which always have typed params)
+    // Skip for user-defined functions since type inference may not have set param types yet
+    if (symbol->node && symbol->node->type == AST_EXTERN_FUNCTION) {
+        int param_idx = 0;
+        for (int i = 0; i < symbol->node->child_count - 1 && param_idx < call->child_count; i++) {
+            ASTNode* param = symbol->node->children[i];
+            if (!param) { param_idx++; continue; }
+            if (param->type == AST_VARIABLE_DECLARATION || param->type == AST_PATTERN_VARIABLE) {
+                Type* param_type = param->node_type;
+                if (param_type && param_type->kind != TYPE_UNKNOWN &&
+                    call->children[param_idx] != NULL) {
+                    Type* arg_type = infer_type(call->children[param_idx], table);
+                    if (arg_type && arg_type->kind != TYPE_UNKNOWN &&
+                        !is_type_compatible(arg_type, param_type)) {
+                        char error_msg[256];
+                        snprintf(error_msg, sizeof(error_msg),
+                                 "Argument %d of '%s': expected %s, got %s",
+                                 param_idx + 1, call->value,
+                                 type_name(param_type), type_name(arg_type));
+                        type_error(error_msg, call->children[param_idx]->line,
+                                   call->children[param_idx]->column);
+                    }
+                    if (arg_type) free_type(arg_type);
+                }
+                param_idx++;
+            }
+        }
     }
 
     call->node_type = symbol->type ? clone_type(symbol->type) : create_type(TYPE_UNKNOWN);

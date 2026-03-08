@@ -966,13 +966,89 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                     }
                 } else {
                     // Multiple arguments - first is format string
-                    fprintf(gen->output, "printf(");
-                    generate_expression(gen, stmt->children[0]);
-                    for (int i = 1; i < stmt->child_count; i++) {
-                        fprintf(gen->output, ", ");
-                        generate_expression(gen, stmt->children[i]);
+                    // Auto-fix format specifiers based on argument types to prevent
+                    // undefined behavior (e.g. print("Test: %s", 201) would crash)
+                    ASTNode* fmt_arg = stmt->children[0];
+                    if (fmt_arg->type == AST_LITERAL && fmt_arg->node_type &&
+                        fmt_arg->node_type->kind == TYPE_STRING && fmt_arg->value) {
+                        // Parse format string and replace specifiers with type-correct ones
+                        const char* fmt = fmt_arg->value;
+                        fprintf(gen->output, "printf(\"");
+                        int arg_idx = 1;  // index into stmt->children for arguments
+                        for (int fi = 0; fmt[fi]; fi++) {
+                            if (fmt[fi] == '%' && fmt[fi + 1]) {
+                                fi++;
+                                // Skip flags, width, precision
+                                while (fmt[fi] == '-' || fmt[fi] == '+' || fmt[fi] == ' ' ||
+                                       fmt[fi] == '#' || fmt[fi] == '0') fi++;
+                                while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++;
+                                if (fmt[fi] == '.') {
+                                    fi++;
+                                    while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++;
+                                }
+                                if (fmt[fi] == '%') {
+                                    // Literal %%
+                                    fprintf(gen->output, "%%%%");
+                                } else if (arg_idx < stmt->child_count) {
+                                    // Replace with type-correct specifier
+                                    ASTNode* arg = stmt->children[arg_idx];
+                                    Type* atype = arg->node_type;
+                                    if (atype && atype->kind == TYPE_FLOAT) {
+                                        fprintf(gen->output, "%%f");
+                                    } else if (atype && atype->kind == TYPE_INT64) {
+                                        fprintf(gen->output, "%%lld");
+                                    } else if (atype && (atype->kind == TYPE_STRING || atype->kind == TYPE_PTR)) {
+                                        fprintf(gen->output, "%%s");
+                                    } else if (atype && atype->kind == TYPE_BOOL) {
+                                        fprintf(gen->output, "%%s");
+                                    } else {
+                                        fprintf(gen->output, "%%d");
+                                    }
+                                    arg_idx++;
+                                } else {
+                                    // More specifiers than args — keep original
+                                    fprintf(gen->output, "%%%c", fmt[fi]);
+                                }
+                            } else {
+                                // Re-escape special characters for C string output
+                                switch (fmt[fi]) {
+                                    case '\n': fprintf(gen->output, "\\n");  break;
+                                    case '\t': fprintf(gen->output, "\\t");  break;
+                                    case '\r': fprintf(gen->output, "\\r");  break;
+                                    case '\0': fprintf(gen->output, "\\0");  break;
+                                    case '\\': fprintf(gen->output, "\\\\"); break;
+                                    case '"':  fprintf(gen->output, "\\\""); break;
+                                    default:   fprintf(gen->output, "%c", fmt[fi]); break;
+                                }
+                            }
+                        }
+                        fprintf(gen->output, "\", ");
+                        // Emit arguments with type-safe wrappers
+                        for (int i = 1; i < stmt->child_count; i++) {
+                            if (i > 1) fprintf(gen->output, ", ");
+                            ASTNode* arg = stmt->children[i];
+                            Type* atype = arg->node_type;
+                            if (atype && atype->kind == TYPE_INT64) {
+                                fprintf(gen->output, "(long long)");
+                                generate_expression(gen, arg);
+                            } else if (atype && atype->kind == TYPE_BOOL) {
+                                generate_expression(gen, arg);
+                                fprintf(gen->output, " ? \"true\" : \"false\"");
+                            } else if (atype && (atype->kind == TYPE_STRING || atype->kind == TYPE_PTR)) {
+                                fprintf(gen->output, "_aether_safe_str(");
+                                generate_expression(gen, arg);
+                                fprintf(gen->output, ")");
+                            } else {
+                                generate_expression(gen, arg);
+                            }
+                        }
+                        fprintf(gen->output, ");\n");
+                    } else {
+                        // Non-literal format string — use %s to prevent format injection
+                        fprintf(gen->output, "printf(\"%%s\", ");
+                        generate_expression(gen, stmt->children[0]);
+                        fprintf(gen->output, ");\n");
                     }
-                    fprintf(gen->output, ");\n");
                 }
                 // Flush stdout so partial-line output appears immediately
                 // (without this, print(".") in a loop won't show until \n)
