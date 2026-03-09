@@ -328,14 +328,24 @@ examples: compiler
 			extra_c=$$(find "$$dir" -maxdepth 1 -name '*.c' 2>/dev/null | tr '\n' ' '); \
 		fi; \
 		printf "  %-30s " "$$name"; \
-		if ./build/aetherc$(EXE_EXT) $$src $(BUILD_DIR)/examples/$$name.c 2>/dev/null && \
-		   $(CC) $(CFLAGS) $(BUILD_DIR)/examples/$$name.c $$extra_c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) \
-		         -o $(BUILD_DIR)/examples/$$name$(EXE_EXT) $(LDFLAGS) 2>/dev/null; then \
-			echo "OK"; \
-			pass=$$((pass + 1)); \
-		else \
-			echo "FAIL"; \
+		ae_err=$$(./build/aetherc$(EXE_EXT) $$src $(BUILD_DIR)/examples/$$name.c 2>&1); \
+		ae_rc=$$?; \
+		if [ $$ae_rc -ne 0 ]; then \
+			echo "FAIL (compile)"; \
+			echo "$$ae_err" | head -5; \
 			fail=$$((fail + 1)); \
+		else \
+			cc_err=$$($(CC) $(CFLAGS) $(BUILD_DIR)/examples/$$name.c $$extra_c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) \
+			         -o $(BUILD_DIR)/examples/$$name$(EXE_EXT) $(LDFLAGS) 2>&1); \
+			cc_rc=$$?; \
+			if [ $$cc_rc -ne 0 ]; then \
+				echo "FAIL (build)"; \
+				echo "$$cc_err" | head -10; \
+				fail=$$((fail + 1)); \
+			else \
+				echo "OK"; \
+				pass=$$((pass + 1)); \
+			fi; \
 		fi; \
 	done; \
 	echo ""; \

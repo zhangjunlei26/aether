@@ -322,6 +322,7 @@ static void generate_list_pattern_bindings(CodeGenerator* gen, ASTNode* pattern,
             ASTNode* elem = pattern->children[i];
             if (elem && elem->type == AST_PATTERN_VARIABLE && elem->value) {
                 print_line(gen, "int %s = %s[%d];", elem->value, array_name, i);
+                print_line(gen, "(void)%s;", elem->value);
             }
         }
     } else if (pattern->type == AST_PATTERN_CONS && pattern->child_count >= 2) {
@@ -334,6 +335,7 @@ static void generate_list_pattern_bindings(CodeGenerator* gen, ASTNode* pattern,
         if (tail && tail->type == AST_PATTERN_VARIABLE && tail->value) {
             print_line(gen, "int* %s = &%s[1];", tail->value, array_name);
             print_line(gen, "int %s_len = %s - 1;", tail->value, len_name);
+            print_line(gen, "(void)%s; (void)%s_len;", tail->value, tail->value);
         }
     }
 }
@@ -657,6 +659,9 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                     fprintf(gen->output, "int %s = ", len_name);
                     generate_expression(gen, match_expr);
                     fprintf(gen->output, "_len;\n");
+                    // Suppress unused-variable warnings (arr may only be used in some arms)
+                    print_indent(gen);
+                    fprintf(gen->output, "(void)%s;\n", array_name);
                 } else {
                     // Emit temp variable for the match expression value
                     Type* mexpr_type = match_expr->node_type;
