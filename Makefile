@@ -328,20 +328,20 @@ examples: compiler
 			extra_c=$$(find "$$dir" -maxdepth 1 -name '*.c' 2>/dev/null | tr '\n' ' '); \
 		fi; \
 		printf "  %-30s " "$$name"; \
-		if ./build/aetherc$(EXE_EXT) $$src $(BUILD_DIR)/examples/$$name.c 2>/dev/null; then \
-			if $(CC) $(CFLAGS) $(BUILD_DIR)/examples/$$name.c $$extra_c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) \
-			         -o $(BUILD_DIR)/examples/$$name$(EXE_EXT) $(LDFLAGS) 2>/dev/null; then \
-				echo "OK"; \
-				pass=$$((pass + 1)); \
-			else \
-				echo "FAIL (build)"; \
-				$(CC) $(CFLAGS) $(BUILD_DIR)/examples/$$name.c $$extra_c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) \
-				         -o $(BUILD_DIR)/examples/$$name$(EXE_EXT) $(LDFLAGS) 2>&1 | head -10; \
-				fail=$$((fail + 1)); \
-			fi; \
+		out_c="$(BUILD_DIR)/examples/$$name.c"; \
+		rm -f "$$out_c"; \
+		./build/aetherc$(EXE_EXT) "$$src" "$$out_c" 2>/tmp/ae_err.txt; \
+		if [ ! -f "$$out_c" ]; then \
+			echo "FAIL (compile)"; \
+			cat /tmp/ae_err.txt 2>/dev/null | head -5; \
+			fail=$$((fail + 1)); \
+		elif $(CC) $(CFLAGS) "$$out_c" $$extra_c $(RUNTIME_SRC) $(STD_SRC) $(COLLECTIONS_SRC) \
+		         -o $(BUILD_DIR)/examples/$$name$(EXE_EXT) $(LDFLAGS) 2>/tmp/cc_err.txt; then \
+			echo "OK"; \
+			pass=$$((pass + 1)); \
 		else \
-			echo "FAIL (compile: exit $$?)"; \
-			./build/aetherc$(EXE_EXT) $$src $(BUILD_DIR)/examples/$$name.c 2>&1 | head -5; \
+			echo "FAIL (build)"; \
+			cat /tmp/cc_err.txt 2>/dev/null | head -10; \
 			fail=$$((fail + 1)); \
 		fi; \
 	done; \

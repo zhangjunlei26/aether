@@ -2084,7 +2084,7 @@ static int cmd_version_use(const char* version) {
     snprintf(cmd, sizeof(cmd),
         "mkdir -p \"%s\" && cp -f \"%s\"/* \"%s/\" 2>/dev/null",
         dest_bin, src_bin, dest_bin);
-    system(cmd);  // non-fatal: symlink is the primary mechanism
+    if (system(cmd) != 0) { /* non-fatal: symlink is the primary mechanism */ }
     printf("Switched to Aether %s.\n", vtag);
     return 0;
 #endif
