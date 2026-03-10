@@ -1826,9 +1826,9 @@ static int ae_download(const char* url, const char* dest) {
 #else
     char cmd[2048];
     if (system("curl --version >/dev/null 2>&1") == 0)
-        snprintf(cmd, sizeof(cmd), "curl -L --progress-bar -o \"%s\" \"%s\"", dest, url);
+        snprintf(cmd, sizeof(cmd), "curl -fsSL -o \"%s\" \"%s\"", dest, url);
     else
-        snprintf(cmd, sizeof(cmd), "wget -q --show-progress -O \"%s\" \"%s\"", dest, url);
+        snprintf(cmd, sizeof(cmd), "wget -q -O \"%s\" \"%s\"", dest, url);
     return system(cmd);
 #endif
 }
@@ -1932,8 +1932,26 @@ static int cmd_version_list(void) {
         printf("  (no releases found)\n");
     }
     printf("\n");
-    printf("Install a version:  ae version install v0.6.0\n");
-    printf("Switch versions:    ae version use v0.6.0\n");
+    // Show latest found tag in examples (or fallback)
+    if (found > 0) {
+        // First tag found is the latest (GitHub returns newest first)
+        // Re-scan to get it
+        char latest[33] = "v0.1.0";
+        char* lp = strstr(buf, "\"tag_name\"");
+        if (lp) {
+            lp += 10;
+            char* lq = strchr(lp, '"'); if (lq) { lq++;
+            char* le = strchr(lq, '"'); if (le) {
+                size_t ll = (size_t)(le - lq);
+                if (ll > 0 && ll < sizeof(latest)) { memcpy(latest, lq, ll); latest[ll] = '\0'; }
+            }}
+        }
+        printf("Install a version:  ae version install %s\n", latest);
+        printf("Switch versions:    ae version use %s\n", latest);
+    } else {
+        printf("Install a version:  ae version install <version>\n");
+        printf("Switch versions:    ae version use <version>\n");
+    }
     return 0;
 }
 
@@ -2059,13 +2077,14 @@ static int cmd_version_use(const char* version) {
         fprintf(stderr, "  ln -sf %s %s\n", ver_dir, current);
         return 1;
     }
-    // Also copy binaries to ~/.aether/bin/ so older ae binaries still resolve.
-    // Best-effort: failure here does not affect the version switch itself.
+    // Also copy all binaries to ~/.aether/bin/ so ae and aetherc in PATH are updated.
     char dest_bin[512], src_bin[1024];
     snprintf(dest_bin, sizeof(dest_bin), "%s/.aether/bin", home);
     snprintf(src_bin,  sizeof(src_bin),  "%s/bin",         ver_dir);
-    snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\" && cp -f \"%s\"/aetherc* \"%s/\" 2>/dev/null", dest_bin, src_bin, dest_bin);
-    if (system(cmd) != 0) { /* non-fatal: old ae binaries may not resolve new compiler */ }
+    snprintf(cmd, sizeof(cmd),
+        "mkdir -p \"%s\" && cp -f \"%s\"/* \"%s/\" 2>/dev/null",
+        dest_bin, src_bin, dest_bin);
+    if (system(cmd) != 0) { /* non-fatal: symlink is the primary mechanism */ }
     printf("Switched to Aether %s.\n", vtag);
     return 0;
 #endif

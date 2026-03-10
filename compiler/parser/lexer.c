@@ -79,13 +79,18 @@ int skip_comment() {
         // Multi-line comment
         advance(); // skip /
         advance(); // skip *
+        int found_end = 0;
         while (current_pos < source_length) {
             if (peek() == '*' && current_pos + 1 < source_length && source[current_pos + 1] == '/') {
                 advance(); // skip *
                 advance(); // skip /
+                found_end = 1;
                 break;
             }
             advance();
+        }
+        if (!found_end) {
+            fprintf(stderr, "Error: unterminated multi-line comment at line %d\n", current_line);
         }
         return 1;
     }
@@ -115,8 +120,29 @@ Token* read_string() {
             if (has_interp) {
                 // In interpolated strings, keep escape sequences raw so parser can handle them
                 buffer[i++] = advance(); // backslash
-                if (current_pos < source_length)
-                    buffer[i++] = advance(); // escaped char
+                if (current_pos < source_length) {
+                    char esc = peek();
+                    buffer[i++] = advance(); // escaped char (e.g. 'x', '0', 'n')
+                    if (esc == 'x') {
+                        // Copy up to 2 hex digits so parser sees \xNN together
+                        int d = 0;
+                        while (d < 2 && current_pos < source_length &&
+                               isxdigit((unsigned char)peek())) {
+                            if (i >= capacity - 3) { capacity *= 2; char* nb = realloc(buffer, capacity); if (!nb) { free(buffer); return create_token(TOKEN_ERROR, "out of memory", current_line, current_column); } buffer = nb; }
+                            buffer[i++] = advance();
+                            d++;
+                        }
+                    } else if (esc >= '0' && esc <= '7') {
+                        // Copy up to 2 more octal digits so parser sees \NNN together
+                        int d = 0;
+                        while (d < 2 && current_pos < source_length &&
+                               peek() >= '0' && peek() <= '7') {
+                            if (i >= capacity - 3) { capacity *= 2; char* nb = realloc(buffer, capacity); if (!nb) { free(buffer); return create_token(TOKEN_ERROR, "out of memory", current_line, current_column); } buffer = nb; }
+                            buffer[i++] = advance();
+                            d++;
+                        }
+                    }
+                }
             } else {
                 advance(); // skip backslash
                 char c = advance();
@@ -126,6 +152,30 @@ Token* read_string() {
                     case 'r': buffer[i++] = '\r'; break;
                     case '\\': buffer[i++] = '\\'; break;
                     case '"': buffer[i++] = '"'; break;
+                    case 'x': {  // \xNN hex escape (1-2 hex digits)
+                        int val = 0, digits = 0;
+                        while (digits < 2 && current_pos < source_length &&
+                               isxdigit((unsigned char)peek())) {
+                            char h = advance();
+                            val = val * 16 + (h >= 'a' ? h - 'a' + 10 :
+                                              h >= 'A' ? h - 'A' + 10 : h - '0');
+                            digits++;
+                        }
+                        if (digits == 0) { buffer[i++] = 'x'; break; }
+                        buffer[i++] = (char)val;
+                        break;
+                    }
+                    case '0': case '1': case '2': case '3':
+                    case '4': case '5': case '6': case '7': {  // \NNN octal (1-3 digits)
+                        int val = c - '0', digits = 1;
+                        while (digits < 3 && current_pos < source_length &&
+                               peek() >= '0' && peek() <= '7') {
+                            val = val * 8 + (advance() - '0');
+                            digits++;
+                        }
+                        buffer[i++] = (char)(val & 0xFF);
+                        break;
+                    }
                     default: buffer[i++] = c; break;
                 }
             }
@@ -134,8 +184,12 @@ Token* read_string() {
         }
     }
 
-    if (peek() == '"') {
+    if (current_pos < source_length && peek() == '"') {
         advance(); // skip closing quote
+    } else {
+        // Unterminated string
+        free(buffer);
+        return create_token(TOKEN_ERROR, "unterminated string literal", current_line, current_column);
     }
 
     buffer[i] = '\0';
@@ -283,7 +337,7 @@ Token* read_identifier() {
     else if (strcmp(buffer, "float") == 0) token = create_token(TOKEN_FLOAT, buffer, current_line, current_column);
     else if (strcmp(buffer, "bool") == 0) token = create_token(TOKEN_BOOL, buffer, current_line, current_column);
     else if (strcmp(buffer, "string") == 0) token = create_token(TOKEN_STRING, buffer, current_line, current_column);
-    else if (strcmp(buffer, "ActorRef") == 0) token = create_token(TOKEN_ACTOR_REF, buffer, current_line, current_column);
+    else if (strcmp(buffer, "ActorRef") == 0 || strcmp(buffer, "actor_ref") == 0) token = create_token(TOKEN_ACTOR_REF, buffer, current_line, current_column);
     else if (strcmp(buffer, "Message") == 0) token = create_token(TOKEN_MESSAGE, buffer, current_line, current_column);
     else if (strcmp(buffer, "true") == 0) token = create_token(TOKEN_TRUE, buffer, current_line, current_column);
     else if (strcmp(buffer, "false") == 0) token = create_token(TOKEN_FALSE, buffer, current_line, current_column);

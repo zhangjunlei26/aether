@@ -236,8 +236,8 @@ void log_set_format(const char* format) {
 }
 
 // Statistics
-LogStats log_get_stats() {
-    return g_log.stats;
+LogStats* log_get_stats() {
+    return &g_log.stats;
 }
 
 void log_print_stats() {

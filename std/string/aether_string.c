@@ -95,29 +95,32 @@ int string_compare(AetherString* a, AetherString* b) {
 }
 
 // String methods
-int string_starts_with(AetherString* str, AetherString* prefix) {
+int string_starts_with(AetherString* str, const char* prefix) {
     if (!str || !prefix) return 0;
-    if (prefix->length > str->length) return 0;
-    return memcmp(str->data, prefix->data, prefix->length) == 0;
+    size_t prefix_len = strlen(prefix);
+    if (prefix_len > str->length) return 0;
+    return memcmp(str->data, prefix, prefix_len) == 0;
 }
 
-int string_ends_with(AetherString* str, AetherString* suffix) {
+int string_ends_with(AetherString* str, const char* suffix) {
     if (!str || !suffix) return 0;
-    if (suffix->length > str->length) return 0;
-    return memcmp(str->data + (str->length - suffix->length),
-                  suffix->data, suffix->length) == 0;
+    size_t suffix_len = strlen(suffix);
+    if (suffix_len > str->length) return 0;
+    return memcmp(str->data + (str->length - suffix_len),
+                  suffix, suffix_len) == 0;
 }
 
-int string_contains(AetherString* str, AetherString* substring) {
+int string_contains(AetherString* str, const char* substring) {
     return string_index_of(str, substring) >= 0;
 }
 
-int string_index_of(AetherString* str, AetherString* substring) {
+int string_index_of(AetherString* str, const char* substring) {
     if (!str || !substring) return -1;
-    if (substring->length > str->length) return -1;
+    size_t sub_len = strlen(substring);
+    if (sub_len > str->length) return -1;
 
-    for (size_t i = 0; i <= str->length - substring->length; i++) {
-        if (memcmp(str->data + i, substring->data, substring->length) == 0) {
+    for (size_t i = 0; i <= str->length - sub_len; i++) {
+        if (memcmp(str->data + i, substring, sub_len) == 0) {
             return (int)i;
         }
     }
@@ -182,14 +185,16 @@ AetherString* string_trim(AetherString* str) {
 }
 
 // String array operations
-AetherStringArray* string_split(AetherString* str, AetherString* delimiter) {
+AetherStringArray* string_split(AetherString* str, const char* delimiter) {
     if (!str || !delimiter) return NULL;
+
+    size_t delim_len = strlen(delimiter);
 
     AetherStringArray* arr = (AetherStringArray*)malloc(sizeof(AetherStringArray));
     arr->count = 0;
     arr->strings = NULL;
 
-    if (delimiter->length == 0) {
+    if (delim_len == 0) {
         // Split into characters
         arr->count = str->length;
         arr->strings = (AetherString**)malloc(sizeof(AetherString*) * arr->count);
@@ -201,10 +206,10 @@ AetherStringArray* string_split(AetherString* str, AetherString* delimiter) {
 
     // Count delimiters
     size_t count = 1;
-    for (size_t i = 0; i <= str->length - delimiter->length; i++) {
-        if (memcmp(str->data + i, delimiter->data, delimiter->length) == 0) {
+    for (size_t i = 0; i <= str->length - delim_len; i++) {
+        if (memcmp(str->data + i, delimiter, delim_len) == 0) {
             count++;
-            i += delimiter->length - 1;
+            i += delim_len - 1;
         }
     }
 
@@ -213,17 +218,26 @@ AetherStringArray* string_split(AetherString* str, AetherString* delimiter) {
 
     size_t start = 0;
     size_t idx = 0;
-    for (size_t i = 0; i <= str->length - delimiter->length; i++) {
-        if (memcmp(str->data + i, delimiter->data, delimiter->length) == 0) {
+    for (size_t i = 0; i <= str->length - delim_len; i++) {
+        if (memcmp(str->data + i, delimiter, delim_len) == 0) {
             arr->strings[idx++] = string_substring(str, start, i);
-            start = i + delimiter->length;
-            i += delimiter->length - 1;
+            start = i + delim_len;
+            i += delim_len - 1;
         }
     }
     // Add remaining part
     arr->strings[idx] = string_substring(str, start, str->length);
 
     return arr;
+}
+
+int string_array_size(AetherStringArray* arr) {
+    return arr ? (int)arr->count : 0;
+}
+
+AetherString* string_array_get(AetherStringArray* arr, int index) {
+    if (!arr || index < 0 || (size_t)index >= arr->count) return NULL;
+    return arr->strings[index];
 }
 
 void string_array_free(AetherStringArray* arr) {

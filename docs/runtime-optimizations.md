@@ -45,7 +45,7 @@ The `main_thread_only` field on `ActorBase` signals scheduler threads to skip pr
 ```c
 typedef struct {
     // ...
-    int main_thread_only;  // If set, scheduler threads skip this actor
+    atomic_int main_thread_only;  // If set, scheduler threads skip this actor
     // ...
 } ActorBase;
 ```
@@ -53,7 +53,7 @@ typedef struct {
 **Scheduler integration:**
 
 - `scheduler_start()` returns immediately if main thread mode is active
-- `scheduler_wait()` returns immediately if main thread mode is active
+- `scheduler_wait()` returns immediately if main thread mode is active (non-destructive; does not stop threads)
 - Scheduler threads check `actor->main_thread_only` before processing
 
 ### Thread-Local Message Payload Pools
@@ -117,7 +117,7 @@ while (i < total) {
 scheduler_send_batch_flush();  // Bulk send with one atomic per core
 ```
 
-The flush sorts messages by target core using radix sort, then calls `queue_enqueue_batch` for each core. This reduces atomics from N (one per message) to num_cores (one per core).
+The flush snapshots each message's target core, sorts by core using radix sort, then calls `queue_enqueue_batch` for each core. This reduces atomics from N (one per message) to num_cores (one per core). Target cores are read once per message at flush time to produce a consistent snapshot — this prevents buffer overflows that could occur if an actor migrates between the time a message is buffered and the time the batch is flushed.
 
 **Runtime auto-detection:** The batch send path automatically detects when Main Thread Actor Mode is active (single-actor programs) and uses the synchronous zero-copy path instead of batching. This ensures single-actor benchmarks like counting use the optimal path while multi-actor fan-out patterns like fork-join benefit from batch send. No manual configuration is required.
 
@@ -166,7 +166,7 @@ typedef struct __attribute__((aligned(64))) {
     char padding1[60];  // Cache line alignment
     atomic_int tail;
     char padding2[60];
-    QueueItem items[QUEUE_SIZE];  // QUEUE_SIZE = 16384
+    QueueItem items[QUEUE_SIZE];  // QUEUE_SIZE = 1024
 } LockFreeQueue;
 ```
 
@@ -203,15 +203,19 @@ The `current_core_id` guard prevents non-scheduler threads (such as the main thr
 
 **Implementation:** `runtime/scheduler/multicore_scheduler.c` (`scheduler_send_remote`, scheduler actor loop)
 
-When a cross-core send occurs, the sender sets a `migrate_to` hint on the target actor. The scheduler thread that owns the actor checks this hint after processing messages and, if set, migrates the actor to the hinted core. This co-locates actors with their most frequent communicators.
+When a cross-core send occurs, the sender sets a `migrate_to` hint on the target actor, requesting migration to the sender's core. The scheduler thread that owns the actor checks migration hints in two places:
 
-Migration uses ascending core-id lock ordering to prevent deadlock between concurrent migration and work-stealing operations. The actor is always processed before migration is attempted, ensuring progress even under constant migration pressure.
+1. **After coalesce-buffer processing** (targeted, O(batch_size)): Immediately after delivering and processing messages from the coalesce buffer, the scheduler checks `migrate_to` on each actor it just processed. This provides fast migration response without scanning the full actor list.
+
+2. **During idle actor scan** (full scan, O(actor_count)): When no messages arrived from cross-core queues, the scheduler scans all local actors for pending migration hints. This catches any hints that were not processed in the targeted path.
+
+Migration uses ascending core-id lock ordering to prevent deadlock between concurrent migration and work-stealing operations. Both locks are acquired via non-blocking try-lock — if either lock is contended, migration is deferred to the next iteration. The actor is always processed before migration is attempted, ensuring progress even under constant migration pressure.
 
 ### Inline Single-Int Messages
 
 **Implementation:** `compiler/codegen/codegen.c`
 
-The code generator detects messages with exactly one integer field and emits an inline fast path. Instead of allocating a pool buffer and copying the message struct, the message ID is stored in `msg.type` and the field value in `msg.payload_int`. The receiver reconstructs the struct on the stack. This eliminates pool allocation and deallocation for the most common message pattern.
+The code generator detects messages with exactly one integer field and emits an inline fast path. Instead of allocating a pool buffer and copying the message struct, the message ID is stored in `msg.type` and the field value in `msg.payload_int` (typed as `intptr_t` to avoid truncation of actor refs on 64-bit systems). The receiver reconstructs the struct on the stack. This eliminates pool allocation and deallocation for the most common message pattern.
 
 ### Computed Goto Dispatch
 
@@ -252,7 +256,7 @@ typedef struct __attribute__((aligned(64))) {
     char padding[63];
 } OptimizedSpinlock;
 
-#define MAILBOX_SIZE 256  // 256 slots for L1 cache locality
+#define MAILBOX_SIZE 32   // 32 slots — small per-actor footprint for scaling to millions
 ```
 
 ### Power-of-2 Buffer Sizing
@@ -262,7 +266,7 @@ typedef struct __attribute__((aligned(64))) {
 All ring buffers use power-of-2 sizes with bitwise AND masking instead of modulo division.
 
 ```c
-#define QUEUE_SIZE 16384
+#define QUEUE_SIZE 1024
 #define QUEUE_MASK (QUEUE_SIZE - 1)
 int index = (head + 1) & QUEUE_MASK;
 
@@ -343,7 +347,7 @@ typedef struct {
 } Scheduler;
 ```
 
-Each scheduler core increments its local counters without atomic operations. The `wait_for_idle()` function sums across all cores to determine when all in-flight messages have been processed.
+Each scheduler core increments its local counters without atomic operations. The `wait_for_idle()` function (called internally by `scheduler_wait()`) sums across all cores to determine when all in-flight messages have been processed. `scheduler_wait()` is non-destructive -- it only waits for quiescence and does not stop scheduler threads, so it can be called multiple times between phases of message sending.
 
 ```c
 // Hot path: no atomic contention

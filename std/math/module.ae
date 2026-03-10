@@ -1,15 +1,15 @@
 // std.math - Math Module
 // Import with: import std.math
 
-// Basic operations
-extern abs_int(x: int) -> int
-extern abs_float(x: float) -> float
-extern min_int(a: int, b: int) -> int
-extern max_int(a: int, b: int) -> int
-extern min_float(a: float, b: float) -> float
-extern max_float(a: float, b: float) -> float
-extern clamp_int(x: int, min: int, max: int) -> int
-extern clamp_float(x: float, min: float, max: float) -> float
+// Basic operations (int/float variants)
+extern math_abs_int(x: int) -> int
+extern math_abs_float(x: float) -> float
+extern math_min_int(a: int, b: int) -> int
+extern math_max_int(a: int, b: int) -> int
+extern math_min_float(a: float, b: float) -> float
+extern math_max_float(a: float, b: float) -> float
+extern math_clamp_int(x: int, min: int, max: int) -> int
+extern math_clamp_float(x: float, min: float, max: float) -> float
 
 // Advanced math
 extern math_sqrt(x: float) -> float
@@ -29,6 +29,6 @@ extern math_log10(x: float) -> float
 extern math_exp(x: float) -> float
 
 // Random numbers
-extern random_seed(seed: int)
-extern random_int(min: int, max: int) -> int
-extern random_float() -> float
+extern math_random_seed(seed: int)
+extern math_random_int(min: int, max: int) -> int
+extern math_random_float() -> float

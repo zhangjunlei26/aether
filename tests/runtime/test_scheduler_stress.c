@@ -133,8 +133,7 @@ void test_rapid_init_shutdown() {
         scheduler_init(2);
         scheduler_start();
         sleep_ms(10);
-        scheduler_stop();
-        scheduler_wait();
+        scheduler_shutdown();
         scheduler_cleanup();
     }
 }
@@ -146,8 +145,7 @@ void test_zero_message_workload() {
     // Let scheduler run with no work
     sleep_ms(100);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
 }
 
@@ -174,8 +172,7 @@ void test_single_message() {
     
     int count = atomic_load(&actor->count);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_EQ(1, count);
@@ -217,8 +214,7 @@ void test_many_actors_single_core() {
         total += atomic_load(&actors[i]->count);
     }
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_EQ(NUM_ACTORS, total);
@@ -272,8 +268,7 @@ void test_burst_then_idle() {
     }
     int count2 = atomic_load(&actor->count);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_TRUE(count1 >= 95);  // Allow some loss
@@ -321,8 +316,7 @@ void test_max_cores() {
         sleep_ms(1);
     }
 
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
 
     ASSERT_TRUE(total >= max * 7);  // At least 70% delivered (relaxed for high core counts)
@@ -373,8 +367,7 @@ void test_alternating_load() {
         sleep_ms(1);
     }
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_TRUE(total >= 180);  // At least 90% of 200
@@ -408,8 +401,7 @@ void test_immediate_shutdown() {
     }
     
     // Immediate shutdown without waiting
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     // Just verify no crash
@@ -446,8 +438,7 @@ void test_concurrent_sends_same_actor() {
 
     int count = atomic_load(&actor->count);
 
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
 
     ASSERT_TRUE(count >= 350);  // At least 70% (relaxed for high core counts)
@@ -503,8 +494,7 @@ void test_priority_inversion() {
 
     int fast_count = atomic_load(&fast->count);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_TRUE(fast_count >= 8);  // Fast actor should process most messages
@@ -545,8 +535,7 @@ void test_message_ordering_under_load() {
     int count = atomic_load(&actor->count);
     int oo = atomic_load(&actor->out_of_order);
 
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
 
     ASSERT_TRUE(count >= 450);  // Most messages delivered
@@ -598,8 +587,7 @@ void test_cascading_messages() {
                 atomic_load(&actors[1]->count) +
                 atomic_load(&actors[2]->count);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_TRUE(total >= 10);  // At least first hop delivered (relaxed assertion)
@@ -654,8 +642,7 @@ void test_memory_pressure() {
         sleep_ms(1);
     }
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_TRUE(total >= 900);  // At least 90% delivered under pressure

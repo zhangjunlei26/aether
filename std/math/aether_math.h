@@ -2,36 +2,36 @@
 #define AETHER_MATH_H
 
 // Basic math operations
-int abs_int(int x);
-float abs_float(float x);
-int min_int(int a, int b);
-int max_int(int a, int b);
-float min_float(float a, float b);
-float max_float(float a, float b);
-int clamp_int(int x, int min, int max);
-float clamp_float(float x, float min, float max);
+int math_abs_int(int x);
+double math_abs_float(double x);
+int math_min_int(int a, int b);
+int math_max_int(int a, int b);
+double math_min_float(double a, double b);
+double math_max_float(double a, double b);
+int math_clamp_int(int x, int min, int max);
+double math_clamp_float(double x, double min, double max);
 
 // Advanced math
-float math_sqrt(float x);
-float math_pow(float base, float exp);
-float math_sin(float x);
-float math_cos(float x);
-float math_tan(float x);
-float math_asin(float x);
-float math_acos(float x);
-float math_atan(float x);
-float math_atan2(float y, float x);
-float math_floor(float x);
-float math_ceil(float x);
-float math_round(float x);
-float math_log(float x);
-float math_log10(float x);
-float math_exp(float x);
+double math_sqrt(double x);
+double math_pow(double base, double exp);
+double math_sin(double x);
+double math_cos(double x);
+double math_tan(double x);
+double math_asin(double x);
+double math_acos(double x);
+double math_atan(double x);
+double math_atan2(double y, double x);
+double math_floor(double x);
+double math_ceil(double x);
+double math_round(double x);
+double math_log(double x);
+double math_log10(double x);
+double math_exp(double x);
 
 // Random numbers
-void random_seed(unsigned int seed);
-int random_int(int min, int max);
-float random_float(void);
+void math_random_seed(unsigned int seed);
+int math_random_int(int min, int max);
+double math_random_float(void);
 
 // Constants
 #define PI 3.14159265358979323846

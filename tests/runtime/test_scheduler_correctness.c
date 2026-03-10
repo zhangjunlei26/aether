@@ -149,8 +149,7 @@ int test_basic_message_delivery() {
     int count = atomic_load(&actor->count);
     int last = atomic_load(&actor->last_value);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     free(actor);
     
     TEST_ASSERT(count == 10, "Should receive all 10 messages");
@@ -200,8 +199,7 @@ int test_message_ordering() {
         }
     }
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     free(actor);
     
     TEST_ASSERT(ordered, "Messages should be received in order");
@@ -245,8 +243,7 @@ int test_cross_core_messaging() {
     int count0 = atomic_load(&actor0->count);
     int count1 = atomic_load(&actor1->count);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     free(actor0);
     free(actor1);
     
@@ -296,8 +293,7 @@ int test_high_throughput() {
     printf("Processed %d messages in %.3f seconds\n", total_msgs, elapsed);
     printf("Throughput: %.0f messages/sec\n", msgs_per_sec);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     free(actor);
     
     TEST_ASSERT(atomic_load(&actor->count) == total_msgs, "All messages processed");
@@ -347,8 +343,7 @@ int test_bidirectional_communication() {
     printf("Actor2 received %d pings, sent %d pongs\n", pings2, pongs2);
     printf("Actor1 received %d pongs back\n", pings1);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     free(actor1);
     free(actor2);
     

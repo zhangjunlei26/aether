@@ -160,7 +160,8 @@ IDENTIFIER("x") EQUALS NUMBER(42) PLUS IDENTIFIER("y")
 - Computed goto dispatch for message handlers
 - Inline single-int message encoding (bypasses pool allocation)
 - `scheduler_send_local` / `scheduler_send_remote` routing based on `current_core_id`
-- NUMA-aware actor allocation via `scheduler_spawn_pooled` with derived-struct size
+- Locality-aware actor placement via `scheduler_spawn_pooled` (caller's core, or core 0 for main thread)
+- NUMA-aware actor allocation with derived-struct size
 
 **Key Files:**
 - `compiler/codegen/codegen.c` - Entry point and includes
@@ -181,16 +182,18 @@ IDENTIFIER("x") EQUALS NUMBER(42) PLUS IDENTIFIER("y")
 1. **Actor Structure** (`runtime/scheduler/multicore_scheduler.h`)
    ```c
    typedef struct {
-       int active;
+       atomic_int active;
        int id;
        Mailbox mailbox;
        void (*step)(void*);
        pthread_t thread;
        int auto_process;
        atomic_int assigned_core;
-       int migrate_to;        // Affinity hint: core to migrate to (-1 = none)
-       int main_thread_only;  // If set, scheduler threads skip this actor
-       SPSCQueue spsc_queue;  // Lock-free same-core messaging
+       atomic_int migrate_to;           // Affinity hint: core to migrate to (-1 = none)
+       atomic_int main_thread_only;     // If set, scheduler threads skip this actor
+       SPSCQueue* spsc_queue;           // Lock-free same-core messaging (lazy alloc)
+       _Atomic(ActorReplySlot*) reply_slot;  // Non-NULL during ask/reply
+       atomic_flag step_lock;           // Prevents concurrent step() during work-steal
    } ActorBase;
    ```
 
@@ -199,7 +202,7 @@ IDENTIFIER("x") EQUALS NUMBER(42) PLUS IDENTIFIER("y")
    typedef struct {
        int type;
        int sender_id;
-       int payload_int;
+       intptr_t payload_int;
        void* payload_ptr;
        struct {
            void* data;
@@ -235,16 +238,18 @@ IDENTIFIER("x") EQUALS NUMBER(42) PLUS IDENTIFIER("y")
 +---------------------------------------------------------+
 ```
 
-**Partitioned Scheduling:**
-1. Actors statically assigned to cores at spawn
-2. Each core processes only its local actors in the fast path
-3. Same-core messages delivered directly to mailbox (no queue overhead)
-4. Cross-core messages enqueued to target core's lock-free incoming queue
+**Locality-Aware Placement:**
+1. Actors placed on the caller's core at spawn time
+2. Main thread spawns default to core 0, keeping top-level actor groups co-located
+3. Actors spawned from within actor handlers inherit the parent's core
+4. Each core processes only its local actors in the fast path
+5. Same-core messages delivered directly to mailbox (no queue overhead)
+6. Cross-core messages enqueued to target core's lock-free incoming queue
 
 **Message-Driven Migration:**
-1. Cross-core sender sets `migrate_to` hint on target actor
-2. Owning scheduler processes actor first, then checks migration hint
-3. Actor relocated to sender's core using ascending core-id lock ordering
+1. Cross-core sender sets `migrate_to` hint on target actor, requesting migration to the sender's core
+2. Owning scheduler checks migration hints after coalesce-buffer processing (targeted, O(batch_size)) and during idle actor scans (full, O(actor_count))
+3. Actor relocated using ascending core-id lock ordering with non-blocking try-lock
 4. Migrated-actor messages forwarded with spin-retry to prevent drops
 
 **Work Stealing (idle cores):**

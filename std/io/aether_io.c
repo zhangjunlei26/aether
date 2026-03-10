@@ -35,7 +35,7 @@ void io_print_int(int value) {
     fflush(stdout);
 }
 
-void io_print_float(float value) {
+void io_print_float(double value) {
     printf("%g\n", value);
     fflush(stdout);
 }

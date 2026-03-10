@@ -1,17 +1,34 @@
-// Import aliasing demonstration
-// Shows how to import modules with shorter aliases
-//
-// Syntax:
-//   import std.math           -- import std.math, use as 'math'
-//   import std.string as str  -- import std.string, refer to it as 'str'
-//
-// Then use: math.sqrt(16), str.new("hello")
+// Import demonstration — importing and using stdlib modules
+// Run with: ae run examples/basics/imports.ae
 
 import std.string
 
 main() {
-    // Using imported string functions
-    print("=== Import Example ===\n");
-    print("Imported std.string module\n");
-    print("String functions are now available!\n");
+    print("=== Import Example ===\n\n")
+
+    // Use imported string module
+    s = string.new("Hello, Aether!")
+    defer string.release(s)
+
+    print("Created string with length: ")
+    print(string.length(s))
+    print("\n")
+
+    // String operations
+    if string.contains(s, "Aether") == 1 {
+        print("String contains 'Aether'\n")
+    }
+
+    if string.starts_with(s, "Hello") == 1 {
+        print("String starts with 'Hello'\n")
+    }
+
+    // Conversion
+    num = string.from_int(42)
+    defer string.release(num)
+    print("Number as string, length: ")
+    print(string.length(num))
+    print("\n")
+
+    print("\nImport example done\n")
 }

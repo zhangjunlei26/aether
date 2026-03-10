@@ -7,7 +7,7 @@
 void io_print(const char* str);
 void io_print_line(const char* str);
 void io_print_int(int value);
-void io_print_float(float value);
+void io_print_float(double value);
 
 // File I/O
 AetherString* io_read_file(const char* path);

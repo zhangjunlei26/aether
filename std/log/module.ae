@@ -10,7 +10,7 @@ extern log_init(filename: string, min_level: int)
 extern log_shutdown()
 
 // Core logging (variadic not fully supported, use with format string)
-extern log_write(level: int, message: string)
+extern log_write(level: int, msg: string)
 
 // Configuration
 extern log_set_level(level: int)

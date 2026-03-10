@@ -120,5 +120,7 @@ main() {
 
     // Final stats
     scoreboard ! ShowStats {};
+
+    wait_for_idle();
     print("\nGame done\n");
 }

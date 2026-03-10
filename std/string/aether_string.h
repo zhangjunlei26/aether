@@ -31,10 +31,10 @@ int string_equals(AetherString* a, AetherString* b);
 int string_compare(AetherString* a, AetherString* b);
 
 // String methods
-int string_starts_with(AetherString* str, AetherString* prefix);
-int string_ends_with(AetherString* str, AetherString* suffix);
-int string_contains(AetherString* str, AetherString* substring);
-int string_index_of(AetherString* str, AetherString* substring);
+int string_starts_with(AetherString* str, const char* prefix);
+int string_ends_with(AetherString* str, const char* suffix);
+int string_contains(AetherString* str, const char* substring);
+int string_index_of(AetherString* str, const char* substring);
 AetherString* string_substring(AetherString* str, int start, int end);
 AetherString* string_to_upper(AetherString* str);
 AetherString* string_to_lower(AetherString* str);
@@ -46,7 +46,9 @@ typedef struct {
     size_t count;
 } AetherStringArray;
 
-AetherStringArray* string_split(AetherString* str, AetherString* delimiter);
+AetherStringArray* string_split(AetherString* str, const char* delimiter);
+int string_array_size(AetherStringArray* arr);
+AetherString* string_array_get(AetherStringArray* arr, int index);
 void string_array_free(AetherStringArray* arr);
 
 // Conversion

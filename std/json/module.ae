@@ -6,7 +6,7 @@
 // JSON_STRING = 3, JSON_ARRAY = 4, JSON_OBJECT = 5
 
 // Parsing and serialization
-extern json_parse(json_str: ptr) -> ptr
+extern json_parse(json_str: string) -> ptr
 extern json_stringify(value: ptr) -> ptr
 extern json_free(value: ptr)
 
@@ -20,10 +20,10 @@ extern json_get_number(value: ptr) -> float
 extern json_get_int(value: ptr) -> int
 extern json_get_string(value: ptr) -> ptr
 
-// Object operations
-extern json_object_get(obj: ptr, key: ptr) -> ptr
-extern json_object_set(obj: ptr, key: ptr, value: ptr)
-extern json_object_has(obj: ptr, key: ptr) -> int
+// Object operations (keys are raw strings)
+extern json_object_get(obj: ptr, key: string) -> ptr
+extern json_object_set(obj: ptr, key: string, value: ptr)
+extern json_object_has(obj: ptr, key: string) -> int
 
 // Array operations
 extern json_array_get(arr: ptr, index: int) -> ptr
@@ -34,6 +34,6 @@ extern json_array_size(arr: ptr) -> int
 extern json_create_null() -> ptr
 extern json_create_bool(value: int) -> ptr
 extern json_create_number(value: float) -> ptr
-extern json_create_string(value: ptr) -> ptr
+extern json_create_string(value: string) -> ptr
 extern json_create_array() -> ptr
 extern json_create_object() -> ptr

@@ -534,10 +534,40 @@ void* AETHER_HOT scheduler_thread(void* arg) {
         // TIER 1 ALWAYS ON: Adjust adaptive batch size based on what we received
         adaptive_batch_adjust(&sched->batch_state, sched->coalesce_buffer.count);
 
-        // Scan actor list for SPSC messages and migration only when NO work
-        // came from from_queues (or periodically).  With 200k+ actors, the O(N)
-        // scan dominates if run every iteration; gating it keeps throughput high.
-        // The fused deliver+process above handles all from_queue work already.
+        // Check migration for actors we just processed in the coalesce buffer.
+        // This is O(coalesce_count) not O(actor_count) — cheap and targeted.
+        // Without this, cross-core topologies (e.g. ring) never converge.
+        for (int mi = 0; mi < sched->coalesce_buffer.count; mi++) {
+            ActorBase* mig_actor = (ActorBase*)sched->coalesce_buffer.actors[mi];
+            int mig_to = atomic_load_explicit(&mig_actor->migrate_to, memory_order_relaxed);
+            if (unlikely(mig_to >= 0 && mig_to != sched->core_id && mig_to < num_cores &&
+                         atomic_load_explicit(&mig_actor->assigned_core, memory_order_relaxed) == sched->core_id)) {
+                Scheduler* dst = &schedulers[mig_to];
+                OptimizedSpinlock* first_lock  = (sched->core_id < mig_to) ? &sched->actor_lock : &dst->actor_lock;
+                OptimizedSpinlock* second_lock = (sched->core_id < mig_to) ? &dst->actor_lock : &sched->actor_lock;
+                if (!atomic_flag_test_and_set_explicit(&first_lock->lock, memory_order_acquire)) {
+                    if (!atomic_flag_test_and_set_explicit(&second_lock->lock, memory_order_acquire)) {
+                        if (dst->actor_count < dst->capacity) {
+                            // Find and remove actor from our list
+                            for (int ai = 0; ai < sched->actor_count; ai++) {
+                                if (sched->actors[ai] == mig_actor) {
+                                    sched->actors[ai] = sched->actors[--sched->actor_count];
+                                    atomic_store_explicit(&mig_actor->assigned_core, mig_to, memory_order_relaxed);
+                                    atomic_store_explicit(&mig_actor->migrate_to, -1, memory_order_relaxed);
+                                    dst->actors[dst->actor_count++] = mig_actor;
+                                    break;
+                                }
+                            }
+                        }
+                        atomic_flag_clear_explicit(&second_lock->lock, memory_order_release);
+                    }
+                    atomic_flag_clear_explicit(&first_lock->lock, memory_order_release);
+                }
+            }
+        }
+
+        // Scan actor list for SPSC messages and migration when idle.
+        // With heavy from_queue traffic, migration is already handled above.
         if (sched->coalesce_buffer.count == 0) {
         atomic_thread_fence(memory_order_acquire);
         ActorBase** local_actors     = sched->actors;
@@ -762,6 +792,10 @@ void scheduler_init(int cores) {
     atomic_store_explicit(&g_threads_ready, 0, memory_order_relaxed);
     // Reset global overflow counter between scheduler lifecycles.
     atomic_store_explicit(&g_overflow_total, 0, memory_order_relaxed);
+    // Reset main-thread send counter between scheduler lifecycles.
+    // Without this, count_pending_messages() sees a stale sent > processed
+    // delta from the prior run and scheduler_wait() spins forever.
+    atomic_store_explicit(&main_thread_sent, 0, memory_order_relaxed);
 
     // TIER 2: Auto-detect hardware capabilities first
     aether_detect_hardware();
@@ -931,6 +965,10 @@ static inline int count_pending_messages(void) {
     return total;
 }
 
+// Wait for all pending messages to be processed (quiescence).
+// Does NOT stop or join scheduler threads — they keep running and can
+// process new messages sent after this function returns.
+// Safe to call multiple times in a program (e.g. between test phases).
 void scheduler_wait() {
     // MAIN THREAD MODE: All messages processed synchronously, nothing to wait for
     // This is the fastest path for single-actor programs (counting benchmark)
@@ -946,79 +984,84 @@ void scheduler_wait() {
             break;
         }
     }
-    // If still running, wait for all messages to be processed first
-    if (still_running) {
-        // Wait until there are no pending messages in any queue, mailbox, or
-        // SPSC queue.  The sent/processed counter approach is fragile because
-        // messages that bounce through overflow buffers, self-channels, and
-        // forwarding paths can cause counter drift.  Checking actual pending
-        // message counts is more robust.
-        // Wait until there are no pending messages in any from_queue or
-        // overflow buffer.  We use a stability check: 5 consecutive reads
-        // that return 0 with aether_usleep(100) between them (~500us total).
-        // This gives scheduler threads time to finish any in-progress step()
-        // calls and enqueue any resulting messages.
-        int stable_count = 0;
-        uint64_t last_processed = 0;
-        int stall_checks = 0;
-        while (stable_count < 5) {
-            atomic_thread_fence(memory_order_acquire);
-
-            int pending = count_pending_messages();
-
-            if (pending == 0) {
-                stable_count++;
-            } else {
-                stable_count = 0;
-            }
-
-            // Periodic progress check (diagnostics only)
-            stall_checks++;
-#ifdef AETHER_DEBUG_ORDERING
-            if (stall_checks % 2000 == 0) {
-                uint64_t total_p = 0, total_s = 0;
-                for (int i = 0; i < num_cores; i++) {
-                    total_p += schedulers[i].messages_processed;
-                    total_s += schedulers[i].messages_sent;
-                }
-                fprintf(stderr, "[WAIT %dk] pending=%d sent=%llu proc=%llu delta=%lld\n",
-                        stall_checks/1000, pending,
-                        (unsigned long long)total_s, (unsigned long long)total_p,
-                        (long long)(total_s - total_p));
-                fflush(stderr);
-                if (total_p == last_processed && pending > 0) {
-                    fprintf(stderr, "  WARNING: no progress since last check!\n");
-                    fflush(stderr);
-                }
-                last_processed = total_p;
-            }
-#else
-            (void)last_processed;
-            (void)stall_checks;
-#endif
-
-            // Adaptive wait: spin for fast drain, usleep only for bulk.
-            // usleep() has ~10µs minimum latency on macOS; during the
-            // convergence phase (pending < 10k), this dominates wall time.
-            if (pending <= 10000) {
-                for (int sp = 0; sp < 200; sp++) AETHER_PAUSE();
-                aether_sched_yield();
-            } else {
-                aether_usleep(100);  // 100 microseconds
-            }
-        }
-
-        // Signal threads to stop
-        scheduler_stop();
+    if (!still_running) {
+        return;  // Threads already stopped, nothing to wait for
     }
 
-    // Join threads — but only once. If wait_for_idle() already joined them,
-    // a second call (from the generated shutdown sequence) must be a no-op.
+    // Wait until there are no pending messages in any from_queue or
+    // overflow buffer.  We use a stability check: 5 consecutive reads
+    // that return 0 with aether_usleep(100) between them (~500us total).
+    // This gives scheduler threads time to finish any in-progress step()
+    // calls and enqueue any resulting messages.
+    int stable_count = 0;
+    uint64_t last_processed = 0;
+    int stall_checks = 0;
+    while (stable_count < 5) {
+        atomic_thread_fence(memory_order_acquire);
+
+        int pending = count_pending_messages();
+
+        if (pending == 0) {
+            stable_count++;
+        } else {
+            stable_count = 0;
+        }
+
+        // Periodic progress check (diagnostics only)
+        stall_checks++;
+#ifdef AETHER_DEBUG_ORDERING
+        if (stall_checks % 2000 == 0) {
+            uint64_t total_p = 0, total_s = 0;
+            for (int i = 0; i < num_cores; i++) {
+                total_p += schedulers[i].messages_processed;
+                total_s += schedulers[i].messages_sent;
+            }
+            fprintf(stderr, "[WAIT %dk] pending=%d sent=%llu proc=%llu delta=%lld\n",
+                    stall_checks/1000, pending,
+                    (unsigned long long)total_s, (unsigned long long)total_p,
+                    (long long)(total_s - total_p));
+            fflush(stderr);
+            if (total_p == last_processed && pending > 0) {
+                fprintf(stderr, "  WARNING: no progress since last check!\n");
+                fflush(stderr);
+            }
+            last_processed = total_p;
+        }
+#else
+        (void)last_processed;
+        (void)stall_checks;
+#endif
+
+        // Adaptive wait: spin for fast drain, usleep only for bulk.
+        // usleep() has ~10µs minimum latency on macOS; during the
+        // convergence phase (pending < 10k), this dominates wall time.
+        if (pending <= 10000) {
+            for (int sp = 0; sp < 200; sp++) AETHER_PAUSE();
+            aether_sched_yield();
+        } else {
+            aether_usleep(100);  // 100 microseconds
+        }
+    }
+}
+
+// Full shutdown: wait for quiescence, stop threads, join them.
+// Called once at program exit.  Safe to call even if threads were never
+// started (main-thread mode) or already shut down.
+void scheduler_shutdown() {
+    // Wait for any in-flight messages first
+    scheduler_wait();
+
+    // Signal threads to stop
+    scheduler_stop();
+
+    // Join threads — but only once.
     // pthread_join on an already-joined thread is undefined behaviour (crash on Linux).
     if (atomic_exchange_explicit(&g_threads_joined, 1, memory_order_acq_rel) == 0) {
         for (int i = 0; i < num_cores; i++) {
-            int result = pthread_join(schedulers[i].thread, NULL);
-            (void)result;  // Suppress unused warning
+            if (schedulers[i].thread) {
+                int result = pthread_join(schedulers[i].thread, NULL);
+                (void)result;  // Suppress unused warning
+            }
         }
 
         // Cleanup NUMA resources
@@ -1221,9 +1264,10 @@ void scheduler_send_remote(ActorBase* actor, Message msg, int from_core) {
         return;
     }
 
-    // Cross-core send: set affinity hint so communicating actors converge.
-    // STABLE CONVERGENCE: Always migrate to the LOWER core ID to prevent oscillation.
-    // This ensures ping-pong actors eventually end up on the same core.
+    // Cross-core send: migrate target actor to sender's core.
+    // This converges communicating actors onto the same core, turning cross-core
+    // sends into local sends.  For ring/ping-pong patterns, convergence happens
+    // within a few messages.
     //
     // GUARD: Only set migrate_to if the actor has been activated (processed at least
     // one message).  Setting migrate_to on a freshly spawned actor before its first
@@ -1232,12 +1276,8 @@ void scheduler_send_remote(ActorBase* actor, Message msg, int from_core) {
     // path (scheduler_send_local) and bypasses Setup still queued on the old core.
     if (from_core >= 0 && from_core == current_core_id && !actor->auto_process &&
         atomic_load_explicit(&actor->active, memory_order_relaxed)) {
-        int target_migrate = (from_core < target_core) ? from_core : target_core;
-        // Only set if it would move the actor to a lower core (stable direction)
-        int cur_migrate = atomic_load_explicit(&actor->migrate_to, memory_order_relaxed);
-        if (target_migrate < atomic_load_explicit(&actor->assigned_core, memory_order_relaxed) &&
-            (cur_migrate < 0 || target_migrate < cur_migrate)) {
-            atomic_store_explicit(&actor->migrate_to, target_migrate, memory_order_relaxed);
+        if (from_core != target_core) {
+            atomic_store_explicit(&actor->migrate_to, from_core, memory_order_relaxed);
         }
     }
 
@@ -1346,37 +1386,50 @@ void scheduler_send_batch_add(ActorBase* actor, Message msg) {
 void scheduler_send_batch_flush(void) {
     if (!g_batch_buffer || g_batch_buffer->count == 0) return;
 
-    // === PHASE 1: Compute offsets for radix sort by core ===
+    int count = g_batch_buffer->count;
+
+    // === PHASE 1: Snapshot target cores and compute per-core counts ===
+    // Read assigned_core ONCE per message and store it.  The by_core[] counts
+    // recorded in batch_add can be stale if an actor migrated between add and
+    // flush — recomputing from a single consistent snapshot prevents the
+    // sorted_actors[] overflow that would result from a count/core mismatch.
+    int targets[BATCH_SEND_SIZE];
+    int by_core[MAX_CORES];
+    memset(by_core, 0, sizeof(by_core));
+
+    for (int i = 0; i < count; i++) {
+        int tc = atomic_load_explicit(&g_batch_buffer->actors[i]->assigned_core, memory_order_relaxed);
+        if (tc < 0 || tc >= num_cores) tc = g_batch_buffer->actors[i]->id % num_cores;
+        targets[i] = tc;
+        by_core[tc]++;
+    }
+
+    // === PHASE 2: Compute offsets for radix sort by core ===
     int offsets[MAX_CORES];
     int offset = 0;
     for (int c = 0; c < num_cores; c++) {
         offsets[c] = offset;
-        offset += g_batch_buffer->by_core[c];
+        offset += by_core[c];
     }
 
-    // === PHASE 2: Sort messages into per-core buckets ===
+    // === PHASE 3: Sort messages into per-core buckets ===
     void* sorted_actors[BATCH_SEND_SIZE];
     Message sorted_msgs[BATCH_SEND_SIZE];
     int positions[MAX_CORES];
-    memcpy(positions, offsets, sizeof(offsets));
+    memcpy(positions, offsets, num_cores * sizeof(int));
 
-    for (int i = 0; i < g_batch_buffer->count; i++) {
-        ActorBase* actor = g_batch_buffer->actors[i];
-        int target_core = atomic_load_explicit(&actor->assigned_core, memory_order_relaxed);
-        if (target_core < 0 || target_core >= num_cores) {
-            target_core = actor->id % num_cores;
-        }
-        int pos = positions[target_core]++;
-        sorted_actors[pos] = actor;
+    for (int i = 0; i < count; i++) {
+        int pos = positions[targets[i]]++;
+        sorted_actors[pos] = g_batch_buffer->actors[i];
         sorted_msgs[pos] = g_batch_buffer->messages[i];
     }
 
-    // === PHASE 3: Batch enqueue to each core (ONE atomic per core!) ===
+    // === PHASE 4: Batch enqueue to each core (ONE atomic per core!) ===
     uint64_t total_sent = 0;
     for (int c = 0; c < num_cores; c++) {
         int start = offsets[c];
-        int count = g_batch_buffer->by_core[c];
-        if (count == 0) continue;
+        int cnt = by_core[c];
+        if (cnt == 0) continue;
 
         // Batch send is always called from main thread (current_core_id = -1),
         // so use the main-thread SPSC channel (from_queues[MAX_CORES]).
@@ -1384,11 +1437,11 @@ void scheduler_send_batch_flush(void) {
             &schedulers[c].from_queues[MAX_CORES],
             &sorted_actors[start],
             &sorted_msgs[start],
-            count
+            cnt
         );
 
         // Fallback for overflow (rare) - scheduler_send_remote handles its own counting
-        for (int j = enqueued; j < count; j++) {
+        for (int j = enqueued; j < cnt; j++) {
             scheduler_send_remote(sorted_actors[start + j], sorted_msgs[start + j], -1);
         }
 
@@ -1409,7 +1462,9 @@ void scheduler_send_batch_flush(void) {
 // and cover the full derived-actor struct (e.g. sizeof(PingActor)).
 ActorBase* scheduler_spawn_pooled(int preferred_core, void (*step)(void*), size_t actor_size) {
     if (preferred_core < 0 || preferred_core >= num_cores) {
-        preferred_core = atomic_fetch_add(&next_actor_id, 1) % num_cores;
+        // Spawn on caller's core so parent→child messaging stays local.
+        // Main thread (current_core_id == -1) defaults to core 0.
+        preferred_core = (current_core_id >= 0) ? current_core_id : 0;
     }
     if (actor_size < sizeof(ActorBase)) actor_size = sizeof(ActorBase);
 

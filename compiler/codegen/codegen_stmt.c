@@ -313,15 +313,47 @@ static void generate_list_pattern_condition(CodeGenerator* gen, ASTNode* pattern
     }
 }
 
+// Check if any binding in the pattern is actually used by the arm body
+static int pattern_needs_array(ASTNode* pattern, ASTNode* body) {
+    if (!pattern || !body) return 0;
+    if (pattern->type == AST_PATTERN_LIST) {
+        for (int i = 0; i < pattern->child_count; i++) {
+            ASTNode* elem = pattern->children[i];
+            if (elem && elem->type == AST_PATTERN_VARIABLE && elem->value &&
+                expr_references_var(body, elem->value)) return 1;
+        }
+    } else if (pattern->type == AST_PATTERN_CONS && pattern->child_count >= 2) {
+        ASTNode* head = pattern->children[0];
+        ASTNode* tail = pattern->children[1];
+        if (head && head->type == AST_PATTERN_VARIABLE && head->value &&
+            expr_references_var(body, head->value)) return 1;
+        if (tail && tail->type == AST_PATTERN_VARIABLE && tail->value &&
+            expr_references_var(body, tail->value)) return 1;
+    }
+    return 0;
+}
+
 static void generate_list_pattern_bindings(CodeGenerator* gen, ASTNode* pattern,
-                                           const char* array_name, const char* len_name) {
+                                           ASTNode* match_expr, const char* len_name,
+                                           ASTNode* body) {
     if (!pattern) return;
+
+    // Only declare the array pointer if this arm actually uses element bindings
+    int needs_arr = pattern_needs_array(pattern, body);
+    if (needs_arr) {
+        print_indent(gen);
+        fprintf(gen->output, "int* _match_arr = ");
+        generate_expression(gen, match_expr);
+        fprintf(gen->output, ";\n");
+    }
 
     if (pattern->type == AST_PATTERN_LIST && pattern->child_count > 0) {
         for (int i = 0; i < pattern->child_count; i++) {
             ASTNode* elem = pattern->children[i];
             if (elem && elem->type == AST_PATTERN_VARIABLE && elem->value) {
-                print_line(gen, "int %s = %s[%d];", elem->value, array_name, i);
+                if (expr_references_var(body, elem->value)) {
+                    print_line(gen, "int %s = _match_arr[%d];", elem->value, i);
+                }
             }
         }
     } else if (pattern->type == AST_PATTERN_CONS && pattern->child_count >= 2) {
@@ -329,11 +361,15 @@ static void generate_list_pattern_bindings(CodeGenerator* gen, ASTNode* pattern,
         ASTNode* tail = pattern->children[1];
 
         if (head && head->type == AST_PATTERN_VARIABLE && head->value) {
-            print_line(gen, "int %s = %s[0];", head->value, array_name);
+            if (expr_references_var(body, head->value)) {
+                print_line(gen, "int %s = _match_arr[0];", head->value);
+            }
         }
         if (tail && tail->type == AST_PATTERN_VARIABLE && tail->value) {
-            print_line(gen, "int* %s = &%s[1];", tail->value, array_name);
-            print_line(gen, "int %s_len = %s - 1;", tail->value, len_name);
+            if (expr_references_var(body, tail->value)) {
+                print_line(gen, "int* %s = &_match_arr[1];", tail->value);
+                print_line(gen, "int %s_len = %s - 1;", tail->value, len_name);
+            }
         }
     }
 }
@@ -468,6 +504,12 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                     }
 
                     fprintf(gen->output, ";\n");
+                    // Suppress unused-variable warning for arrays used with list
+                    // pattern matching — the paired _len variable may be the only
+                    // one used when patterns only check size ([], [_], wildcard).
+                    if (is_array_init || (stmt->node_type && stmt->node_type->kind == TYPE_ARRAY)) {
+                        print_line(gen, "(void)%s;", stmt->value);
+                    }
                 }
             }
             break;
@@ -639,7 +681,6 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
 
                 // Check if any arm uses list patterns
                 int uses_list_patterns = has_list_patterns(stmt);
-                char array_name[64] = "_match_arr";
                 char len_name[64] = "_match_len";
 
                 // Wrap match in a block and store the match expression in a temp
@@ -647,12 +688,8 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                 print_line(gen, "{");
                 indent(gen);
 
-                // If using list patterns, generate array setup
+                // If using list patterns, generate length variable for conditions
                 if (uses_list_patterns) {
-                    print_indent(gen);
-                    fprintf(gen->output, "int* %s = ", array_name);
-                    generate_expression(gen, match_expr);
-                    fprintf(gen->output, ";\n");
                     print_indent(gen);
                     fprintf(gen->output, "int %s = ", len_name);
                     generate_expression(gen, match_expr);
@@ -742,7 +779,7 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
 
                     // Generate list pattern bindings if needed
                     if (is_list_pattern) {
-                        generate_list_pattern_bindings(gen, pattern, array_name, len_name);
+                        generate_list_pattern_bindings(gen, pattern, match_expr, len_name, result);
                     }
 
                     if (result->type == AST_BLOCK) {
@@ -966,13 +1003,89 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                     }
                 } else {
                     // Multiple arguments - first is format string
-                    fprintf(gen->output, "printf(");
-                    generate_expression(gen, stmt->children[0]);
-                    for (int i = 1; i < stmt->child_count; i++) {
-                        fprintf(gen->output, ", ");
-                        generate_expression(gen, stmt->children[i]);
+                    // Auto-fix format specifiers based on argument types to prevent
+                    // undefined behavior (e.g. print("Test: %s", 201) would crash)
+                    ASTNode* fmt_arg = stmt->children[0];
+                    if (fmt_arg->type == AST_LITERAL && fmt_arg->node_type &&
+                        fmt_arg->node_type->kind == TYPE_STRING && fmt_arg->value) {
+                        // Parse format string and replace specifiers with type-correct ones
+                        const char* fmt = fmt_arg->value;
+                        fprintf(gen->output, "printf(\"");
+                        int arg_idx = 1;  // index into stmt->children for arguments
+                        for (int fi = 0; fmt[fi]; fi++) {
+                            if (fmt[fi] == '%' && fmt[fi + 1]) {
+                                fi++;
+                                // Skip flags, width, precision
+                                while (fmt[fi] == '-' || fmt[fi] == '+' || fmt[fi] == ' ' ||
+                                       fmt[fi] == '#' || fmt[fi] == '0') fi++;
+                                while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++;
+                                if (fmt[fi] == '.') {
+                                    fi++;
+                                    while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++;
+                                }
+                                if (fmt[fi] == '%') {
+                                    // Literal %%
+                                    fprintf(gen->output, "%%%%");
+                                } else if (arg_idx < stmt->child_count) {
+                                    // Replace with type-correct specifier
+                                    ASTNode* arg = stmt->children[arg_idx];
+                                    Type* atype = arg->node_type;
+                                    if (atype && atype->kind == TYPE_FLOAT) {
+                                        fprintf(gen->output, "%%f");
+                                    } else if (atype && atype->kind == TYPE_INT64) {
+                                        fprintf(gen->output, "%%lld");
+                                    } else if (atype && (atype->kind == TYPE_STRING || atype->kind == TYPE_PTR)) {
+                                        fprintf(gen->output, "%%s");
+                                    } else if (atype && atype->kind == TYPE_BOOL) {
+                                        fprintf(gen->output, "%%s");
+                                    } else {
+                                        fprintf(gen->output, "%%d");
+                                    }
+                                    arg_idx++;
+                                } else {
+                                    // More specifiers than args — keep original
+                                    fprintf(gen->output, "%%%c", fmt[fi]);
+                                }
+                            } else {
+                                // Re-escape special characters for C string output
+                                switch (fmt[fi]) {
+                                    case '\n': fprintf(gen->output, "\\n");  break;
+                                    case '\t': fprintf(gen->output, "\\t");  break;
+                                    case '\r': fprintf(gen->output, "\\r");  break;
+                                    case '\0': fprintf(gen->output, "\\0");  break;
+                                    case '\\': fprintf(gen->output, "\\\\"); break;
+                                    case '"':  fprintf(gen->output, "\\\""); break;
+                                    default:   fprintf(gen->output, "%c", fmt[fi]); break;
+                                }
+                            }
+                        }
+                        fprintf(gen->output, "\", ");
+                        // Emit arguments with type-safe wrappers
+                        for (int i = 1; i < stmt->child_count; i++) {
+                            if (i > 1) fprintf(gen->output, ", ");
+                            ASTNode* arg = stmt->children[i];
+                            Type* atype = arg->node_type;
+                            if (atype && atype->kind == TYPE_INT64) {
+                                fprintf(gen->output, "(long long)");
+                                generate_expression(gen, arg);
+                            } else if (atype && atype->kind == TYPE_BOOL) {
+                                generate_expression(gen, arg);
+                                fprintf(gen->output, " ? \"true\" : \"false\"");
+                            } else if (atype && (atype->kind == TYPE_STRING || atype->kind == TYPE_PTR)) {
+                                fprintf(gen->output, "_aether_safe_str(");
+                                generate_expression(gen, arg);
+                                fprintf(gen->output, ")");
+                            } else {
+                                generate_expression(gen, arg);
+                            }
+                        }
+                        fprintf(gen->output, ");\n");
+                    } else {
+                        // Non-literal format string — use %s to prevent format injection
+                        fprintf(gen->output, "printf(\"%%s\", ");
+                        generate_expression(gen, stmt->children[0]);
+                        fprintf(gen->output, ");\n");
                     }
-                    fprintf(gen->output, ");\n");
                 }
                 // Flush stdout so partial-line output appears immediately
                 // (without this, print(".") in a loop won't show until \n)

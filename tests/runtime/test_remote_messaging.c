@@ -120,8 +120,7 @@ int main() {
     printf("========================================\n\n");
     
     printf("Stopping scheduler...\n");
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     free(actor);
     

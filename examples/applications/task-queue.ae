@@ -96,5 +96,6 @@ main() {
     w1 ! WorkerStatus {};
     w2 ! WorkerStatus {};
 
+    wait_for_idle();
     print("Task queue done\n");
 }

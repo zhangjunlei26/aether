@@ -61,7 +61,7 @@ typedef struct {
     size_t fatal_count;
 } LogStats;
 
-LogStats log_get_stats();
+LogStats* log_get_stats();
 void log_print_stats();
 
 #endif // AETHER_LOG_H

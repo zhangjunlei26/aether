@@ -35,24 +35,6 @@ main() {
 
 **Origin:** [Issue #39](https://github.com/nicolasmd87/aether/issues/39) — user requested shell execution and terminal control (`clear`, capturing output)
 
-## Documentation Gaps
-
-### Built-in functions not documented on `main`
-
-The language reference on the development branch documents `clock_ns()`, `sleep()`, and other builtins under **Built-in Functions → Timing / Concurrency**, but this section is incomplete on `main`. Merge pending.
-
-| Built-in | Status | Notes |
-|----------|--------|-------|
-| `print(value)` | Documented | |
-| `println(value)` | Documented | |
-| `clock_ns()` | Not on `main` | Returns nanoseconds as `long` |
-| `sleep(ms)` | Not on `main` | Millisecond pause |
-| `spawn(Actor())` | Not on `main` | Actor creation |
-| `wait_for_idle()` | Not on `main` | Wait for actors to finish |
-| `getenv(name)` | Not on `main` | Environment variable lookup |
-| `atoi(s)` | Not on `main` | String to int (builtin, no extern needed) |
-| `exit(code)` | Not on `main` | Terminate program with exit code |
-
 ## Tooling
 
 ### Planned

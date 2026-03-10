@@ -176,8 +176,7 @@ void test_scheduler_basic_messaging(void) {
     int final_count = atomic_load(&actor->count);
     int final_last = atomic_load(&actor->last_value);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_EQ(100, final_count);
@@ -224,8 +223,7 @@ void test_scheduler_high_throughput(void) {
     
     int final_count = atomic_load(&actor->count);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_EQ(TOTAL, final_count);
@@ -284,8 +282,7 @@ void test_scheduler_message_ordering(void) {
         }
     }
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_TRUE(ordered);
@@ -337,8 +334,7 @@ void test_scheduler_cross_core(void) {
     int count0 = atomic_load(&actor0->count);
     int count1 = atomic_load(&actor1->count);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     ASSERT_EQ(0, count0);
@@ -361,8 +357,7 @@ void test_scheduler_exit_clean(void) {
     // Should exit cleanly without hanging
     long start = get_time_ms();
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     long end = get_time_ms();
@@ -403,8 +398,7 @@ void test_scheduler_backpressure(void) {
     
     int final_count = atomic_load(&actor->count);
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
     
     // With backpressure, should process all or nearly all messages

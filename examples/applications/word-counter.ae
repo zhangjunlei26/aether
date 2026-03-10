@@ -67,5 +67,6 @@ main() {
 
     processor ! PrintStats {};
 
+    wait_for_idle();
     print("\nWord counter done\n");
 }

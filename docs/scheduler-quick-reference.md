@@ -10,7 +10,7 @@ Single-actor programs bypass the scheduler entirely. When only one actor exists 
 
 **Mechanism:**
 - `scheduler_start()` returns immediately
-- `scheduler_wait()` returns immediately
+- `scheduler_wait()` returns immediately (non-destructive; does not stop threads)
 - `aether_send_message` processes synchronously via `aether_send_message_sync`
 - Zero-copy: message data passed directly from caller's stack
 
@@ -37,8 +37,18 @@ for (int i = 0; i < 10000; i++) {
     scheduler_send_remote(actor, msg, current_core_id);
 }
 
-// Wait for all messages to be processed, then stop
-scheduler_wait();  // Blocks until idle, then stops and joins threads
+// Wait for quiescence (non-destructive, can be called multiple times)
+scheduler_wait();
+
+// Can send more messages and wait again
+for (int i = 0; i < 5000; i++) {
+    Message msg = message_create_simple(1, 0, i);
+    scheduler_send_remote(actor, msg, current_core_id);
+}
+scheduler_wait();
+
+// At program exit: wait for quiescence, stop and join scheduler threads
+scheduler_shutdown();
 ```
 
 ## Actor Allocation
@@ -82,7 +92,7 @@ sender -> scheduler_send_local -> mailbox (direct) -> actor step
 
 ### Mailbox Size
 ```c
-#define MAILBOX_SIZE 256  // In actor_state_machine.h (must be power of 2)
+#define MAILBOX_SIZE 32   // In actor_state_machine.h (must be power of 2)
 ```
 
 ### Message Pool
@@ -93,12 +103,14 @@ sender -> scheduler_send_local -> mailbox (direct) -> actor step
 
 ### Cross-Core Queue
 ```c
-#define QUEUE_SIZE 16384  // In lockfree_queue.h
+#define QUEUE_SIZE 1024  // In lockfree_queue.h
 ```
 
 ## Idle Detection
 
-`scheduler_wait()` blocks until all messages have been processed. It uses per-core counters to detect idle state without atomic contention on the message-passing hot path:
+`scheduler_wait()` blocks until all messages have been processed (quiescence). It is **non-destructive**: scheduler threads continue running after it returns, so it can be called multiple times in a program (e.g., between test phases or message bursts). It uses per-core counters to detect idle state without atomic contention on the message-passing hot path:
+
+`scheduler_shutdown()` calls `scheduler_wait()` internally, then stops scheduler threads and joins them. Call it once at program exit.
 
 ```c
 // Per-core counters in Scheduler struct
@@ -115,7 +127,9 @@ Messages sent from the main thread (before scheduler threads start) use a separa
 
 ## Core Assignment and Migration
 
-Actors are assigned to cores at spawn time via round-robin (`actor_id % num_cores`). During operation, cross-core senders set a `migrate_to` hint. The owning scheduler migrates the actor after processing, co-locating it with its most frequent communicator.
+Actors are assigned to cores at spawn time using locality-aware placement: the runtime places each actor on the caller's core so that parent-child messaging stays local. Actors spawned from the main thread default to core 0, keeping all top-level actors co-located for efficient intra-group messaging. Actors spawned from within actor handlers (on scheduler threads) inherit the parent's core.
+
+During operation, cross-core senders set a `migrate_to` hint on the target actor. The owning scheduler checks migration hints after processing messages in the coalesce buffer and migrates the actor to the sender's core. This co-locates communicating actors regardless of their initial placement.
 
 Both migration and work stealing use ascending core-id lock ordering to prevent deadlock.
 
@@ -146,10 +160,10 @@ Both migration and work stealing use ascending core-id lock ordering to prevent 
 - Avoid blocking operations in actor step functions
 
 ### Crashes
-- Verify all actor structs include `migrate_to` field between `assigned_core` (atomic_int) and `spsc_queue`
+- Verify all actor structs match `ActorBase` layout (fields: `active`, `id`, `mailbox`, `step`, `thread`, `auto_process`, `assigned_core`, `migrate_to`, `main_thread_only`, `spsc_queue`, `reply_slot`, `step_lock`)
 - Initialize `migrate_to = -1` after actor creation
 - Use `scheduler_send_remote` instead of direct mailbox writes for cross-core messages
-- Call `scheduler_stop` and `scheduler_wait` before process exit
+- Call `scheduler_shutdown()` before process exit (waits for quiescence, stops and joins threads)
 
 ## Files Reference
 

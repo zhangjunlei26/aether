@@ -2,20 +2,20 @@
 // Import with: import std.io
 
 // Console I/O
-extern io_print(str: ptr)
-extern io_print_line(str: ptr)
+extern io_print(str: string)
+extern io_print_line(str: string)
 extern io_print_int(value: int)
 extern io_print_float(value: float)
 
 // File I/O
-extern io_read_file(path: ptr) -> ptr
-extern io_write_file(path: ptr, content: ptr) -> int
-extern io_append_file(path: ptr, content: ptr) -> int
-extern io_file_exists(path: ptr) -> int
-extern io_delete_file(path: ptr) -> int
+extern io_read_file(path: string) -> ptr
+extern io_write_file(path: string, content: string) -> int
+extern io_append_file(path: string, content: string) -> int
+extern io_file_exists(path: string) -> int
+extern io_delete_file(path: string) -> int
 
 // File info
-extern io_file_info(path: ptr) -> ptr
+extern io_file_info(path: string) -> ptr
 extern io_file_info_free(info: ptr)
 
 // Environment variables

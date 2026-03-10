@@ -848,8 +848,8 @@ result = utils.double_value(21);
 | `std.http` | `http` | HTTP client & server (`http.get()`, `http.server_create()`) |
 | `std.tcp` | `tcp` | TCP sockets (`tcp.connect()`, `tcp.send()`) |
 | `std.math` | `math` | Math functions (`math.sqrt()`, `math.sin()`) |
-| `std.log` | `log` | Logging utilities (`log.init()`, `log.info()`) |
-| `std.io` | `io` | Input/output (`io.read_line()`, `io.getenv()`) |
+| `std.log` | `log` | Logging utilities (`log.init()`, `log.write()`) |
+| `std.io` | `io` | Input/output (`io.print()`, `io.getenv()`) |
 
 ---
 

@@ -31,13 +31,9 @@ TEST_CATEGORY(string_char_at, TEST_CATEGORY_STDLIB) {
 
 TEST_CATEGORY(string_index_of, TEST_CATEGORY_STDLIB) {
     AetherString* s = string_from_cstr("Hello World");
-    AetherString* world = string_from_cstr("World");
-    AetherString* xyz = string_from_cstr("xyz");
-    ASSERT_EQ(6, string_index_of(s, world));
-    ASSERT_EQ(-1, string_index_of(s, xyz));
+    ASSERT_EQ(6, string_index_of(s, "World"));
+    ASSERT_EQ(-1, string_index_of(s, "xyz"));
     string_free(s);
-    string_free(world);
-    string_free(xyz);
 }
 
 TEST_CATEGORY(string_empty, TEST_CATEGORY_STDLIB) {

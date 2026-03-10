@@ -20,7 +20,7 @@ Functions are called using **namespace-style syntax**: `namespace.function()`
 | `import std.list` | `list` | `list.new()`, `list.add(l, item)` |
 | `import std.map` | `map` | `map.new()`, `map.put(m, key, val)` |
 | `import std.math` | `math` | `math.sqrt(x)`, `math.sin(x)` |
-| `import std.log` | `log` | `log.info(msg)`, `log.error(msg)` |
+| `import std.log` | `log` | `log.init(file, level)`, `log.write(level, msg)` |
 
 ---
 
@@ -191,13 +191,20 @@ print("Float: %f\n", pi)
 
 ### Additional I/O
 
-- `io.print(str)` - Print AetherString
-- `io.read_line()` - Read line from stdin
-- `io.read_file(path)` - Read entire file
+- `io.print(str)` - Print string
+- `io.print_line(str)` - Print string with newline
+- `io.print_int(value)` - Print integer
+- `io.print_float(value)` - Print float
+- `io.read_file(path)` - Read entire file (returns ptr — use `string.to_cstr()` to print)
 - `io.write_file(path, content)` - Write to file
-- `io.file_info(path)` - Get file metadata
-- `io.getenv(name)` - Get environment variable
+- `io.append_file(path, content)` - Append to file
+- `io.file_exists(path)` - Check if file exists (returns 1/0)
+- `io.delete_file(path)` - Delete file
+- `io.file_info(path)` - Get file metadata (returns ptr)
+- `io.file_info_free(info)` - Free file info
+- `io.getenv(name)` - Get environment variable (returns ptr — use `string.to_cstr()` to print)
 - `io.setenv(name, value)` - Set environment variable
+- `io.unsetenv(name)` - Unset environment variable
 
 ---
 
@@ -205,14 +212,14 @@ print("Float: %f\n", pi)
 
 ### Basic Operations
 
-- `abs_int(x)` - Absolute value (int)
-- `abs_float(x)` - Absolute value (float)
-- `min_int(a, b)` - Minimum (int)
-- `max_int(a, b)` - Maximum (int)
-- `min_float(a, b)` - Minimum (float)
-- `max_float(a, b)` - Maximum (float)
-- `clamp_int(x, min, max)` - Clamp value to range
-- `clamp_float(x, min, max)` - Clamp value to range
+- `math.abs_int(x)` - Absolute value (int)
+- `math.abs_float(x)` - Absolute value (float)
+- `math.min_int(a, b)` - Minimum (int)
+- `math.max_int(a, b)` - Maximum (int)
+- `math.min_float(a, b)` - Minimum (float)
+- `math.max_float(a, b)` - Maximum (float)
+- `math.clamp_int(x, min, max)` - Clamp value to range
+- `math.clamp_float(x, min, max)` - Clamp value to range
 
 ### Advanced Math
 
@@ -234,9 +241,9 @@ print("Float: %f\n", pi)
 
 ### Random Numbers
 
-- `random_seed(seed)` - Set random seed
-- `random_int(min, max)` - Random int in range [min, max]
-- `random_float()` - Random float in [0.0, 1.0)
+- `math.random_seed(seed)` - Set random seed
+- `math.random_int(min, max)` - Random int in range [min, max]
+- `math.random_float()` - Random float in [0.0, 1.0)
 
 ### Constants
 
@@ -432,32 +439,36 @@ main() {
 import std.log
 
 main() {
-    log.init("app.log", LOG_DEBUG)
-    log.debug("Starting application")
-    log.info("Processing...")
-    log.warn("Resource low")
-    log.error("Something failed")
+    log.init("app.log", 0)  // 0 = DEBUG level
+
+    log.write(0, "Debug message")
+    log.write(1, "Info message")
+    log.write(2, "Warning message")
+    log.write(3, "Error message")
+
+    log.print_stats()
     log.shutdown()
 }
 ```
 
 ### Logging Functions
 
-- `log.init(filename, level)` - Initialize logging
+- `log.init(filename, level)` - Initialize logging to file with minimum level
 - `log.shutdown()` - Shutdown logging
+- `log.write(level, message)` - Write a log message at the given level
 - `log.set_level(level)` - Set minimum level
-- `log.debug(msg)` - Debug message
-- `log.info(msg)` - Info message
-- `log.warn(msg)` - Warning message
-- `log.error(msg)` - Error message
+- `log.set_colors(enabled)` - Enable/disable colored output (1/0)
+- `log.set_timestamps(enabled)` - Enable/disable timestamps (1/0)
 - `log.get_stats()` - Get logging statistics
+- `log.print_stats()` - Print logging statistics
 
 ### Log Levels
 
-- `LOG_DEBUG` = 0
-- `LOG_INFO` = 1
-- `LOG_WARN` = 2
-- `LOG_ERROR` = 3
+- `0` = DEBUG
+- `1` = INFO
+- `2` = WARN
+- `3` = ERROR
+- `4` = FATAL
 
 ---
 
@@ -505,18 +516,35 @@ main() {
 
 ## Memory Management
 
-### Automatic
+Aether uses **manual memory management** with `defer` as the primary tool.
 
-- Strings are reference-counted (use `retain`/`release`)
-- Actors managed by runtime
-- Stack allocations freed automatically
+### defer
 
-### Manual
+Use `defer` immediately after allocation to ensure cleanup at scope exit:
 
-For C interop or custom allocations:
-- Use `malloc()` and `free()` from standard C library
-- Manage string references with `string.retain()`/`string.release()`
-- Actors are freed when no longer referenced
+```aether
+import std.list
+import std.string
+
+main() {
+    mylist = list.new()
+    defer list.free(mylist)
+
+    s = string.new("hello")
+    defer string.free(s)
+
+    // ... use mylist and s ...
+    // Automatically freed when scope exits
+}
+```
+
+### Guidelines
+
+- **`defer type.free(x)`** — primary cleanup pattern for all allocations
+- **Stack allocations** — freed automatically (no `defer` needed)
+- **Actors** — managed by the runtime
+- **Managed strings** — reference-counted internally; use `string.free()` (alias for `string.release()`)
+- **`string.retain(str)`** — advanced: increment reference count when sharing ownership across C callbacks
 
 ---
 

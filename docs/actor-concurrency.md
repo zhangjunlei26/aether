@@ -9,12 +9,12 @@ The actor runtime includes several performance optimizations applied automatical
 ### Scheduler Design
 
 **Partitioned Multicore Scheduler:**
-- Static actor-to-core assignment at spawn time
+- Locality-aware actor placement at spawn time (actors placed on the caller's core)
 - Each core processes only its local actors in the fast path
 - Work stealing activated when cores become idle
 - Non-blocking work stealing using try-lock with ascending core-id lock ordering
 - NUMA-aware allocation when available (Linux, macOS, Windows)
-- Message-driven actor migration co-locates actors with their frequent communicators
+- Message-driven actor migration co-locates communicating actors on the sender's core
 
 **Work Stealing:**
 - Triggered after extended idle scheduler cycles
@@ -75,41 +75,42 @@ Each actor is a C struct. The first fields must match `ActorBase` layout:
 
 ```c
 typedef struct {
-    int active;
+    atomic_int active;
     int id;
     Mailbox mailbox;
     void (*step)(void*);
     pthread_t thread;
     int auto_process;
     atomic_int assigned_core;
-    int migrate_to;
-    int main_thread_only;  // If set, scheduler threads skip this actor
-    SPSCQueue spsc_queue;
-    // User state fields follow
+    atomic_int migrate_to;           // Affinity hint: core to migrate to (-1 = none)
+    atomic_int main_thread_only;     // If set, scheduler threads skip this actor
+    SPSCQueue* spsc_queue;           // Lock-free same-core messaging (lazy alloc)
+    _Atomic(ActorReplySlot*) reply_slot;  // Non-NULL during ask/reply
+    atomic_flag step_lock;           // Prevents concurrent step() during work-steal
 } ActorBase;
 ```
 
-User-defined actors extend this layout with additional fields after `spsc_queue`.
+User-defined actors extend this layout with additional fields after `step_lock`.
 
 ## Message Passing
 
 ### Mailbox
 
-Each actor has a ring buffer mailbox with 256 slots, sized for cache locality:
+Each actor has a ring buffer mailbox with 32 slots (power-of-2 for fast masking):
 
 ```c
-#define MAILBOX_SIZE 256
+#define MAILBOX_SIZE 32
 #define MAILBOX_MASK (MAILBOX_SIZE - 1)
 
 typedef struct {
     Message messages[MAILBOX_SIZE];
     int head;
     int tail;
-    int count;
+    _Atomic int count;
 } Mailbox;
 ```
 
-The mailbox is not thread-safe. Only the owning scheduler thread (or the actor's own thread for `auto_process` actors) reads from and writes to it. Cross-core messages arrive via the lock-free incoming queue and are delivered by the scheduler.
+The mailbox is a single-producer single-consumer (SPSC) queue. The owning scheduler thread delivers messages and calls the actor's step function. `count` is `_Atomic` to handle the rare case where work-stealing transfers an actor between cores mid-flight. Cross-core messages arrive via the scheduler's per-sender lock-free incoming queues and are delivered to the mailbox by the owning core.
 
 ### Message Structure
 
@@ -117,7 +118,7 @@ The mailbox is not thread-safe. Only the owning scheduler thread (or the actor's
 typedef struct {
     int type;           // Message type ID
     int sender_id;      // Sender actor ID
-    int payload_int;    // Integer payload (used by inline single-int messages)
+    intptr_t payload_int; // Integer payload (intptr_t to avoid truncation of actor refs on 64-bit)
     void* payload_ptr;  // Pointer to message data (pool or malloc allocated)
     struct {
         void* data;
@@ -178,16 +179,17 @@ In single-core mode, actors run cooperatively. The scheduler processes actors in
 
 ## Multi-Core Runtime
 
-The multi-core scheduler uses fixed core partitioning:
+The multi-core scheduler uses core partitioning with locality-aware placement:
 
 - N cores = N independent scheduler threads
 - Each scheduler runs in a pthread pinned to a core
-- Actors assigned to cores via round-robin (`actor_id % num_cores`)
+- Actors placed on the caller's core at spawn time (main thread defaults to core 0; scheduler threads use their own core). This keeps parent-child actor groups co-located for efficient local messaging.
 - Cross-core messages use lock-free queues with batch dequeue/enqueue
+- Message-driven migration converges communicating actors onto the same core
 
 ### Synchronization
 
-The `wait_for_idle()` function blocks until all actors have finished processing their messages. This is the recommended way to synchronize the main thread with actor completion:
+The `wait_for_idle()` function blocks until all actors have finished processing their messages (quiescence). It is **non-destructive**: it does not stop or join scheduler threads, so it can be called multiple times in a program. This is the recommended way to synchronize the main thread with actor completion:
 
 ```aether
 main() {
@@ -202,6 +204,10 @@ main() {
 
     // Actors are now idle, safe to read state
     print(ping.result)
+
+    // Can send more messages and wait again
+    ping ! Start {}
+    wait_for_idle()
 }
 ```
 
@@ -216,14 +222,19 @@ int main() {
 
     // Create and use actors
 
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();  // Waits for quiescence, stops threads, joins them
 }
 ```
 
+**Scheduler lifecycle functions:**
+- `scheduler_wait()` -- waits for quiescence (all pending messages processed). Non-destructive: scheduler threads keep running. Safe to call multiple times.
+- `scheduler_shutdown()` -- waits for quiescence, then stops scheduler threads and joins them. Called once at program exit.
+
 ### Core Assignment and Migration
 
-Actors are assigned to cores at spawn time. During operation, cross-core message senders set a `migrate_to` hint on the target actor. The owning scheduler thread processes the hint and migrates the actor to co-locate it with its primary communicator. Migration is non-blocking: if the destination lock cannot be acquired, migration is deferred to the next iteration.
+Actors are placed on the caller's core at spawn time. Actors spawned from the main thread default to core 0, keeping top-level actor groups co-located. Actors spawned from within actor handlers inherit the parent's core.
+
+During operation, cross-core message senders set a `migrate_to` hint on the target actor, requesting migration to the sender's core. The owning scheduler thread checks these hints after processing messages in the coalesce buffer and migrates the actor accordingly. This co-locates communicating actors regardless of their initial placement. Migration is non-blocking: if the destination lock cannot be acquired, migration is deferred to the next iteration.
 
 ### Message Routing
 

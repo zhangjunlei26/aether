@@ -41,6 +41,10 @@ N actors arranged in a ring, each forwarding messages to the next. Tests multi-a
 - Token passed around the ring
 - Measures ring completion time
 
+**Notes:**
+- Benefits from locality-aware placement — all actors spawned from main are co-located on the same core, enabling direct mailbox delivery and work inlining
+- Cross-core placement would force every message through the lock-free queue path, adding significant overhead for this tightly-coupled communication pattern
+
 **Location:** `benchmarks/cross-language/aether/thread_ring.ae`
 
 ### Fork-Join

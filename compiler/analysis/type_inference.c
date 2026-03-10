@@ -245,7 +245,7 @@ void collect_expression_constraints(ASTNode* node, InferenceContext* ctx) {
             
             // Look up function definition to get return type
             if (node->value) {
-                Symbol* func_sym = lookup_symbol(ctx->symbols, node->value);
+                Symbol* func_sym = lookup_qualified_symbol(ctx->symbols, node->value);
                 if (func_sym && func_sym->type) {
                     // Function call inherits the function's return type
                     if (!node->node_type || node->node_type->kind == TYPE_UNKNOWN) {

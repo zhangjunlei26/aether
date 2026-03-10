@@ -239,6 +239,9 @@ int is_type_compatible(Type* from, Type* to) {
     // int promotes to long without loss
     if (from->kind == TYPE_INT && to->kind == TYPE_INT64) return 1;
     if (from->kind == TYPE_INT64 && to->kind == TYPE_INT) return 1;
+    // long <-> float compatibility
+    if (from->kind == TYPE_INT64 && to->kind == TYPE_FLOAT) return 1;
+    if (from->kind == TYPE_FLOAT && to->kind == TYPE_INT64) return 1;
     
     // Array compatibility
     if (from->kind == TYPE_ARRAY && to->kind == TYPE_ARRAY) {
@@ -246,7 +249,9 @@ int is_type_compatible(Type* from, Type* to) {
     }
     
     // Actor reference compatibility
+    // Bare actor_ref (no type parameter) is compatible with any actor_ref
     if (from->kind == TYPE_ACTOR_REF && to->kind == TYPE_ACTOR_REF) {
+        if (!from->element_type || !to->element_type) return 1;
         return is_type_compatible(from->element_type, to->element_type);
     }
 
@@ -313,7 +318,7 @@ Type* infer_type(ASTNode* expr, SymbolTable* table) {
             
         case AST_IDENTIFIER: {
             Symbol* symbol = lookup_symbol(table, expr->value);
-            return (symbol && symbol->type) ? symbol->type : create_type(TYPE_UNKNOWN);
+            return (symbol && symbol->type) ? clone_type(symbol->type) : create_type(TYPE_UNKNOWN);
         }
         
         case AST_BINARY_EXPRESSION:
@@ -560,6 +565,8 @@ int typecheck_program(ASTNode* program) {
     // Output builtins
     Type* println_type = create_type(TYPE_VOID);
     add_symbol(global_table, "println", println_type, 0, 1, 0);
+    Type* print_char_type = create_type(TYPE_VOID);
+    add_symbol(global_table, "print_char", print_char_type, 0, 1, 0);
 
     // Process control builtins
     Type* exit_type = create_type(TYPE_VOID);
@@ -846,6 +853,7 @@ static void typecheck_message_constructor(ASTNode* constructor, SymbolTable* tab
                      field_init->value, msg_name, type_name(declared), type_name(actual));
             type_error(buf, field_init->line, field_init->column);
         }
+        free_type(actual);
         free_type(declared);
     }
 }
@@ -1008,9 +1016,11 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
                     stmt->node_type = clone_type(init_type);
                 } else if (!is_assignable(init_type, stmt->node_type)) {
                     // Has explicit type but initializer doesn't match
+                    free_type(init_type);
                     type_error("Type mismatch in variable initialization", stmt->line, stmt->column);
                     return 0;
                 }
+                free_type(init_type);
             }
 
             // Add to symbol table
@@ -1038,9 +1048,11 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
                              "Type mismatch in assignment to '%s': expected %s, got %s",
                              left->value ? left->value : "?",
                              type_name(symbol->type), type_name(right_type));
+                    free_type(right_type);
                     type_error(error_msg, stmt->line, stmt->column);
                     return 0;
                 }
+                free_type(right_type);
             }
             return 1;
         }
@@ -1057,7 +1069,7 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
                 }
                 ASTNode* rhs = stmt->children[1];
                 typecheck_expression(rhs, table);
-                infer_type(rhs, table);
+                { Type* _t = infer_type(rhs, table); free_type(_t); }
                 if (stmt->node_type && stmt->node_type->kind == TYPE_UNKNOWN && symbol->type) {
                     free_type(stmt->node_type);
                     stmt->node_type = clone_type(symbol->type);
@@ -1072,10 +1084,12 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
                 typecheck_expression(condition, table);
                 Type* cond_type = infer_type(condition, table);
 
-                if (cond_type->kind != TYPE_BOOL) {
+                if (cond_type && cond_type->kind != TYPE_BOOL) {
+                    free_type(cond_type);
                     type_error("If condition must be boolean", condition->line, condition->column);
                     return 0;
                 }
+                free_type(cond_type);
             }
             
             // Type check then and else branches
@@ -1098,10 +1112,12 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
                 typecheck_expression(stmt->children[1], loop_table);
                 Type* cond_type = infer_type(stmt->children[1], loop_table);
                 if (cond_type && cond_type->kind != TYPE_BOOL) {
+                    free_type(cond_type);
                     type_error("For loop condition must be boolean", stmt->line, stmt->column);
                     free_symbol_table(loop_table);
                     return 0;
                 }
+                free_type(cond_type);
             }
             
             // Type check increment (child 2)
@@ -1123,13 +1139,15 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
                 ASTNode* condition = stmt->children[0];
                 typecheck_expression(condition, table);
                 Type* cond_type = infer_type(condition, table);
-                
+
                 if (cond_type && cond_type->kind != TYPE_BOOL) {
+                    free_type(cond_type);
                     type_error("Loop condition must be boolean", condition->line, condition->column);
                     return 0;
                 }
+                free_type(cond_type);
             }
-            
+
             // Type check loop body
             for (int i = 1; i < stmt->child_count; i++) {
                 typecheck_statement(stmt->children[i], table);
@@ -1172,10 +1190,12 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
                 ASTNode* message = stmt->children[1];
 
                 Type* actor_type = infer_type(actor_ref, table);
-                if (actor_type->kind != TYPE_ACTOR_REF) {
+                if (actor_type && actor_type->kind != TYPE_ACTOR_REF) {
+                    free_type(actor_type);
                     type_error("First argument to send must be an actor reference", actor_ref->line, actor_ref->column);
                     return 0;
                 }
+                free_type(actor_type);
 
                 typecheck_expression(message, table);
             }
@@ -1196,9 +1216,11 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
                     snprintf(error_msg, sizeof(error_msg),
                              "Cannot send to '%s': expected an actor reference",
                              actor_ref->value ? actor_ref->value : "expression");
+                    free_type(actor_type);
                     type_error(error_msg, actor_ref->line, actor_ref->column);
                     return 0;
                 }
+                free_type(actor_type);
 
                 // Validate that the message type is a registered message definition
                 if (message->type == AST_MESSAGE_CONSTRUCTOR && message->value) {
@@ -1342,6 +1364,7 @@ int typecheck_expression(ASTNode* expr, SymbolTable* table) {
                     if (expr->node_type) free_type(expr->node_type);
                     expr->node_type = clone_type(then_type);
                 }
+                free_type(then_type);
             }
             return 1;
 
@@ -1363,6 +1386,24 @@ int typecheck_expression(ASTNode* expr, SymbolTable* table) {
                 typecheck_expression(expr->children[i], table);
             }
             expr->node_type = create_type(TYPE_STRING);
+            return 1;
+
+        case AST_ARRAY_ACCESS:
+            // Type check array access — validate index is integer
+            if (expr->child_count >= 2) {
+                typecheck_expression(expr->children[0], table);
+                typecheck_expression(expr->children[1], table);
+                Type* idx_type = infer_type(expr->children[1], table);
+                if (idx_type && idx_type->kind != TYPE_INT && idx_type->kind != TYPE_INT64
+                    && idx_type->kind != TYPE_UNKNOWN) {
+                    char error_msg[256];
+                    snprintf(error_msg, sizeof(error_msg),
+                             "Array index must be an integer, got %s",
+                             type_name(idx_type));
+                    type_error(error_msg, expr->line, expr->column);
+                }
+                if (idx_type) free_type(idx_type);
+            }
             return 1;
 
         case AST_STRUCT_LITERAL:
@@ -1391,6 +1432,7 @@ int typecheck_expression(ASTNode* expr, SymbolTable* table) {
                     snprintf(error_msg, sizeof(error_msg),
                              "Type '%s' has no field '%s'",
                              type_name(base_type), expr->value ? expr->value : "?");
+                    free_type(base_type);
                     type_error(error_msg, expr->line, expr->column);
                     return 0;
                 }
@@ -1448,6 +1490,7 @@ int typecheck_expression(ASTNode* expr, SymbolTable* table) {
                             snprintf(error_msg, sizeof(error_msg),
                                      "Struct '%s' has no field '%s'",
                                      base_type->struct_name, expr->value ? expr->value : "?");
+                            free_type(base_type);
                             type_error(error_msg, expr->line, expr->column);
                             return 0;
                         }
@@ -1457,6 +1500,7 @@ int typecheck_expression(ASTNode* expr, SymbolTable* table) {
                         expr->node_type = infer_type(expr, table);
                     }
                 }
+                free_type(base_type);
             }
             return 1;
         }
@@ -1508,11 +1552,13 @@ int typecheck_binary_expression(ASTNode* expr, SymbolTable* table) {
     
     Type* left_type = infer_type(left, table);
     Type* right_type = infer_type(right, table);
-    
+
     AeTokenType operator = get_token_type_from_string(expr->value);
-    
+
     if (operator == TOKEN_ASSIGN) {
         if (!is_assignable(right_type, left_type)) {
+            free_type(left_type);
+            free_type(right_type);
             type_error("Type mismatch in assignment", expr->line, expr->column);
             return 0;
         }
@@ -1523,12 +1569,17 @@ int typecheck_binary_expression(ASTNode* expr, SymbolTable* table) {
             left_type && left_type->kind != TYPE_UNKNOWN &&
             right_type && right_type->kind != TYPE_UNKNOWN) {
             // Only error if both types are known but incompatible
+            free_type(left_type);
+            free_type(right_type);
+            free_type(result_type);
             type_error("Invalid operation for given types", expr->line, expr->column);
             return 0;
         }
         expr->node_type = result_type;
     }
-    
+
+    free_type(left_type);
+    free_type(right_type);
     return 1;
 }
 
@@ -1558,9 +1609,38 @@ int typecheck_function_call(ASTNode* call, SymbolTable* table) {
         }
     }
 
-    // Type check arguments
+    // Type check arguments and validate types against parameters
     for (int i = 0; i < call->child_count; i++) {
         typecheck_expression(call->children[i], table);
+    }
+
+    // Validate argument types for extern functions (which always have typed params)
+    // Skip for user-defined functions since type inference may not have set param types yet
+    if (symbol->node && symbol->node->type == AST_EXTERN_FUNCTION) {
+        int param_idx = 0;
+        for (int i = 0; i < symbol->node->child_count - 1 && param_idx < call->child_count; i++) {
+            ASTNode* param = symbol->node->children[i];
+            if (!param) { param_idx++; continue; }
+            if (param->type == AST_VARIABLE_DECLARATION || param->type == AST_PATTERN_VARIABLE) {
+                Type* param_type = param->node_type;
+                if (param_type && param_type->kind != TYPE_UNKNOWN &&
+                    call->children[param_idx] != NULL) {
+                    Type* arg_type = infer_type(call->children[param_idx], table);
+                    if (arg_type && arg_type->kind != TYPE_UNKNOWN &&
+                        !is_type_compatible(arg_type, param_type)) {
+                        char error_msg[256];
+                        snprintf(error_msg, sizeof(error_msg),
+                                 "Argument %d of '%s': expected %s, got %s",
+                                 param_idx + 1, call->value,
+                                 type_name(param_type), type_name(arg_type));
+                        type_error(error_msg, call->children[param_idx]->line,
+                                   call->children[param_idx]->column);
+                    }
+                    if (arg_type) free_type(arg_type);
+                }
+                param_idx++;
+            }
+        }
     }
 
     call->node_type = symbol->type ? clone_type(symbol->type) : create_type(TYPE_UNKNOWN);

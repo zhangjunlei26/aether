@@ -59,25 +59,21 @@ main() {
     print("  Cleared list\n\n")
 
     // HashMap example
-    print("HashMap (string keys and values):\n")
+    print("HashMap (string keys, pointer values):\n")
     mymap = map.new()
     defer map.free(mymap)
     print("  Created new HashMap\n")
 
-    // Create string keys
-    key_name = string.new("name")
-    key_lang = string.new("language")
-    key_ver = string.new("version")
-
-    // Create string values
+    // Create string values to store
     val_aether = string.new("Aether")
     val_lang = string.new("Compiled Actor Language")
     val_ver = string.new("0.5.0")
 
-    // Add entries
-    map.put(mymap, key_name, val_aether)
-    map.put(mymap, key_lang, val_lang)
-    map.put(mymap, key_ver, val_ver)
+    // Add entries — map keys are raw string literals (const char*),
+    // values are pointers (AetherString* in this case)
+    map.put(mymap, "name", val_aether)
+    map.put(mymap, "language", val_lang)
+    map.put(mymap, "version", val_ver)
     print("  Added 3 entries\n")
 
     print("  Size: ")
@@ -86,11 +82,11 @@ main() {
 
     // Check if key exists
     print("  Has 'name': ")
-    print(map.has(mymap, key_name))
+    print(map.has(mymap, "name"))
     print("\n")
 
     // Get value and print its length
-    val = map.get(mymap, key_lang)
+    val = map.get(mymap, "language")
     print("  Value for 'language' length: ")
     print(string.length(val))
     print("\n")
@@ -99,9 +95,6 @@ main() {
     string.release(str1)
     string.release(str2)
     string.release(str3)
-    string.release(key_name)
-    string.release(key_lang)
-    string.release(key_ver)
     string.release(val_aether)
     string.release(val_lang)
     string.release(val_ver)

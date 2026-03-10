@@ -21,17 +21,19 @@ extern string_equals(a: ptr, b: ptr) -> int
 extern string_compare(a: ptr, b: ptr) -> int
 
 // String methods
-extern string_starts_with(str: ptr, prefix: ptr) -> int
-extern string_ends_with(str: ptr, suffix: ptr) -> int
-extern string_contains(str: ptr, substring: ptr) -> int
-extern string_index_of(str: ptr, substring: ptr) -> int
+extern string_starts_with(str: ptr, prefix: string) -> int
+extern string_ends_with(str: ptr, suffix: string) -> int
+extern string_contains(str: ptr, substring: string) -> int
+extern string_index_of(str: ptr, substring: string) -> int
 extern string_substring(str: ptr, start: int, end: int) -> ptr
 extern string_to_upper(str: ptr) -> ptr
 extern string_to_lower(str: ptr) -> ptr
 extern string_trim(str: ptr) -> ptr
 
 // String array operations
-extern string_split(str: ptr, delimiter: ptr) -> ptr
+extern string_split(str: ptr, delimiter: string) -> ptr
+extern string_array_size(arr: ptr) -> int
+extern string_array_get(arr: ptr, index: int) -> ptr
 extern string_array_free(arr: ptr)
 
 // Conversion
