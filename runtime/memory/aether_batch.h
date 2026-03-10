@@ -14,7 +14,7 @@ typedef uint64_t ActorID;
 typedef struct {
     int type;
     int sender_id;
-    int payload_int;
+    intptr_t payload_int;
     void* payload_ptr;
 } Message;
 

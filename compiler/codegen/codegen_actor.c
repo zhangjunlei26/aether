@@ -118,7 +118,9 @@ void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
                         indent(gen);
                         print_line(gen, "%s* _pattern = (%s*)_msg_data;", pattern->value, pattern->value);
 
-                        // Extract pattern fields with correct types from message definition
+                        // Extract pattern fields with correct types from message definition.
+                        // Single-int-field messages use intptr_t (matches payload_int width).
+                        const char* single_int_name = get_single_int_field(msg_def);
                         for (int k = 0; k < pattern->child_count; k++) {
                             ASTNode* field = pattern->children[k];
                             if (field->type == AST_PATTERN_FIELD) {
@@ -127,8 +129,12 @@ void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
                                     MessageFieldDef* fdef = msg_def->fields;
                                     while (fdef) {
                                         if (strcmp(fdef->name, field->value) == 0) {
-                                            Type temp_type = { .kind = fdef->type_kind, .element_type = NULL, .array_size = 0, .struct_name = NULL };
-                                            c_type = get_c_type(&temp_type);
+                                            if (single_int_name && fdef->type_kind == TYPE_INT) {
+                                                c_type = "intptr_t";
+                                            } else {
+                                                Type temp_type = { .kind = fdef->type_kind, .element_type = NULL, .array_size = 0, .struct_name = NULL };
+                                                c_type = get_c_type(&temp_type);
+                                            }
                                             break;
                                         }
                                         fdef = fdef->next;
@@ -370,7 +376,7 @@ void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
     print_line(gen, "// AETHER_SINGLE_CORE=1 forces all actors to core 0 (eliminates cross-core overhead)");
     print_line(gen, "static int _single_core_cached = -1;");
     print_line(gen, "if (_single_core_cached < 0) _single_core_cached = (getenv(\"AETHER_SINGLE_CORE\") != NULL);");
-    print_line(gen, "int core = _single_core_cached ? 0 : (atomic_fetch_add(&next_actor_id, 1) %% num_cores);");
+    print_line(gen, "int core = _single_core_cached ? 0 : -1;  // -1 = let runtime place on caller's core");
     print_line(gen, "%s* actor = (%s*)scheduler_spawn_pooled(core, (void (*)(void*))%s_step, sizeof(%s));",
                actor->value, actor->value, actor->value, actor->value);
     print_line(gen, "if (!actor) {");

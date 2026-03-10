@@ -102,8 +102,7 @@ void bench_single_core_throughput() {
     int processed = atomic_load(&actor->count_visible);
     double elapsed = (end - start) / 1000.0;
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     printf("Messages: %d / %d (%.1f%%)\n", processed, MSGS, 100.0 * processed / MSGS);
     printf("Time: %.3f seconds\n", elapsed);
@@ -162,8 +161,7 @@ void bench_multi_core_throughput(int cores) {
     }
     double elapsed = (end - start) / 1000.0;
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     printf("Messages: %d / %d (%.1f%%)\n", total_processed, total_target, 
            100.0 * total_processed / total_target);
@@ -220,8 +218,7 @@ actor1->count_local = 0;
     int processed = atomic_load(&actor1->count_visible);
     double elapsed = (end - start) / 1000.0;
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     printf("Cross-core messages: %d / %d (%.1f%%)\n", processed, MSGS, 
            100.0 * processed / MSGS);
@@ -297,8 +294,7 @@ void bench_scalability() {
         
         printf("  %d   | %15.0f        | %6.1f%%\n", cores, throughput, efficiency);
         
-        scheduler_stop();
-        scheduler_wait();
+        scheduler_shutdown();
         
         for (int i = 0; i < cores; i++) {
             free(actors[i]);
@@ -348,8 +344,7 @@ void bench_latency() {
         }
     }
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     printf("Samples: %d / %d (%.1f%%)\n", successful, SAMPLES, 100.0 * successful / SAMPLES);
     printf("Avg latency: %.2f ms\n", successful > 0 ? (double)total_latency / successful : 0.0);
@@ -398,8 +393,7 @@ void bench_contention() {
     int processed = atomic_load(&target->count_visible);
     double elapsed = (end - start) / 1000.0;
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     printf("Senders: %d cores → 1 target\n", SENDERS);
     printf("Messages: %d / %d (%.1f%%)\n", processed, TOTAL, 100.0 * processed / TOTAL);
@@ -454,8 +448,7 @@ void bench_burst_patterns() {
     int processed = atomic_load(&actor->count_visible);
     double elapsed = (end - start) / 1000.0;
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     printf("Bursts: %d × %d messages\n", BURSTS, MSGS_PER_BURST);
     printf("Messages: %d / %d (%.1f%%)\n", processed, total_sent, 100.0 * processed / total_sent);
@@ -501,8 +494,7 @@ void bench_mailbox_saturation() {
     double elapsed = (end - start) / 1000.0;
     int dropped = MSGS - processed;
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     printf("Messages sent: %d\n", MSGS);
     printf("Messages processed: %d (%.1f%%)\n", processed, 100.0 * processed / MSGS);

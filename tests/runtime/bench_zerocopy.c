@@ -77,8 +77,7 @@ void benchmark_small_messages() {
     
     long duration = get_time_us() - start;
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     double throughput = (COUNT * 1000000.0) / duration;
     printf("  Messages: %d\n", COUNT);
@@ -126,8 +125,7 @@ void benchmark_large_messages() {
     
     long duration = get_time_us() - start;
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     double throughput = (actor->received_count * 1000000.0) / duration;
     double bandwidth = (actor->total_bytes * 1000000.0) / duration / (1024 * 1024);
@@ -183,8 +181,7 @@ void benchmark_mixed_messages() {
     
     long duration = get_time_us() - start;
     
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     
     double throughput = (actor->received_count * 1000000.0) / duration;
     printf("  Messages: %d\n", actor->received_count);

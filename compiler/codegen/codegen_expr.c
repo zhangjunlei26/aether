@@ -1,5 +1,18 @@
 #include "codegen_internal.h"
 
+// Emit a send target expression with the correct C cast.
+// Actor refs produce (ActorBase*)(expr) directly.
+// Int/int64 values (actor refs stored in int message fields or state) need
+// (ActorBase*)(intptr_t)(expr) to avoid pointer-width conversion warnings.
+static void emit_send_target(CodeGenerator* gen, ASTNode* target, const char* cast_type) {
+    int needs_intptr = target->node_type &&
+        (target->node_type->kind == TYPE_INT || target->node_type->kind == TYPE_INT64);
+    fprintf(gen->output, "(%s)(", cast_type);
+    if (needs_intptr) fprintf(gen->output, "(intptr_t)");
+    generate_expression(gen, target);
+    fprintf(gen->output, ")");
+}
+
 void generate_expression(CodeGenerator* gen, ASTNode* expr) {
     if (!expr) return;
     
@@ -138,15 +151,32 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                 } else {
                     if (!skip_parens) fprintf(gen->output, "(");
 
+                    // Detect ptr/int mixed comparisons and cast ptr to intptr_t
+                    // to suppress -Wpointer-integer-compare warnings.
+                    // Common case: list.get() returns void*, compared to int literal.
+                    int is_comparison = expr->value && (
+                        strcmp(expr->value, "==") == 0 || strcmp(expr->value, "!=") == 0 ||
+                        strcmp(expr->value, "<") == 0  || strcmp(expr->value, ">") == 0  ||
+                        strcmp(expr->value, "<=") == 0 || strcmp(expr->value, ">=") == 0);
+                    Type* ltype = expr->children[0]->node_type;
+                    Type* rtype = expr->children[1]->node_type;
+                    int lhs_is_ptr = ltype && ltype->kind == TYPE_PTR;
+                    int rhs_is_ptr = rtype && rtype->kind == TYPE_PTR;
+                    int lhs_is_int = ltype && (ltype->kind == TYPE_INT || ltype->kind == TYPE_INT64);
+                    int rhs_is_int = rtype && (rtype->kind == TYPE_INT || rtype->kind == TYPE_INT64);
+                    int ptr_int_cmp = is_comparison && ((lhs_is_ptr && rhs_is_int) || (rhs_is_ptr && lhs_is_int));
+
                     if (is_assignment) {
                         gen->generating_lvalue = 1;
                     }
+                    if (ptr_int_cmp && lhs_is_ptr) fprintf(gen->output, "(intptr_t)");
                     generate_expression(gen, expr->children[0]);
                     if (is_assignment) {
                         gen->generating_lvalue = 0;
                     }
 
                     fprintf(gen->output, " %s ", get_c_operator(expr->value));
+                    if (ptr_int_cmp && rhs_is_ptr) fprintf(gen->output, "(intptr_t)");
                     generate_expression(gen, expr->children[1]);
                     if (!skip_parens) fprintf(gen->output, ")");
                 }
@@ -155,14 +185,12 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
             
         case AST_UNARY_EXPRESSION:
             if (expr->child_count >= 1) {
-                fprintf(gen->output, "%s", get_c_operator(expr->value));
-                // Wrap complex subexpressions in parens to prevent precedence issues
-                // e.g., !(a || b) must generate !(a || b), not !a || b
-                int needs_parens = (expr->children[0]->type == AST_BINARY_EXPRESSION ||
-                                    expr->children[0]->type == AST_UNARY_EXPRESSION);
-                if (needs_parens) fprintf(gen->output, "(");
+                // Wrap the entire unary expression in parens: (!x) not !(x).
+                // This prevents GCC -Wlogical-not-parentheses when the unary
+                // result is compared: (!x) != y  instead of  !x != y.
+                fprintf(gen->output, "(%s(", get_c_operator(expr->value));
                 generate_expression(gen, expr->children[0]);
-                if (needs_parens) fprintf(gen->output, ")");
+                fprintf(gen->output, "))");
             }
             break;
             
@@ -481,6 +509,11 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                     fprintf(gen->output, "_aether_clock_ns()");
                     fprintf(gen->output, "\n#endif\n");
                 }
+                else if (strcmp(func_name, "print_char") == 0 && expr->child_count >= 1) {
+                    fprintf(gen->output, "putchar(");
+                    generate_expression(gen, expr->children[0]);
+                    fprintf(gen->output, ")");
+                }
                 else {
                     char c_func_name[256];
                     // Don't mangle extern functions — they refer to real C symbols
@@ -531,7 +564,12 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                                 case '"':  fprintf(gen->output, "\\\"");  break; \
                                 case '\\': fprintf(gen->output, "\\\\");  break; \
                                 case '%':  fprintf(gen->output, "%%%%");  break; \
-                                default:   fputc(*s, gen->output);        break; \
+                                default: \
+                                    if ((unsigned char)*s < 0x20 || *s == 0x7F) \
+                                        fprintf(gen->output, "\\x%02x", (unsigned char)*s); \
+                                    else \
+                                        fputc(*s, gen->output); \
+                                    break; \
                             } \
                         } \
                     } else { \
@@ -662,7 +700,12 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                             for (int i = 0; i < message->child_count; i++) {
                                 ASTNode* field_init = message->children[i];
                                 if (field_init && field_init->type == AST_FIELD_INIT && field_init->child_count > 0) {
-                                    generate_expression(gen, field_init->children[0]);
+                                    // Actor refs passed in int message fields need intptr_t cast
+                                    // to avoid pointer-to-int conversion errors in payload_int.
+                                    ASTNode* val = field_init->children[0];
+                                    int is_actor_ref = val->node_type && val->node_type->kind == TYPE_ACTOR_REF;
+                                    if (is_actor_ref) fprintf(gen->output, "(intptr_t)");
+                                    generate_expression(gen, val);
                                     break;
                                 }
                             }
@@ -670,21 +713,21 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
 
                             if (gen->in_main_loop) {
                                 // Main thread loop: batch sends to reduce atomics N→num_cores
-                                fprintf(gen->output, "scheduler_send_batch_add((ActorBase*)(");
-                                generate_expression(gen, target);
-                                fprintf(gen->output, "), _imsg); }");
+                                fprintf(gen->output, "scheduler_send_batch_add(");
+                                emit_send_target(gen, target, "ActorBase*");
+                                fprintf(gen->output, ", _imsg); }");
                             } else if (gen->current_actor == NULL) {
                                 // Main thread, non-loop: current_core_id is always -1, local path
                                 // is never taken — emit scheduler_send_remote directly (no dead branch)
-                                fprintf(gen->output, "scheduler_send_remote((ActorBase*)(");
-                                generate_expression(gen, target);
-                                fprintf(gen->output, "), _imsg, current_core_id); }");
+                                fprintf(gen->output, "scheduler_send_remote(");
+                                emit_send_target(gen, target, "ActorBase*");
+                                fprintf(gen->output, ", _imsg, current_core_id); }");
                             } else {
                                 // Inside an actor handler: same-core vs cross-core branch is live.
                                 // Store target in temp to avoid triple-evaluation of side-effecting expressions.
-                                fprintf(gen->output, "ActorBase* _send_target = (ActorBase*)(");
-                                generate_expression(gen, target);
-                                fprintf(gen->output, "); ");
+                                fprintf(gen->output, "ActorBase* _send_target = ");
+                                emit_send_target(gen, target, "ActorBase*");
+                                fprintf(gen->output, "; ");
                                 fprintf(gen->output, "if (current_core_id >= 0 && current_core_id == _send_target->assigned_core) { ");
                                 fprintf(gen->output, "scheduler_send_local(_send_target, _imsg); } else { ");
                                 fprintf(gen->output, "scheduler_send_remote(_send_target, _imsg, current_core_id); } }");
@@ -704,7 +747,7 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                             }
 
                             fprintf(gen->output, " }; aether_send_message(");
-                            fprintf(gen->output, "(void*)"); generate_expression(gen, target);
+                            emit_send_target(gen, target, "void*");
                             fprintf(gen->output, ", &_msg, sizeof(%s)); }", message->value);
                         }
                     } else {
@@ -764,9 +807,9 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                             }
                         }
 
-                        fprintf(gen->output, " }; void* _ask_r = scheduler_ask_message((ActorBase*)(");
-                        generate_expression(gen, target);
-                        fprintf(gen->output, "), &_msg, sizeof(%s), %d); ", message->value, timeout_ms);
+                        fprintf(gen->output, " }; void* _ask_r = scheduler_ask_message(");
+                        emit_send_target(gen, target, "ActorBase*");
+                        fprintf(gen->output, ", &_msg, sizeof(%s), %d); ", message->value, timeout_ms);
 
                         if (reply_msg_name && reply_field) {
                             const char* c_type = "int";
@@ -792,9 +835,8 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                         // MSVC: use _aether_ask helper + compound literal
                         gen->ask_temp_counter++;
                         fprintf(gen->output, "_aether_ask_helper(");
-                        fprintf(gen->output, "(ActorBase*)(");
-                        generate_expression(gen, target);
-                        fprintf(gen->output, "), &(%s){ ._message_id = %d",
+                        emit_send_target(gen, target, "ActorBase*");
+                        fprintf(gen->output, ", &(%s){ ._message_id = %d",
                                 message->value, msg_def->message_id);
                         for (int i = 0; i < message->child_count; i++) {
                             ASTNode* field_init = message->children[i];

@@ -187,18 +187,14 @@ Import modules using the `import` statement:
 
 ```aether
 import std.map
-import std.log
 
 main() {
-    log.info("Starting application");
+    mymap = map.new()
+    defer map.free(mymap)
 
-    mymap = map.new();
-    defer map.free(mymap);
+    map.put(mymap, "greeting", "hello")
 
-    key = "greeting";
-    map.put(mymap, key, "hello");
-
-    print("Map created\n");
+    print("Map created\n")
 }
 ```
 
@@ -231,6 +227,7 @@ Aether includes a standard library with the following modules:
 | `std.tcp` | TCP sockets |
 | `std.log` | Structured logging |
 | `std.math` | Math functions |
+| `std.io` | Console I/O, environment variables |
 
 See [stdlib-api.md](stdlib-api.md) for the full API reference.
 

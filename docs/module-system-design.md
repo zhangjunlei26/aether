@@ -65,7 +65,7 @@ cached ASTs — each module file is read and parsed exactly once.
 | `import std.list` | `list` | `list.new()`, `list.add()`, `list.get()` |
 | `import std.map` | `map` | `map.new()`, `map.put()`, `map.get()` |
 | `import std.math` | `math` | `math.sqrt()`, `math.sin()`, `math.cos()` |
-| `import std.log` | `log` | `log.init()`, `log.info()`, `log.error()` |
+| `import std.log` | `log` | `log.init()`, `log.write()`, `log.shutdown()` |
 
 ---
 
@@ -178,12 +178,11 @@ std/
 
 ```aether
 import std.math (sqrt, pow, PI)
-import std.io (print, read_line)
+import std.io (print, print_line)
 
 main() {
-    print("Enter radius: ")
-    r = 5.0  // In real version: read_line()
-    
+    r = 5.0
+
     area = PI * pow(r, 2)
     print("Area: ")
     print(area)
@@ -203,7 +202,7 @@ export print(text) {
     // Implementation
 }
 
-export read_line() {
+export print_line(text) {
     // Implementation
 }
 

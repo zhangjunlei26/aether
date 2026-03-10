@@ -36,9 +36,39 @@ number (e.g. `[0.18.0]`) before tagging the release.
   - `test_logical_ops.ae` — 5 tests for logical operators (AND, OR, NOT, with comparisons, complex combinations)
   - `test_defer_advanced.ae` — 3 tests for defer edge cases (LIFO ordering, nested scopes, conditional defer)
 - **3 new examples**: `recursion.ae` (factorial, fibonacci, GCD, fast exponentiation), `long-arithmetic.ae` (64-bit values, nanosecond timing, large multiplication), `string-processing.ae` (interpolation, escapes, multi-type printing)
+- **17 new tests** (66→83):
+  - `test_actor_communication.ae` — 4 tests for actor-to-actor messaging (bidirectional ping-pong, multi-phase wait_for_idle, actor ref in message fields)
+  - `test_ask_reply.ae` — ask/reply pattern tests
+  - `test_defer_loops.ae` — defer inside loops and nested scopes
+  - `test_escape_hex_octal.ae` — hex (`\xNN`) and octal (`\NNN`) escape sequences
+  - `test_escape_sequences.ae` — escape sequence coverage (hex, octal, interpolated strings, print_char)
+  - `test_extern_functions.ae` — extern function declarations and calls
+  - `test_float_operations.ae` — float arithmetic, comparisons, and printing
+  - `test_io_operations.ae` — io module read/write/append/exists/delete
+  - `test_list_operations.ae` — list create/add/get/size/remove operations
+  - `test_map_operations.ae` — map put/get/has/remove/size operations
+  - `test_pattern_guards.ae` — pattern matching with guard clauses
+  - `test_print_char.ae` — print_char builtin for ASCII byte output
+  - `test_print_format.ae` — print/println format specifiers for all types
+  - `test_scope_shadowing.ae` — variable shadowing across scopes
+  - `test_string_stdlib.ae` — string module functions (length, contains, split, etc.)
+  - `test_struct_usage.ae` — struct creation, field access, nested structs
+  - `test_typed_params.ae` — typed function parameters and return types
+- **5 new examples**: `formatted-output.ae` (print formatting), `escape-codes.ae` (ANSI escape sequences), `ascii-art.ae` (character art with print_char), `io-demo.ae` (file I/O), `log-demo.ae` (logging module)
+- **`print_char()` builtin**: `print_char(65)` emits a single byte by ASCII value — enables ANSI escape codes and character-level output without extern functions
+- **Hex and octal escape sequences**: `\xNN` (hex) and `\NNN` (octal) in string literals and interpolated strings — enables ANSI terminal control codes like `"\x1b[1;32m"` directly in Aether strings
+
+### Changed
+
+- **Locality-aware actor placement**: Actors are now placed on the caller's core at spawn time instead of round-robin distribution. Main thread spawns default to core 0, keeping top-level actor groups co-located for efficient local messaging. Actors spawned from within actor handlers inherit the parent's core. This benefits tightly-coupled communication patterns such as ring and chain topologies where actors communicate with their immediate neighbors.
+- **Aggressive message-driven migration**: Cross-core sends now set `migrate_to` to the sender's core directly, rather than migrating to the lower of the two core IDs. This produces faster convergence for communicating actor pairs.
+- **Targeted migration checks**: The scheduler now checks migration hints immediately after processing messages from the coalesce buffer (O(batch_size)), in addition to the existing full actor scan during idle periods. This provides faster migration response without adding overhead to the idle scan path.
+- **Non-destructive `scheduler_wait()`**: `scheduler_wait()` (backing `wait_for_idle()`) now only waits for quiescence without stopping or joining threads — programs can call `wait_for_idle()` multiple times to synchronize between phases of actor messaging. New `scheduler_shutdown()` handles final teardown (wait + stop + join) and is emitted once at program exit.
+- **`Message.payload_int` widened to `intptr_t`**: Changed from `int` to `intptr_t` in the runtime Message struct — prevents 64-bit pointer truncation when actor refs are passed through single-int message fields on 64-bit platforms
 
 ### Fixed
 
+- **Batch send buffer overflow on actor migration**: `scheduler_send_batch_flush()` re-read each actor's `assigned_core` at flush time, but the per-core counts (`by_core[]`) were recorded at `batch_add` time. If an actor migrated between buffering and flushing, the count/core mismatch caused the radix-sort to write past the end of the `sorted_actors[]` stack buffer — a stack buffer overflow confirmed by AddressSanitizer. Fixed by snapshotting `assigned_core` once per message at flush time and recomputing per-core counts from the consistent snapshot.
 - **`printf("%s", NULL)` crash from `print(getenv(...))`**: Printing a NULL string (e.g. from `getenv()` on an unset variable) caused undefined behavior — now uses `_aether_safe_str()` inline helper in generated C that returns `"(null)"` for NULL pointers; helper evaluates the expression exactly once (no double-evaluation of side-effecting expressions like function calls)
 - **Series collapse optimizer int32 overflow**: The closed-form formula `N*(N-1)/2` emitted by the loop optimizer overflowed for large N (e.g. 100000) because it used int32 arithmetic — now casts to `(int64_t)` for both linear-sum and constant-addend formulas; the int64 result correctly truncates back to the variable's declared type
 - **Match expression evaluated multiple times**: `match (expr) { ... }` re-evaluated `expr` for every arm — if `expr` was a function call, the function ran N times with potential side effects; now emits `T _match_val = expr;` once and uses `_match_val` in all arm comparisons
@@ -104,6 +134,12 @@ number (e.g. `[0.18.0]`) before tagging the release.
 - **`print()` not flushing stdout**: `print(".")` in a loop did not show dots immediately because `printf` buffers partial lines — now emits `fflush(stdout)` after every `print()` call in generated C
 - **`self` in actor handler generated undefined `aether_self()`**: The codegen for `AST_ACTOR_REF` with value `"self"` emitted `aether_self()` which doesn't exist in the runtime — now emits `(ActorBase*)self` when inside an actor handler context
 - **Actor self-send crashed in main-thread mode**: `self ! Message {}` from inside a handler in main-thread mode caused either a double-free (recursive `g_skip_free` flag corruption) or an infinite blocking loop (drain loop) or silent message loss (scheduler threads never started) — now properly transitions out of main-thread mode on self-send: disables `main_thread_mode`, clears `main_thread_only`, and starts scheduler threads on demand via `scheduler_ensure_threads_running()` so self-sent messages are processed asynchronously by the scheduler
+- **`scheduler_wait()` destroyed threads after first call**: `scheduler_wait()` (backing `wait_for_idle()`) called `scheduler_stop()` + `pthread_join()`, permanently destroying scheduler threads — second call to `wait_for_idle()` hung forever because no threads existed to process messages; split into non-destructive `scheduler_wait()` (quiescence only) and `scheduler_shutdown()` (final teardown at program exit)
+- **Actor refs truncated in message fields on 64-bit**: Passing an actor ref through a single-int message field (e.g. `PingWithRef { sender_ref: counter }`) truncated the 64-bit pointer to 32-bit `int` — `Message.payload_int` widened to `intptr_t`, codegen emits `intptr_t` for single-int message struct fields and proper `(intptr_t)` casts when storing actor refs
+- **`void*`/`int` comparison warnings in generated C**: Comparing `list.get()` return (`void*`) with an `int` value produced C compiler warnings — codegen now auto-detects ptr/int mixed comparisons and emits `(intptr_t)` cast on the pointer side
+- **`set_clear()` / `hashmap_clear()` left stale entries**: `hashmap_clear()` only set `occupied = false` per entry, leaving stale PSL, hash, key, and value data that could cause phantom entries on reinsertion — now uses `memset` to zero the entire entries array after freeing keys/values
+- **`main_thread_sent` counter not reset between scheduler lifecycles**: The atomic `main_thread_sent` counter was never reset in `scheduler_init()` — stale sent count from a previous lifecycle caused `count_pending_messages()` to return permanently non-zero, spinning `scheduler_wait()` forever in C unit tests
+- **Type inference not propagating parameter types through call chains**: Function parameters resolved from one call site were not propagated when the function was called from other sites — added constraint propagation pass that infers parameter types from all call sites
 
 ## [0.17.0]
 

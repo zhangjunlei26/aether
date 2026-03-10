@@ -350,12 +350,22 @@ void emit_message_to_header(CodeGenerator* gen, ASTNode* msg_def) {
     fprintf(gen->header_file, "typedef struct {\n");
     fprintf(gen->header_file, "    int _message_id;\n");
 
+    // Check if this message uses the inline payload_int path (single int field).
+    // If so, the field must be intptr_t to match Message.payload_int's width,
+    // which is pointer-sized to allow actor refs stored in int message fields.
+    MessageDef* reg_def = lookup_message(gen->message_registry, msg_name);
+    int uses_inline = reg_def && get_single_int_field(reg_def) != NULL;
+
     for (int i = 0; i < msg_def->child_count; i++) {
         ASTNode* field = msg_def->children[i];
         if (field && field->type == AST_MESSAGE_FIELD && field->value) {
             const char* c_type = "int";  // Default
             if (field->node_type) {
                 c_type = get_c_type(field->node_type);
+            }
+            // Inline-path int fields use intptr_t to match payload_int width
+            if (uses_inline && field->node_type && field->node_type->kind == TYPE_INT) {
+                c_type = "intptr_t";
             }
             fprintf(gen->header_file, "    %s %s;\n", c_type, field->value);
         }
@@ -606,6 +616,16 @@ void generate_default_return_value(CodeGenerator* gen, Type* type) {
     }
 }
 
+// Check if an AST subtree contains any return statements
+static int has_return_statement(ASTNode* node) {
+    if (!node) return 0;
+    if (node->type == AST_RETURN_STATEMENT) return 1;
+    for (int i = 0; i < node->child_count; i++) {
+        if (has_return_statement(node->children[i])) return 1;
+    }
+    return 0;
+}
+
 void generate_main_function(CodeGenerator* gen, ASTNode* main) {
     if (!main || main->type != AST_MAIN_FUNCTION) return;
 
@@ -619,7 +639,13 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
 
     // Initialize command-line arguments
     print_line(gen, "aether_args_init(argc, argv);");
-    print_line(gen, "int main_exit_ret = 0;");
+    // main_exit_ret and main_exit: label are needed when actors exist
+    // (scheduler cleanup) or when main() contains return statements.
+    int needs_main_exit = gen->actor_count > 0 || has_return_statement(main);
+    gen->uses_main_exit = needs_main_exit;
+    if (needs_main_exit) {
+        print_line(gen, "int main_exit_ret = 0;");
+    }
     print_line(gen, "");
 
     // Initialize scheduler with recommended core count if actors were defined
@@ -646,12 +672,15 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
     }
     
     // Clean up scheduler (all return paths in main() jump here via goto main_exit)
-    print_line(gen, "main_exit:");
+    // Only emit the label if it's actually targeted by a goto (actors or return
+    // in main), otherwise GCC warns about an unused label.
+    if (needs_main_exit) {
+        print_line(gen, "main_exit:");
+    }
     if (gen->actor_count > 0) {
         print_line(gen, "");
-        print_line(gen, "// Signal scheduler threads to stop, then wait for them to join");
-        print_line(gen, "scheduler_stop();");
-        print_line(gen, "scheduler_wait();");
+        print_line(gen, "// Wait for quiescence, stop scheduler threads, and join them");
+        print_line(gen, "scheduler_shutdown();");
     }
 
     // Print message pool statistics (only for actor programs)
@@ -681,7 +710,11 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
     // Emit main function defers before return
     exit_scope(gen);
 
-    print_line(gen, "return main_exit_ret;");
+    if (needs_main_exit) {
+        print_line(gen, "return main_exit_ret;");
+    } else {
+        print_line(gen, "return 0;");
+    }
     unindent(gen);
     print_line(gen, "}");
 }
@@ -1080,13 +1113,30 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
                     MessageFieldDef* first_field = NULL;
                     MessageFieldDef* last_field = NULL;
                     
+                    // Detect single-int-field messages (inline payload_int path).
+                    // Their int field must be intptr_t to match Message.payload_int width.
+                    int int_field_count = 0, other_field_count = 0;
+                    for (int i = 0; i < child->child_count; i++) {
+                        ASTNode* f = child->children[i];
+                        if (f && f->type == AST_MESSAGE_FIELD && f->node_type) {
+                            if (f->node_type->kind == TYPE_INT) int_field_count++;
+                            else other_field_count++;
+                        }
+                    }
+                    int is_inline_msg = (int_field_count == 1 && other_field_count == 0);
+
                     // Pack int fields together first for better alignment
                     for (int i = 0; i < child->child_count; i++) {
                         ASTNode* field = child->children[i];
                         if (field && field->type == AST_MESSAGE_FIELD) {
                             if (field->node_type && (field->node_type->kind == TYPE_INT || field->node_type->kind == TYPE_BOOL)) {
                                 print_indent(gen);
-                                generate_type(gen, field->node_type);
+                                if (is_inline_msg && field->node_type->kind == TYPE_INT) {
+                                    // intptr_t for inline-path field (matches payload_int width)
+                                    fprintf(gen->output, "intptr_t");
+                                } else {
+                                    generate_type(gen, field->node_type);
+                                }
                                 fprintf(gen->output, " %s;\n", field->value);
                             }
                         }

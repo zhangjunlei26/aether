@@ -98,8 +98,7 @@ static void test_worksteal_no_message_loss(void) {
         sleep_ms(1);
     }
 
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
 
     ASSERT_TRUE(total >= expected * 90 / 100);
@@ -143,8 +142,7 @@ static void test_worksteal_assigned_core_update(void) {
             moved++;
     }
 
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
 
     if (steals > 0) {
@@ -193,8 +191,7 @@ static void test_worksteal_reroute_under_migration(void) {
         sleep_ms(1);
     }
 
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
 
     ASSERT_TRUE(total >= TOTAL_MSGS * 90 / 100);
@@ -244,8 +241,7 @@ static void test_worksteal_atomic_assigned_core_read(void) {
         sleep_ms(1);
     }
 
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();
     scheduler_cleanup();
 
     ASSERT_TRUE(valid);

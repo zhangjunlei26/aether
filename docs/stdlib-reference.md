@@ -73,16 +73,16 @@ main() {
     mymap = map.new();
     defer map.free(mymap);
 
-    key = string.new("name");
-    defer string.release(key);
+    // Keys are raw string literals (const char*),
+    // values are pointers (AetherString* here)
     val = string.new("Aether");
     defer string.release(val);
 
-    map.put(mymap, key, val);
-    result = map.get(mymap, key);
-    exists = map.has(mymap, key);
+    map.put(mymap, "name", val);
+    result = map.get(mymap, "name");
+    exists = map.has(mymap, "name");
 
-    map.remove(mymap, key);
+    map.remove(mymap, "name");
     size = map.size(mymap);
 
     map.clear(mymap);
@@ -613,6 +613,60 @@ main() {
 - `math.random_seed(seed)` - Seed RNG
 - `math.random_int(min, max)` - Random integer in range
 - `math.random_float()` - Random float 0.0-1.0
+
+---
+
+## I/O (`std.io`)
+
+Console output, file operations, and environment variable access.
+
+```aether
+import std.io
+import std.string
+
+main() {
+    io.print("Hello ")
+    io.print_line("World")
+    io.print_int(42)
+    io.print_line("")
+
+    // io.getenv() and io.read_file() return AetherString pointers (ptr).
+    // Use string.to_cstr() to convert to a plain string for printing.
+    home = io.getenv("HOME")
+    if (home != 0) {
+        io.print_line(string.to_cstr(home))
+    }
+
+    // File read also returns AetherString pointer
+    content = io.read_file("myfile.txt")
+    if (content != 0) {
+        io.print_line(string.to_cstr(content))
+        string.release(content)
+    }
+}
+```
+
+**Console Output:**
+- `io.print(str)` - Print string (takes raw `const char*`)
+- `io.print_line(str)` - Print string with newline (takes raw `const char*`)
+- `io.print_int(value)` - Print integer
+- `io.print_float(value)` - Print float
+
+**File Operations:**
+- `io.read_file(path)` - Read entire file (returns `AetherString*` ptr — use `string.to_cstr()` to print)
+- `io.write_file(path, content)` - Write content to file (returns 1 on success, 0 on failure)
+- `io.append_file(path, content)` - Append content to file (returns 1 on success, 0 on failure)
+- `io.file_exists(path)` - Check if file exists (returns 1/0)
+- `io.delete_file(path)` - Delete file (returns 1 on success, 0 on failure)
+
+**File Info:**
+- `io.file_info(path)` - Get file metadata (returns ptr)
+- `io.file_info_free(info)` - Free file info
+
+**Environment:**
+- `io.getenv(name)` - Get environment variable value (returns `AetherString*` ptr — use `string.to_cstr()` to print)
+- `io.setenv(name, value)` - Set environment variable (returns 1 on success)
+- `io.unsetenv(name)` - Unset environment variable (returns 1 on success)
 
 ---
 

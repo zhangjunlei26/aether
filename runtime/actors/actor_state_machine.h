@@ -26,7 +26,7 @@ typedef enum {
 typedef struct {
     int type;           // Message type
     int sender_id;      // ID of sending actor
-    int payload_int;    // Integer payload
+    intptr_t payload_int;  // Integer/pointer payload (pointer-width for actor refs)
     void* payload_ptr;  // Pointer payload (small messages or zero-copy pointer)
 
     // Zero-copy support for large messages (4.8x improvement for >256 bytes)
@@ -166,7 +166,7 @@ static inline Message message_create_zerocopy(int type, int sender_id, void* dat
     return msg;
 }
 
-static inline Message message_create_simple(int type, int sender_id, int payload) {
+static inline Message message_create_simple(int type, int sender_id, intptr_t payload) {
     Message msg;
     memset(&msg, 0, sizeof(msg));
     msg.type = type;

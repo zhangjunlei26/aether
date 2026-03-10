@@ -86,5 +86,6 @@ main() {
     room ! Leave { user_id: 2 };
     room ! RoomStatus {};
 
+    wait_for_idle();
     print("Chat room done\n");
 }

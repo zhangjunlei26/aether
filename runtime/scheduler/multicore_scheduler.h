@@ -119,7 +119,8 @@ void scheduler_init_with_opts(int cores, AetherOptFlags opts);
 void scheduler_start();
 void scheduler_ensure_threads_running();  // Start threads if not already started (for main-thread mode transition)
 void scheduler_stop();
-void scheduler_wait();
+void scheduler_wait();      // Wait for quiescence (all pending messages processed). Non-destructive.
+void scheduler_shutdown();  // Wait + stop + join threads. Call once at program exit.
 void scheduler_cleanup();
 
 int scheduler_register_actor(ActorBase* actor, int preferred_core);

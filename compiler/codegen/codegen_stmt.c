@@ -504,6 +504,12 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                     }
 
                     fprintf(gen->output, ";\n");
+                    // Suppress unused-variable warning for arrays used with list
+                    // pattern matching — the paired _len variable may be the only
+                    // one used when patterns only check size ([], [_], wildcard).
+                    if (is_array_init || (stmt->node_type && stmt->node_type->kind == TYPE_ARRAY)) {
+                        print_line(gen, "(void)%s;", stmt->value);
+                    }
                 }
             }
             break;

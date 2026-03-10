@@ -150,7 +150,7 @@ Both test runners use consistent flags:
 
 ## Known Issues
 
-1. **Set clear operation** - `set_clear()` has a known bug when called on sets with existing elements. Workaround: Create fresh sets for each test group.
+None currently.
 
 ## Requirements
 

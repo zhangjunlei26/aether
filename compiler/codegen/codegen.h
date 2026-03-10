@@ -24,6 +24,7 @@ typedef struct {
     int in_condition;  // Track if we're in a condition (if/while) to avoid double parens
     int in_main_loop;  // Track if we're in main's loop for batch send optimization
     int in_main_function;  // Track if we're in main() so return -> goto main_exit
+    int uses_main_exit;    // Track if any goto main_exit was emitted (suppress unused label)
     int interp_as_printf;  // When set, string interp generates printf() instead of snprintf+malloc
     ASTNode* program;  // Reference to program root for lookups
 

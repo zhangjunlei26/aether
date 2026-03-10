@@ -22,8 +22,10 @@ Aether is a compiled language that brings actor-based concurrency to systems pro
 The Aether runtime implements a native actor system with optimized message passing:
 
 ### Concurrency Model
-- **Multi-core partitioned scheduler** with per-core actor queues
-- **Work-stealing fallback** for idle core balancing (primary strategy is partitioned assignment)
+- **Multi-core partitioned scheduler** with locality-aware actor placement
+- **Locality-aware spawning** — actors placed on the caller's core for efficient parent-child messaging
+- **Message-driven migration** — communicating actors automatically converge onto the same core
+- **Work-stealing fallback** for idle core balancing
 - **Lock-free SPSC queues** for same-core messaging
 - **Cross-core messaging** with lock-free mailboxes
 
@@ -180,9 +182,12 @@ aether/
 ├── std/               # Standard library
 │   ├── collections/   # HashMap, Vector, Set, List
 │   ├── string/       # String operations
-│   ├── net/          # TCP/UDP networking, HTTP
+│   ├── net/          # TCP/UDP networking, HTTP client & server
 │   ├── json/         # JSON parser
-│   └── fs/           # File system operations
+│   ├── fs/           # File system operations
+│   ├── math/         # Math functions and random numbers
+│   ├── io/           # Console I/O, environment variables
+│   └── log/          # Structured logging
 ├── tools/            # Developer tools
 │   ├── ae.c          # Unified CLI tool (ae command)
 │   └── apkg/         # Project tooling, TOML parser
@@ -339,7 +344,7 @@ Aether is under active development. The compiler, runtime, and standard library 
 
 **What works today:**
 - Full compiler pipeline with Rust-style diagnostics (file, line, column, source context, caret, hints)
-- Multi-core actor runtime with partitioned scheduler and work-stealing fallback
+- Multi-core actor runtime with locality-aware placement, message-driven migration, and work-stealing fallback
 - Main-thread actor mode — single-actor programs bypass the scheduler entirely (zero-overhead path)
 - Batch fan-out send for main-to-many patterns
 - Lock-free message passing with adaptive optimizations

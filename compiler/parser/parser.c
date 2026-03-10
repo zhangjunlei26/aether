@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "parser.h"
 #include "lexer.h"
 #include "../aether_error.h"
@@ -94,6 +95,12 @@ static void parser_message(Parser* parser, const char* message) {
     (void)message;
 }
 
+// Check if a token type is a type keyword (int, float, string, bool, long, ptr)
+static int is_type_token(AeTokenType type) {
+    return type == TOKEN_INT || type == TOKEN_INT64 || type == TOKEN_FLOAT ||
+           type == TOKEN_BOOL || type == TOKEN_STRING || type == TOKEN_PTR;
+}
+
 Type* parse_type(Parser* parser) {
     Token* token = peek_token(parser);
     if (!token) return NULL;
@@ -138,10 +145,16 @@ Type* parse_type(Parser* parser) {
         }
         case TOKEN_ACTOR_REF:
             advance_token(parser);
-            if (!expect_token(parser, TOKEN_LEFT_BRACKET)) return NULL;
-            Type* actor_type = parse_type(parser);
-            if (!expect_token(parser, TOKEN_RIGHT_BRACKET)) return NULL;
-            type = create_actor_ref_type(actor_type);
+            // Optional type parameter: ActorRef[Type] or bare actor_ref
+            if (peek_token(parser) && peek_token(parser)->type == TOKEN_LEFT_BRACKET) {
+                advance_token(parser); // consume '['
+                Type* actor_type = parse_type(parser);
+                if (!expect_token(parser, TOKEN_RIGHT_BRACKET)) return NULL;
+                type = create_actor_ref_type(actor_type);
+            } else {
+                // Bare actor_ref — no type parameter
+                type = create_type(TYPE_ACTOR_REF);
+            }
             break;
         default:
             return NULL;
@@ -241,15 +254,37 @@ static ASTNode* parse_interp_string_expr(const char* raw) {
                 lit_buf = nb;
             }
             char code = p[1];
-            switch (code) {
-                case 'n':  lit_buf[lit_len++] = '\n'; break;
-                case 't':  lit_buf[lit_len++] = '\t'; break;
-                case 'r':  lit_buf[lit_len++] = '\r'; break;
-                case '\\': lit_buf[lit_len++] = '\\'; break;
-                case '"':  lit_buf[lit_len++] = '"';  break;
-                default:   lit_buf[lit_len++] = code; break;
+            if (code == 'x') {
+                // \xNN hex escape (1-2 hex digits)
+                p += 2; // skip \x
+                int val = 0, digits = 0;
+                while (digits < 2 && *p && isxdigit((unsigned char)*p)) {
+                    char h = *p++;
+                    val = val * 16 + (h >= 'a' ? h - 'a' + 10 :
+                                      h >= 'A' ? h - 'A' + 10 : h - '0');
+                    digits++;
+                }
+                lit_buf[lit_len++] = digits > 0 ? (char)val : 'x';
+            } else if (code >= '0' && code <= '7') {
+                // \NNN octal escape (1-3 digits)
+                p++; // skip backslash
+                int val = (*p++) - '0', digits = 1;
+                while (digits < 3 && *p >= '0' && *p <= '7') {
+                    val = val * 8 + (*p++ - '0');
+                    digits++;
+                }
+                lit_buf[lit_len++] = (char)(val & 0xFF);
+            } else {
+                switch (code) {
+                    case 'n':  lit_buf[lit_len++] = '\n'; break;
+                    case 't':  lit_buf[lit_len++] = '\t'; break;
+                    case 'r':  lit_buf[lit_len++] = '\r'; break;
+                    case '\\': lit_buf[lit_len++] = '\\'; break;
+                    case '"':  lit_buf[lit_len++] = '"';  break;
+                    default:   lit_buf[lit_len++] = code; break;
+                }
+                p += 2;
             }
-            p += 2;
         } else {
             if (lit_len >= lit_cap - 2) {
                 lit_cap *= 2;
@@ -2142,7 +2177,29 @@ ASTNode* parse_pattern(Parser* parser) {
             // List pattern: [], [x], [H|T]
             return parse_list_pattern(parser);
         }
-        
+
+        // C-style typed parameters: int a, float b, string s, etc.
+        case TOKEN_INT:
+        case TOKEN_INT64:
+        case TOKEN_FLOAT:
+        case TOKEN_BOOL:
+        case TOKEN_STRING:
+        case TOKEN_PTR: {
+            // Check if next token is an identifier (type name pattern)
+            Token* next = peek_ahead(parser, 1);
+            if (next && next->type == TOKEN_IDENTIFIER) {
+                Type* param_type = parse_type(parser);  // consume type token
+                Token* pname = expect_token(parser, TOKEN_IDENTIFIER);
+                if (!pname) { if (param_type) free_type(param_type); return NULL; }
+                ASTNode* pattern = create_ast_node(AST_PATTERN_VARIABLE, pname->value,
+                                                   pname->line, pname->column);
+                pattern->node_type = param_type ? param_type : create_type(TYPE_UNKNOWN);
+                return pattern;
+            }
+            // Fall through to expression parsing
+            return parse_expression(parser);
+        }
+
         default:
             // Fallback to expression
             return parse_expression(parser);
@@ -2366,6 +2423,33 @@ ASTNode* parse_program(Parser* parser) {
                     node = parse_function_definition(parser);
                 } else {
                     parser_error(parser, "Unexpected identifier at top level (expected actor, struct, or function)");
+                    advance_token(parser);
+                    continue;
+                }
+                break;
+            }
+            // C-style return type prefix: int func_name(...) { ... }
+            case TOKEN_INT:
+            case TOKEN_INT64:
+            case TOKEN_FLOAT:
+            case TOKEN_BOOL:
+            case TOKEN_STRING:
+            case TOKEN_PTR: {
+                Token* next = peek_ahead(parser, 1);
+                Token* next2 = peek_ahead(parser, 2);
+                if (next && next->type == TOKEN_IDENTIFIER &&
+                    next2 && next2->type == TOKEN_LEFT_PAREN) {
+                    // Parse the return type, then the function definition
+                    Type* ret_type = parse_type(parser);
+                    node = parse_function_definition(parser);
+                    if (node && ret_type) {
+                        if (node->node_type) free_type(node->node_type);
+                        node->node_type = ret_type;
+                    } else if (ret_type) {
+                        free_type(ret_type);
+                    }
+                } else {
+                    parser_error(parser, "Expected function definition after type keyword");
                     advance_token(parser);
                     continue;
                 }

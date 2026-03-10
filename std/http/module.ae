@@ -9,10 +9,10 @@
 // which are compiled into libaether.a
 
 // HTTP Client
-extern http_get(url: ptr) -> ptr
-extern http_post(url: ptr, body: ptr, content_type: ptr) -> ptr
-extern http_put(url: ptr, body: ptr, content_type: ptr) -> ptr
-extern http_delete(url: ptr) -> ptr
+extern http_get(url: string) -> ptr
+extern http_post(url: string, body: string, content_type: string) -> ptr
+extern http_put(url: string, body: string, content_type: string) -> ptr
+extern http_delete(url: string) -> ptr
 extern http_response_free(response: ptr)
 
 // HTTP Server - lifecycle

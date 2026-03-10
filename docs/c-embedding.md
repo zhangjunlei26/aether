@@ -95,8 +95,7 @@ int main(int argc, char** argv) {
     usleep(100000);
 
     // Cleanup
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();  // Waits for quiescence, stops and joins threads
     scheduler_cleanup();
     aether_runtime_shutdown();
 
@@ -174,11 +173,11 @@ int main() {
     msg.type = 2;             // Print
     scheduler_send_remote((ActorBase*)actor, msg, -1);
 
-    usleep(100000);
+    // Wait for messages to be processed
+    scheduler_wait();  // Non-destructive: can send more messages after this
 
     // Cleanup
-    scheduler_stop();
-    scheduler_wait();
+    scheduler_shutdown();  // Waits for quiescence, stops and joins threads
     scheduler_cleanup();
     aether_runtime_shutdown();
 
@@ -206,11 +205,13 @@ void scheduler_init(int cores);
 // Start scheduler threads
 void scheduler_start(void);
 
-// Signal scheduler threads to stop
-void scheduler_stop(void);
-
-// Wait for all scheduler threads to finish
+// Wait for quiescence (all pending messages processed)
+// Non-destructive: scheduler threads keep running. Safe to call multiple times.
 void scheduler_wait(void);
+
+// Wait for quiescence, then stop and join scheduler threads.
+// Call once at program exit.
+void scheduler_shutdown(void);
 
 // Free scheduler resources
 void scheduler_cleanup(void);
@@ -222,7 +223,7 @@ void scheduler_cleanup(void);
 // Spawn actor from pool (recommended)
 // Returns actor pointer, NULL on failure
 ActorBase* scheduler_spawn_pooled(
-    int preferred_core,      // Core hint, -1 for round-robin
+    int preferred_core,      // Core hint, -1 for caller's core (main thread defaults to core 0)
     void (*step)(void*),     // Message handler function
     size_t actor_size        // sizeof(YourActorType)
 );
@@ -240,8 +241,8 @@ int scheduler_register_actor(ActorBase* actor, int preferred_core);
 // Message structure
 typedef struct {
     int type;           // Message ID
-    int sender_core;    // Automatically set
-    int payload_int;    // For single-int messages
+    int sender_id;      // Sender actor ID
+    intptr_t payload_int; // For single-int messages (intptr_t to pass actor refs without truncation)
     void* payload_ptr;  // For complex payloads
 } Message;
 
@@ -278,11 +279,16 @@ typedef struct {
 ```
 
 The `ActorBase` contains:
-- `mailbox`: Message queue
-- `active`: Processing flag
+- `active`: Processing flag (`atomic_int`)
 - `id`: Unique actor ID
-- `assigned_core`: Current core assignment (atomic_int, safe for cross-core reads)
+- `mailbox`: Message queue (ring buffer)
 - `step`: Your message handler
+- `assigned_core`: Current core assignment (`atomic_int`, safe for cross-core reads)
+- `migrate_to`: Affinity hint for message-driven migration (`atomic_int`)
+- `main_thread_only`: If set, scheduler threads skip this actor (`atomic_int`)
+- `spsc_queue`: Lock-free same-core messaging (pointer, lazily allocated)
+- `reply_slot`: Non-NULL during ask/reply (`_Atomic` pointer)
+- `step_lock`: Prevents concurrent `step()` during work-steal handoff (`atomic_flag`)
 
 ## Message Handler Pattern
 

@@ -27,7 +27,7 @@ int main() {
         Message msg;
         int result = mailbox_receive(&mbox, &msg);
         if (result) {
-            printf("   Received message: type=%d, payload=%d\n", msg.type, msg.payload_int);
+            printf("   Received message: type=%d, payload=%td\n", msg.type, msg.payload_int);
         } else {
             printf("   Receive failed at message %d\n", i);
             break;

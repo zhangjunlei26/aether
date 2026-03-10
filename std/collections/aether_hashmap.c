@@ -262,15 +262,15 @@ bool hashmap_remove(HashMap* map, const void* key) {
 
 void hashmap_clear(HashMap* map) {
     if (!map) return;
-    
+
     for (size_t i = 0; i < map->capacity; i++) {
         if (map->entries[i].occupied) {
             if (map->key_free) map->key_free(map->entries[i].key);
             if (map->value_free) map->value_free(map->entries[i].value);
-            map->entries[i].occupied = false;
         }
     }
-    
+
+    memset(map->entries, 0, map->capacity * sizeof(HashMapEntry));
     map->size = 0;
 }
 

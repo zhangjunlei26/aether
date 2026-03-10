@@ -74,9 +74,12 @@ export calculate_distance(Point p1, Point p2): float {
 
 **Complex types or ambiguous cases**
 ```aether
+import std.map
+import std.list
+
 // When type inference might fail or be unclear
-HashMap map = HashMap.new()
-Vector[User] users = Vector.new()
+ptr my_map = map.new()
+ptr users = list.new()
 
 // Explicit type prevents ambiguity
 int result = parse_number(input)  // Clarifies we want int, not float
@@ -88,7 +91,7 @@ actor Counter {
     state count: int           // Explicit for clarity
     state name: string
     state values: [int]
-    state users: HashMap
+    state users: ptr
     
     // ...
 }
@@ -190,14 +193,16 @@ names = ["Alice", "Bob"]   // Inferred as [string]
 ### Complex Types
 
 ```aether
+import std.map
+import std.list
+
 // Explicit for complex types
-HashMap[string, User] user_map = HashMap.new()
-Vector[Point] points = Vector.new()
-ActorRef[Counter] counter = spawn(Counter())
+ptr user_map = map.new()
+ptr points = list.new()
 
 // Inference for simple cases
-map = HashMap.new()
-points = Vector.new()
+my_map = map.new()
+my_points = list.new()
 counter = spawn(Counter())
 ```
 
@@ -247,26 +252,22 @@ export midpoint(Point p1, Point p2): Point {
 
 ```aether
 // Explicit where it matters, inference elsewhere
-import std.collections.HashMap
+import std.file
+import std.string
 
 process_data(string filename): int {
-    // Explicit for complex types
-    HashMap map = HashMap.new()
     int count = 0
-    
+
     // Inference for simple local variables
-    file = open(filename)
-    
-    while line = file.read_line() {
-        parts = line.split(",")
-        key = parts[0]
-        value = parts[1]
-        
-        map.insert(key, value)
-        count = count + 1
-    }
-    
-    file.close()
+    f = file.open(filename, "r")
+    content = file.read_all(f)
+    file.close(f)
+
+    // Process content
+    parts = string.split(content, ",")
+    count = string.array_size(parts)
+    string.array_free(parts)
+
     return count
 }
 ```
@@ -309,7 +310,7 @@ fibonacci(int n): int {
 | Struct fields | Explicit | `struct User { int id }` |
 | Actor state | Explicit | `state count: int` |
 | Loop variables | Inference | `for i in 0..10` |
-| Complex types | Explicit | `HashMap map = HashMap.new()` |
+| Complex types | Explicit | `ptr my_map = map.new()` |
 | Public APIs | Explicit | All types annotated |
 | Scripts/prototypes | Inference | Minimal annotations |
 

@@ -107,6 +107,9 @@ static ASTNode* fold_binary_expression(ASTNode* node) {
             // Preserve integer type if both operands are integers
             int both_int = (left->node_type && left->node_type->kind == TYPE_INT) &&
                            (right->node_type && right->node_type->kind == TYPE_INT);
+            // When both operands are int, use C integer division semantics (truncate)
+            // so that 10/3 = 3, not 3.333... — avoids %d format mismatch warning
+            if (both_int) result = (double)(long long)result;
             ASTNode* folded = create_numeric_literal(result, both_int, node->line, node->column);
             
             // Free old node (but not the original structure, return new one)

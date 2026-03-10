@@ -540,6 +540,8 @@ static int generate_clause_condition(CodeGenerator* gen, ASTNode* func, int is_f
             print_indent(gen);
             generate_type(gen, child->node_type);
             fprintf(gen->output, " %s = _arg%d;\n", child->value, param_idx);
+            // Suppress unused-variable warning when pattern binds but body ignores
+            print_line(gen, "(void)%s;", child->value);
         }
 
         if (child->type == AST_PATTERN_LIST && child->child_count > 0) {
@@ -549,6 +551,7 @@ static int generate_clause_condition(CodeGenerator* gen, ASTNode* func, int is_f
                     print_indent(gen);
                     fprintf(gen->output, "int %s = _list%d[%d];\n",
                             elem->value, list_idx, j);
+                    print_line(gen, "(void)%s;", elem->value);
                 }
             }
             list_idx++;
@@ -557,6 +560,7 @@ static int generate_clause_condition(CodeGenerator* gen, ASTNode* func, int is_f
                 print_indent(gen);
                 fprintf(gen->output, "int %s = _list%d[0];\n",
                         child->children[0]->value, list_idx);
+                print_line(gen, "(void)%s;", child->children[0]->value);
             }
             if (child->child_count >= 2 && child->children[1]->type == AST_PATTERN_VARIABLE) {
                 print_indent(gen);
@@ -565,6 +569,8 @@ static int generate_clause_condition(CodeGenerator* gen, ASTNode* func, int is_f
                 print_indent(gen);
                 fprintf(gen->output, "int %s_len = _len%d - 1;\n",
                         child->children[1]->value, list_idx);
+                print_line(gen, "(void)%s; (void)%s_len;",
+                           child->children[1]->value, child->children[1]->value);
             }
             list_idx++;
         }
