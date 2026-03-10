@@ -201,13 +201,11 @@ static inline void* pthread_getspecific(pthread_key_t key) {
 }
 
 // ---- clock_gettime / nanosleep compat ------------------------------------
-// MinGW provides these via <time.h> (with _POSIX_C_SOURCE); MSVC does not.
-// Guard with AETHER_NEED_CLOCK_COMPAT so MinGW builds don't get duplicates.
-#if defined(_MSC_VER) || !defined(CLOCK_MONOTONIC)
-#define AETHER_NEED_CLOCK_COMPAT 1
-#endif
-
-#ifdef AETHER_NEED_CLOCK_COMPAT
+// Always provide our own clock_gettime on Windows. MinGW declares it in
+// <time.h> but some toolchain versions route it through __clock_gettime64
+// which is absent from the import library, causing linker failures.
+// Using a renamed static inline + macro avoids both the linker issue and
+// any redeclaration conflicts with MinGW's <time.h>.
 
 #ifndef CLOCK_MONOTONIC
 #define CLOCK_MONOTONIC 1
@@ -216,7 +214,7 @@ static inline void* pthread_getspecific(pthread_key_t key) {
 #define CLOCK_REALTIME  0
 #endif
 
-static inline int clock_gettime(int clk_id, struct timespec* ts) {
+static inline int aether_win32_clock_gettime(int clk_id, struct timespec* ts) {
     if (clk_id == CLOCK_MONOTONIC) {
         LARGE_INTEGER freq, now;
         QueryPerformanceFrequency(&freq);
@@ -224,41 +222,36 @@ static inline int clock_gettime(int clk_id, struct timespec* ts) {
         ts->tv_sec  = (time_t)(now.QuadPart / freq.QuadPart);
         ts->tv_nsec = (long)((now.QuadPart % freq.QuadPart) * 1000000000LL / freq.QuadPart);
     } else {
-        // CLOCK_REALTIME
         FILETIME ft;
         GetSystemTimeAsFileTime(&ft);
         ULARGE_INTEGER uli;
         uli.LowPart  = ft.dwLowDateTime;
         uli.HighPart = ft.dwHighDateTime;
-        // Convert Windows epoch (1601) to Unix epoch (1970)
         uint64_t unix_100ns = uli.QuadPart - 116444736000000000ULL;
         ts->tv_sec  = (time_t)(unix_100ns / 10000000ULL);
         ts->tv_nsec = (long)((unix_100ns % 10000000ULL) * 100);
     }
     return 0;
 }
+#define clock_gettime(clk, ts) aether_win32_clock_gettime((clk), (ts))
 
 // ---- nanosleep compat ----------------------------------------------------
-// POSIX nanosleep() is not available on Windows.  Use Sleep() with
-// millisecond granularity (good enough for the ~100μs idle sleeps we use).
-
-static inline int nanosleep(const struct timespec* req, struct timespec* rem) {
+// Same rename+macro pattern as clock_gettime to avoid MinGW redefinition.
+static inline int aether_win32_nanosleep(const struct timespec* req, struct timespec* rem) {
     (void)rem;
     DWORD ms = (DWORD)(req->tv_sec * 1000 + req->tv_nsec / 1000000);
-    if (ms == 0 && req->tv_nsec > 0) ms = 1;  // at least 1ms for sub-ms sleeps
+    if (ms == 0 && req->tv_nsec > 0) ms = 1;
     Sleep(ms);
     return 0;
 }
-
-#endif // AETHER_NEED_CLOCK_COMPAT
+#define nanosleep(req, rem) aether_win32_nanosleep((req), (rem))
 
 // ---- sched_yield compat --------------------------------------------------
-// On POSIX, sched_yield() lives in <sched.h>.
-// On Windows the equivalent is SwitchToThread() from <windows.h>.
-static inline int sched_yield(void) {
+static inline int aether_win32_sched_yield(void) {
     SwitchToThread();
     return 0;
 }
+#define sched_yield() aether_win32_sched_yield()
 
 #endif // _WIN32
 

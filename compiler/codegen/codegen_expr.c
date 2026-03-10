@@ -562,8 +562,38 @@ void generate_expression(CodeGenerator* gen, ASTNode* expr) {
                                 case '\t': fprintf(gen->output, "\\t");   break; \
                                 case '\r': fprintf(gen->output, "\\r");   break; \
                                 case '"':  fprintf(gen->output, "\\\"");  break; \
-                                case '\\': fprintf(gen->output, "\\\\");  break; \
                                 case '%':  fprintf(gen->output, "%%%%");  break; \
+                                case '\\': { \
+                                    char esc = *(s+1); \
+                                    if (esc == 'n')       { fprintf(gen->output, "\\n");   s++; } \
+                                    else if (esc == 't')  { fprintf(gen->output, "\\t");   s++; } \
+                                    else if (esc == 'r')  { fprintf(gen->output, "\\r");   s++; } \
+                                    else if (esc == '\\') { fprintf(gen->output, "\\\\");  s++; } \
+                                    else if (esc == '"')  { fprintf(gen->output, "\\\"");  s++; } \
+                                    else if (esc == 'x') { \
+                                        s += 2; \
+                                        int hval = 0, hd = 0; \
+                                        while (hd < 2 && ((*s >= '0' && *s <= '9') || \
+                                               (*s >= 'a' && *s <= 'f') || (*s >= 'A' && *s <= 'F'))) { \
+                                            char hc = *s; \
+                                            hval = hval * 16 + (hc >= 'a' ? hc-'a'+10 : hc >= 'A' ? hc-'A'+10 : hc-'0'); \
+                                            s++; hd++; \
+                                        } \
+                                        s--; \
+                                        if (hd > 0) fprintf(gen->output, "\\x%02x", hval & 0xFF); \
+                                        else        fprintf(gen->output, "\\\\x"); \
+                                    } else if (esc >= '0' && esc <= '7') { \
+                                        s++; \
+                                        int oval = esc - '0', od = 1; \
+                                        while (od < 3 && *(s+1) >= '0' && *(s+1) <= '7') { \
+                                            s++; oval = oval * 8 + (*s - '0'); od++; \
+                                        } \
+                                        fprintf(gen->output, "\\x%02x", oval & 0xFF); \
+                                    } else { \
+                                        fprintf(gen->output, "\\\\"); \
+                                    } \
+                                    break; \
+                                } \
                                 default: \
                                     if ((unsigned char)*s < 0x20 || *s == 0x7F) \
                                         fprintf(gen->output, "\\x%02x", (unsigned char)*s); \

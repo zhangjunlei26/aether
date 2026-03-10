@@ -1181,6 +1181,40 @@ int typecheck_statement(ASTNode* stmt, SymbolTable* table) {
             for (int i = 0; i < stmt->child_count; i++) {
                 typecheck_expression(stmt->children[i], table);
             }
+            if (stmt->child_count >= 2 &&
+                stmt->children[0]->type == AST_LITERAL &&
+                stmt->children[0]->node_type &&
+                stmt->children[0]->node_type->kind == TYPE_STRING &&
+                stmt->children[0]->value) {
+                const char* fmt = stmt->children[0]->value;
+                int arg_idx = 1;
+                for (int fi = 0; fmt[fi]; fi++) {
+                    if (fmt[fi] != '%' || !fmt[fi + 1]) continue;
+                    fi++;
+                    while (fmt[fi] == '-' || fmt[fi] == '+' || fmt[fi] == ' ' ||
+                           fmt[fi] == '#' || fmt[fi] == '0') fi++;
+                    while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++;
+                    if (fmt[fi] == '.') { fi++; while (fmt[fi] >= '0' && fmt[fi] <= '9') fi++; }
+                    if (fmt[fi] == '%') continue;
+                    if (arg_idx >= stmt->child_count) break;
+                    Type* atype = infer_type(stmt->children[arg_idx], table);
+                    TypeKind ak = atype ? atype->kind : TYPE_UNKNOWN;
+                    char spec = fmt[fi];
+                    int mismatch = 0;
+                    if ((spec == 's') && ak != TYPE_STRING && ak != TYPE_PTR) mismatch = 1;
+                    if ((spec == 'd' || spec == 'i') && ak != TYPE_INT && ak != TYPE_INT64 && ak != TYPE_BOOL) mismatch = 1;
+                    if ((spec == 'f' || spec == 'g' || spec == 'e') && ak != TYPE_FLOAT) mismatch = 1;
+                    if (mismatch) {
+                        char wbuf[256];
+                        snprintf(wbuf, sizeof(wbuf),
+                            "Format specifier '%%%c' does not match argument type '%s' (auto-corrected)",
+                            spec, type_name(atype));
+                        type_warning(wbuf, stmt->children[arg_idx]->line, stmt->children[arg_idx]->column);
+                    }
+                    if (atype) free_type(atype);
+                    arg_idx++;
+                }
+            }
             return 1;
         }
         

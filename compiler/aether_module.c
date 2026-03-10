@@ -8,10 +8,14 @@
 
 #ifdef _WIN32
     #include <io.h>
+    #include <windows.h>
     #define access _access
     #define F_OK 0
 #else
     #include <unistd.h>
+#endif
+#ifdef __APPLE__
+    #include <mach-o/dyld.h>
 #endif
 
 ModuleRegistry* global_module_registry = NULL;
@@ -363,9 +367,44 @@ int dependency_graph_has_cycle(DependencyGraph* graph) {
 
 // --- Module Orchestration ---
 
-// Resolve a stdlib module name (e.g., "fs") to a file path.
+static const char* get_user_home_dir(void) {
+    const char* h = getenv("HOME");
+    if (h && h[0]) return h;
+#ifdef _WIN32
+    h = getenv("USERPROFILE");
+    if (h && h[0]) return h;
+    h = getenv("LOCALAPPDATA");
+    if (h && h[0]) return h;
+#endif
+    return NULL;
+}
+
+static int get_exe_directory(char* buf, size_t bufsz) {
+#ifdef _WIN32
+    DWORD n = GetModuleFileNameA(NULL, buf, (DWORD)bufsz);
+    if (n == 0 || n >= bufsz) return 0;
+#elif defined(__APPLE__)
+    uint32_t sz = (uint32_t)bufsz;
+    if (_NSGetExecutablePath(buf, &sz) != 0) return 0;
+#elif defined(__linux__)
+    ssize_t n = readlink("/proc/self/exe", buf, bufsz - 1);
+    if (n <= 0) return 0;
+    buf[n] = '\0';
+#else
+    return 0;
+#endif
+    char* last_sep = strrchr(buf, '/');
+#ifdef _WIN32
+    char* last_bsep = strrchr(buf, '\\');
+    if (!last_sep || (last_bsep && last_bsep > last_sep)) last_sep = last_bsep;
+#endif
+    if (last_sep) *last_sep = '\0';
+    else return 0;
+    return 1;
+}
+
 char* module_resolve_stdlib_path(const char* module_name) {
-    char path[512];
+    char path[1024];
 
     // Try 1: Local development path (relative to CWD)
     snprintf(path, sizeof(path), "std/%s/module.ae", module_name);
@@ -373,18 +412,36 @@ char* module_resolve_stdlib_path(const char* module_name) {
 
     // Try 2: Installed path via AETHER_HOME
     const char* aether_home = getenv("AETHER_HOME");
-    if (aether_home) {
+    if (aether_home && aether_home[0]) {
         snprintf(path, sizeof(path), "%s/share/aether/std/%s/module.ae", aether_home, module_name);
+        if (access(path, F_OK) == 0) return strdup(path);
+        snprintf(path, sizeof(path), "%s/std/%s/module.ae", aether_home, module_name);
         if (access(path, F_OK) == 0) return strdup(path);
     }
 
-    // Try 3: Common install locations
+    // Try 3: Relative to the running aetherc binary
+    char exe_dir[512];
+    if (get_exe_directory(exe_dir, sizeof(exe_dir))) {
+        snprintf(path, sizeof(path), "%s/../share/aether/std/%s/module.ae", exe_dir, module_name);
+        if (access(path, F_OK) == 0) return strdup(path);
+        snprintf(path, sizeof(path), "%s/../std/%s/module.ae", exe_dir, module_name);
+        if (access(path, F_OK) == 0) return strdup(path);
+        snprintf(path, sizeof(path), "%s/../lib/std/%s/module.ae", exe_dir, module_name);
+        if (access(path, F_OK) == 0) return strdup(path);
+    }
+
+    // Try 4: User home directory (~/.aether)
+    const char* home = get_user_home_dir();
+    if (home && home[0]) {
+        snprintf(path, sizeof(path), "%s/.aether/share/aether/std/%s/module.ae", home, module_name);
+        if (access(path, F_OK) == 0) return strdup(path);
+    }
+
+#ifndef _WIN32
+    // Try 5: System install locations (POSIX only)
     snprintf(path, sizeof(path), "/usr/local/share/aether/std/%s/module.ae", module_name);
     if (access(path, F_OK) == 0) return strdup(path);
-
-    snprintf(path, sizeof(path), "%s/.aether/share/aether/std/%s/module.ae",
-             getenv("HOME") ? getenv("HOME") : "", module_name);
-    if (access(path, F_OK) == 0) return strdup(path);
+#endif
 
     return NULL;
 }
