@@ -1,0 +1,71 @@
+// Regression test for GitHub issue #61
+// stdlib module resolution fails on Windows (HOME not set)
+// Also tests: std.file module functions (exact user code from issue #61 report).
+
+import std.string
+import std.math
+import std.file
+
+main() {
+    println("=== Issue #61: stdlib resolution + std.file ===")
+
+    s = string.new("aether")
+    defer string.release(s)
+
+    if string.length(s) != 6 {
+        print("FAIL: string.length expected 6, got ")
+        println(string.length(s))
+        exit(1)
+    }
+    println("PASS: std.string imported and works")
+
+    v = math.abs_int(-42)
+    if v != 42 {
+        print("FAIL: math.abs_int(-42) expected 42, got ")
+        println(v)
+        exit(1)
+    }
+    println("PASS: std.math imported and works")
+
+    sq = math.sqrt(16.0)
+    if sq < 3.99 {
+        println("FAIL: math.sqrt(16.0) too low")
+        exit(1)
+    }
+    if sq > 4.01 {
+        println("FAIL: math.sqrt(16.0) too high")
+        exit(1)
+    }
+    println("PASS: math.sqrt works")
+
+    f = file.open("_test_issue61_tmp.txt", "w")
+    if f == 0 {
+        println("FAIL: file.open returned null")
+        exit(1)
+    }
+    file.write(f, "hello", 5)
+    file.close(f)
+
+    if file.exists("_test_issue61_tmp.txt") == 0 {
+        println("FAIL: file.exists returned 0 after write")
+        exit(1)
+    }
+    println("PASS: file.open/write/close/exists work")
+
+    sz = file.size("_test_issue61_tmp.txt")
+    if sz != 5 {
+        print("FAIL: file.size expected 5, got ")
+        println(sz)
+        exit(1)
+    }
+    println("PASS: file.size works")
+
+    file.delete("_test_issue61_tmp.txt")
+    if file.exists("_test_issue61_tmp.txt") != 0 {
+        println("FAIL: file still exists after delete")
+        exit(1)
+    }
+    println("PASS: file.delete works")
+
+    println("=== Issue #61: ALL PASS ===")
+}

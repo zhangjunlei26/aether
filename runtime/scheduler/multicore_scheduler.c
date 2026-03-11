@@ -333,6 +333,17 @@ static void pin_to_core(int core_id) {
 #endif
 }
 
+// Check if any from_queue on this scheduler has pending cross-core messages.
+// Used to yield early from inner mailbox-drain loops so that external sends
+// (e.g. StopAnimation from main) are not starved by a self-scheduling actor.
+// Defined here (before scheduler_thread) so the static inline is visible.
+static inline int has_pending_cross_core(Scheduler* sched) {
+    for (int q = 0; q <= MAX_CORES; q++) {
+        if (queue_size(&sched->from_queues[q]) > 0) return 1;
+    }
+    return 0;
+}
+
 // Partitioned scheduler thread with work-stealing fallback for idle cores
 void* AETHER_HOT scheduler_thread(void* arg) {
     Scheduler* sched = (Scheduler*)arg;
@@ -520,6 +531,9 @@ void* AETHER_HOT scheduler_thread(void* arg) {
                            atomic_load_explicit(&actor->assigned_core, memory_order_relaxed) == sched->core_id) {
                         actor->step(actor);
                         processed++;
+                        // Yield to outer loop if cross-core messages arrived
+                        // (e.g. StopAnimation sent from main while actor sleeps).
+                        if (has_pending_cross_core(sched)) break;
                     }
                     atomic_flag_clear_explicit(&actor->step_lock, memory_order_release);
                     sched->messages_processed += processed;
@@ -620,6 +634,9 @@ void* AETHER_HOT scheduler_thread(void* arg) {
                            atomic_load_explicit(&actor->assigned_core, memory_order_relaxed) == sched->core_id) {
                         actor->step(actor);
                         processed++;
+                        // Yield to outer loop if cross-core messages arrived
+                        // (e.g. StopAnimation sent from main while actor sleeps).
+                        if (has_pending_cross_core(sched)) break;
                     }
                     atomic_flag_clear_explicit(&actor->step_lock, memory_order_release);
                 }

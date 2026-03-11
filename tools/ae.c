@@ -185,9 +185,16 @@ static int posix_run(const char* cmd_str, int quiet) {
     for (char* p = buf; *p && n < 511; ) {
         while (*p == ' ') p++;
         if (!*p) break;
-        toks[n++] = p;
-        while (*p && *p != ' ') p++;
-        if (*p) *p++ = '\0';
+        if (*p == '"') {
+            p++;  // skip opening quote
+            toks[n++] = p;
+            while (*p && *p != '"') p++;
+            if (*p) *p++ = '\0';  // null-terminate and skip closing quote
+        } else {
+            toks[n++] = p;
+            while (*p && *p != ' ') p++;
+            if (*p) *p++ = '\0';
+        }
     }
     toks[n] = NULL;
     if (n == 0) return 0;
@@ -222,6 +229,13 @@ static int run_cmd(const char* cmd) {
     return posix_run(cmd, 0);
 #else
     if (tc.verbose) fprintf(stderr, "[cmd] %s\n", cmd);
+    // cmd.exe quirk: when the command line starts with '"', it strips the outer
+    // quote pair, mangling paths. Use "cmd /c "..." " to preserve inner quotes.
+    if (cmd[0] == '"') {
+        char full[16384 + 16];
+        snprintf(full, sizeof(full), "cmd /c \"%s\"", cmd);
+        return system(full);
+    }
     return system(cmd);
 #endif
 }
@@ -231,8 +245,11 @@ static int run_cmd_quiet(const char* cmd) {
 #ifndef _WIN32
     return posix_run(cmd, 1);
 #else
-    char full[16384 + 16];
-    snprintf(full, sizeof(full), "%s >nul 2>&1", cmd);
+    char full[16384 + 32];
+    if (cmd[0] == '"')
+        snprintf(full, sizeof(full), "cmd /c \"%s\" >nul 2>&1", cmd);
+    else
+        snprintf(full, sizeof(full), "%s >nul 2>&1", cmd);
     return system(full);
 #endif
 }
@@ -242,8 +259,11 @@ static int run_cmd_show_warnings(const char* cmd) {
 #ifndef _WIN32
     return posix_run(cmd, 2);
 #else
-    char full[16384 + 16];
-    snprintf(full, sizeof(full), "%s >nul", cmd);
+    char full[16384 + 32];
+    if (cmd[0] == '"')
+        snprintf(full, sizeof(full), "cmd /c \"%s\" >nul", cmd);
+    else
+        snprintf(full, sizeof(full), "%s >nul", cmd);
     return system(full);
 #endif
 }
@@ -395,13 +415,20 @@ static void discover_toolchain(void) {
         home = home_clean;
     }
     if (home && home[0] && dir_exists(home)) {
-        // Prefer ~/.aether/current/bin/ if a version symlink exists (ae version use)
+        // Prefer ~/.aether/current/ if a version symlink exists (ae version use)
         char current_compiler[1024];
         snprintf(current_compiler, sizeof(current_compiler), "%s/current/bin/aetherc" EXE_EXT, home);
         if (path_exists(current_compiler)) {
             snprintf(tc.root, sizeof(tc.root), "%s/current", home);
             strncpy(tc.compiler, current_compiler, sizeof(tc.compiler) - 1);
             if (tc.verbose) fprintf(stderr, "[toolchain] compiler=%s (via current symlink)\n", tc.compiler);
+            goto found_root;
+        }
+        snprintf(current_compiler, sizeof(current_compiler), "%s/current/aetherc" EXE_EXT, home);
+        if (path_exists(current_compiler)) {
+            snprintf(tc.root, sizeof(tc.root), "%s/current", home);
+            strncpy(tc.compiler, current_compiler, sizeof(tc.compiler) - 1);
+            if (tc.verbose) fprintf(stderr, "[toolchain] compiler=%s (via current symlink, flat layout)\n", tc.compiler);
             goto found_root;
         }
         strncpy(tc.root, home, sizeof(tc.root) - 1);
@@ -483,6 +510,18 @@ static void discover_toolchain(void) {
     exit(1);
 
 found_root:
+    // Propagate AETHER_HOME to child processes (aetherc) so module
+    // resolution works even when the shell environment is not configured.
+#ifdef _WIN32
+    {
+        char env_buf[1100];
+        snprintf(env_buf, sizeof(env_buf), "AETHER_HOME=%s", tc.root);
+        _putenv(env_buf);
+    }
+#else
+    setenv("AETHER_HOME", tc.root, 0);
+#endif
+
     if (tc.verbose) {
         fprintf(stderr, "[toolchain] root: %s\n", tc.root);
         fprintf(stderr, "[toolchain] compiler: %s\n", tc.compiler);
@@ -907,11 +946,11 @@ static void build_gcc_cmd(char* cmd, size_t size,
         char* slash = (!bs) ? fs : (!fs) ? bs : (bs > fs ? bs : fs);
         if (slash) *slash = '\0';
         snprintf(cmd, size,
-            "\"%s\" %s %s %s %s -L%s -laether -o %s -lws2_32 %s",
+            "\"%s\" %s %s \"%s\" %s -L\"%s\" -laether -o \"%s\" -lws2_32 %s",
             s_gcc_bin, opt, tc.include_flags, c_file, extra, lib_dir, out_file, link_flags);
     } else {
         snprintf(cmd, size,
-            "\"%s\" %s %s %s %s %s -o %s -lws2_32 %s",
+            "\"%s\" %s %s \"%s\" %s %s -o \"%s\" -lws2_32 %s",
             s_gcc_bin, opt, tc.include_flags, c_file, extra, tc.runtime_srcs, out_file, link_flags);
     }
 #else
@@ -942,11 +981,11 @@ static void build_gcc_cmd(char* cmd, size_t size,
         if (slash) *slash = '\0';
 
         snprintf(cmd, size,
-            "gcc %s %s %s %s -L%s -laether -o %s -pthread -lm %s",
+            "gcc %s %s \"%s\" %s -L%s -laether -o \"%s\" -pthread -lm %s",
             opt, tc.include_flags, c_file, extra, lib_dir, out_file, link_flags);
     } else {
         snprintf(cmd, size,
-            "gcc %s %s %s %s %s -o %s -pthread -lm %s",
+            "gcc %s %s \"%s\" %s %s -o \"%s\" -pthread -lm %s",
             opt, tc.include_flags, c_file, extra, tc.runtime_srcs, out_file, link_flags);
     }
 #endif
@@ -1056,12 +1095,12 @@ static int cmd_run(int argc, char** argv) {
 
     // Step 1: Compile .ae to .c
     if (tc.verbose) printf("Compiling %s...\n", file);
-    snprintf(cmd, sizeof(cmd), "%s %s %s", tc.compiler, file, c_file);
+    snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, file, c_file);
 
     int aetherc_ret = tc.verbose ? run_cmd(cmd) : run_cmd_quiet(cmd);
     if (aetherc_ret != 0) {
         // Re-run with output visible so user can see the error
-        snprintf(cmd, sizeof(cmd), "%s %s %s", tc.compiler, file, c_file);
+        snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, file, c_file);
         run_cmd(cmd);
         fprintf(stderr, "Compilation failed.\n");
         return 1;
@@ -1092,7 +1131,7 @@ static int cmd_run(int argc, char** argv) {
     remove(c_file);
 
     // Step 3: Run
-    snprintf(cmd, sizeof(cmd), "%s", exe_file);
+    snprintf(cmd, sizeof(cmd), "\"%s\"", exe_file);
     int rc = run_cmd(cmd);
 
     if (rc < 0) {
@@ -1188,11 +1227,11 @@ static int cmd_build(int argc, char** argv) {
     printf("Building %s...\n", file);
 
     // Step 1: .ae to .c
-    snprintf(cmd, sizeof(cmd), "%s %s %s", tc.compiler, file, c_file);
+    snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, file, c_file);
 
     int aetherc_ret = tc.verbose ? run_cmd(cmd) : run_cmd_quiet(cmd);
     if (aetherc_ret != 0) {
-        snprintf(cmd, sizeof(cmd), "%s %s %s", tc.compiler, file, c_file);
+        snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, file, c_file);
         run_cmd(cmd);
         fprintf(stderr, "Compilation failed.\n");
         return 1;
@@ -1395,7 +1434,7 @@ static int cmd_test(int argc, char** argv) {
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wformat-truncation"
 #endif
-        snprintf(cmd, sizeof(cmd), "%s %s %s", tc.compiler, test, c_file);
+        snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, test, c_file);
 #if defined(__GNUC__) && !defined(__clang__)
 #  pragma GCC diagnostic pop
 #endif
@@ -1415,7 +1454,7 @@ static int cmd_test(int argc, char** argv) {
         }
 
         // Run
-        snprintf(cmd, sizeof(cmd), "%s", exe_file);
+        snprintf(cmd, sizeof(cmd), "\"%s\"", exe_file);
         int rc = run_cmd_quiet(cmd);
         if (rc == 0) {
             printf("PASS\n");
@@ -1737,13 +1776,14 @@ static int cmd_repl(void) {
                 fclose(f);
 
                 char cmd[16384];
-                snprintf(cmd, sizeof(cmd), "%s %s %s", tc.compiler, ae_file, c_file);
+                snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, ae_file, c_file);
                 if (run_cmd_quiet(cmd) != 0) {
                     run_cmd(cmd);  // show error
                 } else {
                     build_gcc_cmd(cmd, sizeof(cmd), c_file, exe_file, false, NULL);
                     if (run_cmd_quiet(cmd) == 0) {
-                        run_cmd(exe_file);
+                        snprintf(cmd, sizeof(cmd), "\"%s\"", exe_file);
+                        run_cmd(cmd);
                     } else {
                         build_gcc_cmd(cmd, sizeof(cmd), c_file, exe_file, false, NULL);
                         run_cmd(cmd);  // show build error
@@ -1826,9 +1866,9 @@ static int ae_download(const char* url, const char* dest) {
 #else
     char cmd[2048];
     if (system("curl --version >/dev/null 2>&1") == 0)
-        snprintf(cmd, sizeof(cmd), "curl -fsSL -o \"%s\" \"%s\"", dest, url);
+        snprintf(cmd, sizeof(cmd), "curl -fsSL -o \"%s\" \"%s\" 2>/dev/null", dest, url);
     else
-        snprintf(cmd, sizeof(cmd), "wget -q -O \"%s\" \"%s\"", dest, url);
+        snprintf(cmd, sizeof(cmd), "wget -q --no-verbose -O \"%s\" \"%s\" 2>/dev/null", dest, url);
     return system(cmd);
 #endif
 }
@@ -2036,7 +2076,25 @@ static int cmd_version_install(const char* version) {
     return 0;
 }
 
-// Switch the active Aether installation to a specific installed version.
+// Determine where binaries live inside a version directory.
+// Release archives may have a bin/ subdirectory or binaries at root.
+static void resolve_version_bin_dir(const char* ver_dir, char* out, size_t outsz) {
+    char probe[1024];
+#ifdef _WIN32
+    snprintf(probe, sizeof(probe), "%s\\bin\\aetherc" EXE_EXT, ver_dir);
+    if (path_exists(probe)) { snprintf(out, outsz, "%s\\bin", ver_dir); return; }
+    snprintf(probe, sizeof(probe), "%s\\bin\\ae" EXE_EXT, ver_dir);
+    if (path_exists(probe)) { snprintf(out, outsz, "%s\\bin", ver_dir); return; }
+    snprintf(out, outsz, "%s", ver_dir);
+#else
+    snprintf(probe, sizeof(probe), "%s/bin/aetherc" EXE_EXT, ver_dir);
+    if (path_exists(probe)) { snprintf(out, outsz, "%s/bin", ver_dir); return; }
+    snprintf(probe, sizeof(probe), "%s/bin/ae" EXE_EXT, ver_dir);
+    if (path_exists(probe)) { snprintf(out, outsz, "%s/bin", ver_dir); return; }
+    snprintf(out, outsz, "%s", ver_dir);
+#endif
+}
+
 static int cmd_version_use(const char* version) {
     char vtag[64];
     if (version[0] != 'v') snprintf(vtag, sizeof(vtag), "v%s", version);
@@ -2052,18 +2110,30 @@ static int cmd_version_use(const char* version) {
         return 1;
     }
 
+    char src_bin[1024];
+    resolve_version_bin_dir(ver_dir, src_bin, sizeof(src_bin));
+
 #ifdef _WIN32
-    // Windows: copy binaries to ~/.aether/bin/ (overwrites current)
-    char dest_bin[512], src_bin[512];
+    char dest_bin[512];
     snprintf(dest_bin, sizeof(dest_bin), "%s\\.aether\\bin", home);
-    snprintf(src_bin,  sizeof(src_bin),  "%s\\bin",           ver_dir);
     mkdirs(dest_bin);
-    char cmd[1024];
+    char cmd[2048];
+    // Copy all files from the resolved source to dest; use robocopy which
+    // handles in-use executables better than xcopy. /NFL /NDL /NJH /NJS
+    // suppress per-file output.
     snprintf(cmd, sizeof(cmd),
-        "xcopy /Y /Q \"%s\\*\" \"%s\\\"", src_bin, dest_bin);
-    if (system(cmd) != 0) {
-        fprintf(stderr, "Failed to copy binaries.\n");
-        return 1;
+        "robocopy \"%s\" \"%s\" /E /NFL /NDL /NJH /NJS /IS /IT >nul 2>&1",
+        src_bin, dest_bin);
+    int rc = system(cmd);
+    // robocopy returns 0-7 for success, >=8 for failure
+    if (rc >= 8) {
+        // Fall back to xcopy
+        snprintf(cmd, sizeof(cmd),
+            "xcopy /Y /Q \"%s\\*\" \"%s\\\"", src_bin, dest_bin);
+        if (system(cmd) != 0) {
+            fprintf(stderr, "Failed to copy binaries from %s to %s\n", src_bin, dest_bin);
+            return 1;
+        }
     }
 #else
     // POSIX: update ~/.aether/current symlink
@@ -2077,14 +2147,13 @@ static int cmd_version_use(const char* version) {
         fprintf(stderr, "  ln -sf %s %s\n", ver_dir, current);
         return 1;
     }
-    // Also copy all binaries to ~/.aether/bin/ so ae and aetherc in PATH are updated.
-    char dest_bin[512], src_bin[1024];
+    char dest_bin[512];
     snprintf(dest_bin, sizeof(dest_bin), "%s/.aether/bin", home);
-    snprintf(src_bin,  sizeof(src_bin),  "%s/bin",         ver_dir);
     snprintf(cmd, sizeof(cmd),
-        "mkdir -p \"%s\" && cp -f \"%s\"/* \"%s/\" 2>/dev/null",
-        dest_bin, src_bin, dest_bin);
-    if (system(cmd) != 0) { /* non-fatal: symlink is the primary mechanism */ }
+        "mkdir -p \"%s\" && cp -f \"%s\"/* \"%s/\" 2>/dev/null; "
+        "cp -f \"%s\"/* \"%s/\" 2>/dev/null; true",
+        dest_bin, src_bin, dest_bin, src_bin, dest_bin);
+    system(cmd);
     printf("Switched to Aether %s.\n", vtag);
     return 0;
 #endif
@@ -2256,6 +2325,13 @@ static void print_usage(void) {
 }
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    // Set UTF-8 console codepage so Aether programs can print Unicode correctly
+    // on Windows CMD and PowerShell (default CP1252/OEM is not UTF-8).
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+
     if (argc < 2) {
         print_usage();
         return 1;

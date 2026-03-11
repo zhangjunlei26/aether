@@ -3,6 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#ifdef _WIN32
+    #include <windows.h>
+#else
+    #include <unistd.h>
+#endif
 
 // Global state for diagnostics
 static struct {
@@ -12,25 +17,34 @@ static struct {
     int warnings_count;
 } g_diag = {0};
 
-// ANSI color codes
+// Runtime color flag: 1 when stderr is a terminal that supports ANSI
+static int g_use_colors = 0;
+
+// ANSI color codes — enabled at runtime when the terminal supports them
+#define COLOR_RED    (g_use_colors ? "\033[1;31m" : "")
+#define COLOR_YELLOW (g_use_colors ? "\033[1;33m" : "")
+#define COLOR_CYAN   (g_use_colors ? "\033[1;36m" : "")
+#define COLOR_GREEN  (g_use_colors ? "\033[1;32m" : "")
+#define COLOR_BOLD   (g_use_colors ? "\033[1m"    : "")
+#define COLOR_RESET  (g_use_colors ? "\033[0m"    : "")
+
+static void detect_color_support(void) {
 #ifdef _WIN32
-    // Windows 10+ supports ANSI, but we'll use simple output for compatibility
-    #define COLOR_RED ""
-    #define COLOR_YELLOW ""
-    #define COLOR_CYAN ""
-    #define COLOR_GREEN ""
-    #define COLOR_BOLD ""
-    #define COLOR_RESET ""
+    // Enable ANSI escape processing on Windows 10+ (build 14931+) and Windows Terminal.
+    // Falls back gracefully to no-color when the handle is redirected or on older Windows.
+    HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+    if (h == INVALID_HANDLE_VALUE) return;
+    DWORD mode = 0;
+    if (!GetConsoleMode(h, &mode)) return;  // not a console (piped/redirected)
+    if (SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+        g_use_colors = 1;
 #else
-    #define COLOR_RED "\033[1;31m"
-    #define COLOR_YELLOW "\033[1;33m"
-    #define COLOR_CYAN "\033[1;36m"
-    #define COLOR_GREEN "\033[1;32m"
-    #define COLOR_BOLD "\033[1m"
-    #define COLOR_RESET "\033[0m"
+    g_use_colors = isatty(fileno(stderr));
 #endif
+}
 
 void diagnostics_init(const char* source_code, const char* filename) {
+    detect_color_support();
     g_diag.source_code = source_code;
     g_diag.filename = filename;
     g_diag.errors_count = 0;

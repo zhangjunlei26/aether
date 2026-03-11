@@ -504,7 +504,7 @@ const char* get_c_type(Type* type) {
             if (type->element_type && type->element_type->kind == TYPE_STRUCT && type->element_type->struct_name) {
                 snprintf(buffer, 256, "%s*", type->element_type->struct_name);
             } else {
-                snprintf(buffer, 256, "ActorRef*");
+                snprintf(buffer, 256, "void*");
             }
             return buffer;
         }
@@ -637,6 +637,11 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main) {
     gen->scope_depth = 0;
     enter_scope(gen);
 
+    // Set UTF-8 console codepage on Windows so programs can print Unicode correctly
+    print_line(gen, "#ifdef _WIN32");
+    print_line(gen, "SetConsoleOutputCP(65001);  // CP_UTF8");
+    print_line(gen, "SetConsoleCP(65001);");
+    print_line(gen, "#endif");
     // Initialize command-line arguments
     print_line(gen, "aether_args_init(argc, argv);");
     // main_exit_ret and main_exit: label are needed when actors exist
