@@ -228,6 +228,7 @@ Aether includes a standard library with the following modules:
 | `std.log` | Structured logging |
 | `std.math` | Math functions |
 | `std.io` | Console I/O, environment variables |
+| `std.os` | Shell execution, command output capture |
 
 See [stdlib-api.md](stdlib-api.md) for the full API reference.
 

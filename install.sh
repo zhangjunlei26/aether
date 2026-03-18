@@ -212,7 +212,7 @@ if [ "$EDITOR_ONLY" -eq 0 ]; then
     for dir in runtime runtime/actors runtime/scheduler runtime/utils \
                runtime/memory runtime/config std std/string std/io std/math \
                std/net std/collections std/json std/fs std/log std/http \
-               std/file std/dir std/path std/tcp std/list std/map; do
+               std/file std/dir std/path std/tcp std/list std/map std/os; do
         if [ -d "$dir" ]; then
             mkdir -p "$INCLUDE_DIR/$dir"
             for h in "$dir"/*.h; do
@@ -230,7 +230,7 @@ if [ "$EDITOR_ONLY" -eq 0 ]; then
             cp runtime/$subdir/*.c runtime/$subdir/*.h "$SRC_DIR/runtime/$subdir/" 2>/dev/null || true
         fi
     done
-    for subdir in string math net collections json fs log io file dir path tcp http list map; do
+    for subdir in string math net collections json fs log io file dir path tcp http list map os; do
         if [ -d "std/$subdir" ]; then
             mkdir -p "$SRC_DIR/std/$subdir"
             cp std/$subdir/*.c std/$subdir/*.h "$SRC_DIR/std/$subdir/" 2>/dev/null || true
@@ -238,6 +238,13 @@ if [ "$EDITOR_ONLY" -eq 0 ]; then
             cp std/$subdir/*.ae "$SRC_DIR/std/$subdir/" 2>/dev/null || true
         fi
     done
+
+    # Remove stale 'current' symlink — it was created by 'ae version use'
+    # and may point to an incomplete version dir, causing a confusing warning.
+    # Direct installs put everything in INSTALL_DIR itself, no symlink needed.
+    if [ -L "$INSTALL_DIR/current" ]; then
+        rm -f "$INSTALL_DIR/current"
+    fi
 
     ok "  Installed successfully"
     echo ""

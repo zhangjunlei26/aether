@@ -430,8 +430,15 @@ static void discover_toolchain(void) {
                 if (tc.verbose) fprintf(stderr, "[toolchain] compiler=%s (via current symlink)\n", tc.compiler);
                 goto found_root;
             }
-            fprintf(stderr, "Warning: %s/current has bin/aetherc but no lib/ or share/ — installation is incomplete.\n", home);
-            fprintf(stderr, "Fix with: ae version install <version> or ./install.sh\n");
+            // Check if the direct ~/.aether/ layout will work before warning —
+            // install.sh puts files directly in AETHER_HOME, not under current/.
+            char direct_share[1024], direct_lib[1024];
+            snprintf(direct_share, sizeof(direct_share), "%s/share/aether", home);
+            snprintf(direct_lib, sizeof(direct_lib), "%s/lib/libaether.a", home);
+            if (!dir_exists(direct_share) && !path_exists(direct_lib)) {
+                fprintf(stderr, "Warning: %s/current has bin/aetherc but no lib/ or share/ — installation is incomplete.\n", home);
+                fprintf(stderr, "Fix with: ae version install <version> or ./install.sh\n");
+            }
             // Fall through to try other strategies
         }
         snprintf(current_compiler, sizeof(current_compiler), "%s/current/aetherc" EXE_EXT, home);
@@ -456,8 +463,14 @@ static void discover_toolchain(void) {
                 strncpy(tc.compiler, current_compiler, sizeof(tc.compiler) - 1);
                 goto found_root;
             }
-            fprintf(stderr, "Warning: %s/current has aetherc but no lib/ or share/ — installation is incomplete.\n", home);
-            fprintf(stderr, "Fix with: ae version install <version> or ./install.sh\n");
+            // Check if the direct ~/.aether/ layout will work before warning
+            char direct_share2[1024], direct_lib2[1024];
+            snprintf(direct_share2, sizeof(direct_share2), "%s/share/aether", home);
+            snprintf(direct_lib2, sizeof(direct_lib2), "%s/lib/libaether.a", home);
+            if (!dir_exists(direct_share2) && !path_exists(direct_lib2)) {
+                fprintf(stderr, "Warning: %s/current has aetherc but no lib/ or share/ — installation is incomplete.\n", home);
+                fprintf(stderr, "Fix with: ae version install <version> or ./install.sh\n");
+            }
             // Fall through to try other strategies
         }
         strncpy(tc.root, home, sizeof(tc.root) - 1);
@@ -628,6 +641,7 @@ found_root:
                 "%s/std/io/aether_io.c "
                 "%s/std/fs/aether_fs.c "
                 "%s/std/log/aether_log.c "
+                "%s/std/os/aether_os.c "
                 "%s/std/collections/aether_hashmap.c "
                 "%s/std/collections/aether_set.c "
                 "%s/std/collections/aether_vector.c "
@@ -638,7 +652,7 @@ found_root:
                 tc.root, tc.root, tc.root, tc.root, tc.root,
                 tc.root, tc.root, tc.root, tc.root, tc.root,
                 tc.root, tc.root, tc.root, tc.root, tc.root,
-                tc.root, tc.root, tc.root, tc.root);
+                tc.root, tc.root, tc.root, tc.root, tc.root);
         }
     } else {
         // Installed layout: headers in include/aether/, source in share/aether/
@@ -701,6 +715,7 @@ found_root:
                 "%s/std/io/aether_io.c "
                 "%s/std/fs/aether_fs.c "
                 "%s/std/log/aether_log.c "
+                "%s/std/os/aether_os.c "
                 "%s/std/collections/aether_hashmap.c "
                 "%s/std/collections/aether_set.c "
                 "%s/std/collections/aether_vector.c "
@@ -711,7 +726,7 @@ found_root:
                 src, src, src, src, src,
                 src, src, src, src, src,
                 src, src, src, src, src,
-                src, src, src, src);
+                src, src, src, src, src);
         }
     }
 }

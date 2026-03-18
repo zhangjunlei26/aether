@@ -13,6 +13,7 @@ number (e.g. `[0.18.0]`) before tagging the release.
 
 ### Added
 
+- **`std.os` module — shell & process execution** ([Issue #39](https://github.com/nicolasmd87/aether/issues/39)): New stdlib module with `os.system(cmd)` (run command, get exit code), `os.exec(cmd)` (run command, capture stdout as string), and `os.getenv(name)` (get environment variable). Cross-platform (POSIX `popen`/Windows `_popen`). Example: `examples/stdlib/os-demo.ae`, tests: `test_os_module.ae` (7 tests)
 - **Release archive CI test (`test-release-archive`)**: New Makefile target and CI step [9/9] that packages a tarball exactly like the release pipeline, extracts it, and verifies `ae init` + `ae run` work from the extracted layout — catches archive structure bugs that `test-install` (which tests `install.sh`) would miss
 - **4 regression tests for CLI helper battle-testing**: `test_actor_print_char.ae` (print_char/escapes in actor handlers, self-send animation), `test_box_drawing.ae` (ASCII boxes, ANSI escapes, progress bars, tab tables, nested boxes), `test_interp_escape_combo.ae` (10 hex/octal + interpolation combos), `test_file_io_char_return.ae` (file I/O roundtrip, char* returns, append, cleanup)
 - **Regression test for printing stdlib returns**: `test_print_stdlib_returns.ae` — covers `file.read_all`, `io.read_file`, `io.getenv` through `print()`, `println()`, and string interpolation paths
@@ -54,6 +55,9 @@ number (e.g. `[0.18.0]`) before tagging the release.
 - **HTTP `parse_url` buffer overflow**: Fixed-size `host[256]`/`path[1024]` buffers used `strcpy()`/`strncpy()` without bounds checking — refactored to pass buffer sizes and use `snprintf()`/bounded `memcpy()`
 - **HTTP `http_request` missing malloc NULL checks**: `HttpResponse` and response buffer allocations had no guards — added NULL checks with proper cleanup
 - **HTTP server header overflow**: Request parsing and `set_header` had no bounds check on header count — added `header_count < 50` guard
+- **Spurious "installation is incomplete" warning on `ae run`**: Toolchain discovery checked `~/.aether/current/lib/` first — if a stale `current` symlink existed from `ae version use` but `install.sh` had put files directly in `~/.aether/`, the warning fired even though the fallback strategy found a working toolchain. Now suppresses the warning when the direct `~/.aether/` layout has valid `lib/` or `share/`
+- **`install.sh` left stale `current` symlink**: Direct installs via `install.sh` didn't remove the `~/.aether/current` symlink created by `ae version use`, causing the above warning on every `ae run`
+- **`file.write`/`file.close`/`file.delete`/`dir.create`/`dir.delete` returned raw POSIX values**: These functions returned `0`/`-1` (C convention) instead of `1`/`0` (Aether convention where `1` = success, `0` = failure), inconsistent with `io.write_file`, `io.delete_file`, and the rest of the stdlib. Fixed all five to return `1` on success, `0` on failure
 
 ### Changed
 
