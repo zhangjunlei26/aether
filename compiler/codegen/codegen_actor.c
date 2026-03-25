@@ -425,11 +425,13 @@ void generate_actor_definition(CodeGenerator* gen, ASTNode* actor) {
     }
 
     print_line(gen, "");
+    print_line(gen, "#if AETHER_HAS_THREADS");
     print_line(gen, "if (actor->auto_process) {");
     indent(gen);
     print_line(gen, "pthread_create(&actor->thread, NULL, (void*(*)(void*))aether_actor_thread, actor);");
     unindent(gen);
     print_line(gen, "}");
+    print_line(gen, "#endif");
     print_line(gen, "");
     print_line(gen, "return actor;");
     unindent(gen);

@@ -5,9 +5,37 @@ All notable changes to Aether are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Workflow**: New changes go under `## [0.18.0]`. When a PR merges to `main`,
+**Workflow**: New changes go under `## [current]`. When a PR merges to `main`,
 the release pipeline automatically replaces `[current]` with the next version
-number (e.g. `[0.18.0]`) before tagging the release.
+number before tagging the release.
+
+## [current]
+
+### Added
+
+- **Platform portability layer**: Compile-time `AETHER_HAS_*` flags in `runtime/config/aether_optimization_config.h` (Tier 0) auto-detect platform capabilities and degrade gracefully. 9 feature flags: `AETHER_HAS_THREADS`, `AETHER_HAS_ATOMICS`, `AETHER_HAS_FILESYSTEM`, `AETHER_HAS_NETWORKING`, `AETHER_HAS_NUMA`, `AETHER_HAS_SIMD`, `AETHER_HAS_AFFINITY`, `AETHER_HAS_GETENV`, `AETHER_HAS_MALLOC`. Override any flag with `-DAETHER_NO_<FEATURE>` (e.g. `-DAETHER_NO_THREADING`)
+- **Cooperative scheduler** (`runtime/scheduler/aether_scheduler_coop.c`): Single-threaded scheduler backend implementing the same API as the multi-core scheduler. Enables Aether programs to run on platforms without pthreads — WebAssembly (Emscripten), embedded systems, bare-metal. All actors run on core 0 via `aether_scheduler_poll()`. Multi-actor programs work cooperatively including ask/reply patterns
+- **Makefile `PLATFORM` variable**: `PLATFORM=native` (default), `PLATFORM=wasm`, `PLATFORM=embedded`. Selects scheduler backend and sets appropriate `-DAETHER_NO_*` flags automatically. Also auto-detects `AETHER_NO_THREADING` in `EXTRA_CFLAGS` and switches to cooperative scheduler
+- **Stdlib platform stubs**: `std/fs/`, `std/io/`, `std/os/`, `std/net/` modules return errors gracefully when `AETHER_HAS_FILESYSTEM` or `AETHER_HAS_NETWORKING` is 0. Console I/O (`print`, `println`) always works
+- **C11 atomics fallback**: When `AETHER_HAS_ATOMICS == 0`, `atomic_int` → `volatile int`, `atomic_load` → identity, `atomic_store` → assignment. Safe for single-threaded builds
+- **Emscripten timing fallback**: Generated code uses `emscripten_get_now()` instead of `rdtsc`/`clock_gettime` when compiled with Emscripten
+- **Docker CI for cross-platform verification**: `docker/Dockerfile.wasm` (Emscripten SDK), `docker/Dockerfile.embedded` (ARM Cortex-M4 via arm-none-eabi-gcc)
+- **Makefile CI targets**: `make ci-coop` (cooperative scheduler on native), `make ci-wasm` (Emscripten cross-compile + Node.js execution), `make ci-embedded` (ARM syntax-check), `make ci-portability` (all three)
+- **Cooperative scheduler tests**: `test_platform_caps.ae` (multi-actor state), `test_coop_chain.ae` (4-actor message chain), `test_coop_many_actors.ae` (10 actors), `test_coop_ask_reply.ae` (synchronous ? operator with queued messages), `test_coop_self_send.ae` (self-send countdown, tick loop, concurrent self-senders), `test_coop_stubs.ae` (platform-independent operations), `test_stub_behavior.ae` (stub error handling)
+- **Cooperative demo**: `examples/actors/cooperative-demo.ae` — supervisor distributing tasks to 3 workers, works identically in threaded and cooperative modes
+
+### Fixed
+
+- **Use-after-free in cooperative sync path**: `aether_send_message_sync()` passed a stack pointer as `msg.payload_ptr` and relied on `g_skip_free` to prevent freeing. When other messages were queued ahead in the mailbox, the immediate `step()` consumed a different message (FIFO order), and the stack-allocated message was freed later by `scheduler_wait()` after the stack frame was gone. Cooperative mode now heap-allocates message data via `malloc()`
+- **`pthread_attr_t` typedef conflict on macOS/Linux**: `aether_thread.h` no-thread stubs redefined `pthread_attr_t` as `int`, conflicting with system headers. Now includes `<pthread.h>` for types on hosted platforms and uses macro redirects for no-op function stubs
+- **Duplicate `g_sync_step_actor` symbol**: Defined in both `aether_scheduler_coop.c` and `aether_send_message.c`, causing linker errors. Changed to `extern` in cooperative scheduler
+- **`AETHER_HAS_GETENV` operator precedence bug**: Missing parentheses around `defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 0)` caused incorrect evaluation
+- **`AETHER_HAS_NUMA` incomplete**: Was only enabled on Linux, but Windows has NUMA APIs (`VirtualAllocExNuma`). Now enabled on both Linux and Windows
+- **WASM computed goto crash**: Generated `static void* dispatch_table[256]` with label addresses caused LLVM WASM backend crash (`relocations for function or section offsets`). `AETHER_GCC_COMPAT` now excludes `__EMSCRIPTEN__`, using switch-case fallback for WASM
+- **Missing `#include <emscripten.h>`**: Was buried inside `#if !AETHER_GCC_COMPAT` block, not reaching `rdtsc()` function. Moved to top-level includes conditional on `__EMSCRIPTEN__`
+- **Dead `#include <pthread.h>` in codegen.c**: Included but never used — removed
+- **`system()` return value warnings in ae.c**: 5 calls to `system()` with unchecked return values now check results and warn on failure
+- **Duplicate `-lm` linker flag**: `ae` build used `-lm $(LDFLAGS)` where `LDFLAGS` already contained `-lm`
 
 ## [0.29.0]
 
