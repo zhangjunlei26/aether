@@ -1179,7 +1179,10 @@ ci-embedded: clean compiler
 		if arm-none-eabi-gcc -fsyntax-only -O2 -mcpu=cortex-m4 -mthumb -ffreestanding \
 			-DAETHER_NO_THREADING -DAETHER_NO_FILESYSTEM -DAETHER_NO_NETWORKING \
 			-DAETHER_NO_GETENV -DAETHER_NO_SIMD -DAETHER_NO_AFFINITY -DAETHER_NO_NUMA \
+			-Iruntime -Iruntime/actors -Iruntime/scheduler -Iruntime/utils -Iruntime/memory \
+			-Iruntime/config -Istd -Istd/string -Istd/io -Istd/math -Istd/net -Istd/collections -Istd/json \
 			-Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
+			-Wno-unused-variable -Wno-missing-field-initializers -Wno-unused-label \
 			"build/embedded/$$name.c" 2>/tmp/emb_err.txt; then \
 			echo "OK"; \
 			pass=$$((pass + 1)); \
