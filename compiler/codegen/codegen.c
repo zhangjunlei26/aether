@@ -851,7 +851,7 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
         print_line(gen, "    unsigned int lo, hi;");
         print_line(gen, "    __asm__ __volatile__ (\"rdtsc\" : \"=a\" (lo), \"=d\" (hi));");
         print_line(gen, "    return ((uint64_t)hi << 32) | lo;");
-        print_line(gen, "#elif defined(__aarch64__) || defined(__arm__)");
+        print_line(gen, "#elif (defined(__aarch64__) || defined(__arm__)) && defined(__unix__)");
         print_line(gen, "    struct timespec ts;");
         print_line(gen, "    clock_gettime(CLOCK_MONOTONIC, &ts);");
         print_line(gen, "    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;");
