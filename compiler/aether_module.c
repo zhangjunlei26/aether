@@ -814,10 +814,29 @@ void module_merge_into_program(ASTNode* program) {
         const char* const_names[128];
         int const_count = collect_module_const_names(mod_ast, const_names, 128);
 
+        // Check for selective import: if import has AST_IDENTIFIER children,
+        // only merge functions/constants that appear in the selection list
+        int has_selection = (child->child_count > 0 &&
+                            child->children[0]->type == AST_IDENTIFIER);
+
         for (int j = 0; j < mod_ast->child_count; j++) {
             ASTNode* decl = unwrap_export(mod_ast->children[j]);
 
             if (decl->type == AST_FUNCTION_DEFINITION && decl->value) {
+                // Skip if not in selective import list
+                if (has_selection) {
+                    int selected = 0;
+                    for (int k = 0; k < child->child_count; k++) {
+                        ASTNode* sel = child->children[k];
+                        if (sel && sel->type == AST_IDENTIFIER &&
+                            strcmp(sel->value, decl->value) == 0) {
+                            selected = 1;
+                            break;
+                        }
+                    }
+                    if (!selected) continue;
+                }
+
                 // Clone and rename: "double_it" -> "mymath_double_it"
                 ASTNode* clone = clone_ast_node(decl);
                 char prefixed[256];
@@ -831,6 +850,20 @@ void module_merge_into_program(ASTNode* program) {
 
                 insert_child_at(program, clone, insert_idx++);
             } else if (decl->type == AST_CONST_DECLARATION && decl->value) {
+                // Skip if not in selective import list
+                if (has_selection) {
+                    int selected = 0;
+                    for (int k = 0; k < child->child_count; k++) {
+                        ASTNode* sel = child->children[k];
+                        if (sel && sel->type == AST_IDENTIFIER &&
+                            strcmp(sel->value, decl->value) == 0) {
+                            selected = 1;
+                            break;
+                        }
+                    }
+                    if (!selected) continue;
+                }
+
                 // Clone and rename constants too
                 ASTNode* clone = clone_ast_node(decl);
                 char prefixed[256];

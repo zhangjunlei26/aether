@@ -44,6 +44,7 @@
 static bool verbose_mode = false;
 static bool dump_ast_mode = false;
 static bool emit_c_mode = false;
+static bool check_only_mode = false;
 static const char* emit_header_path = NULL;
 
 #ifdef _WIN32
@@ -229,6 +230,24 @@ int compile_source(const char* input_path, const char* output_path) {
     
     if (verbose_mode) printf("Type checking successful\n");
 
+    // --check: stop after typecheck + type inference, no codegen
+    if (check_only_mode) {
+        int warnings = aether_warning_count();
+        if (warnings > 0) {
+            fprintf(stderr, "OK: %d warning(s)\n", warnings);
+        } else {
+            fprintf(stderr, "OK: no errors\n");
+        }
+        module_registry_shutdown();
+        free_ast_node(program);
+        for (int i = 0; i < token_count; i++) {
+            free_token(tokens[i]);
+        }
+        free_parser(parser);
+        free(source);
+        return 1;  // success
+    }
+
     // Step 3.5: Optimization (AST-level passes: constant folding, dead code, tail calls)
     if (verbose_mode) printf("Step 3.5: Optimizing...\n");
     program = optimize_ast(program);
@@ -342,6 +361,7 @@ void print_help(const char* program_name) {
     printf("  --verbose                        Show detailed compilation phases and timing\n");
     printf("  --emit-c                         Print generated C code to stdout\n");
     printf("  --emit-header [path]             Generate C header for embedding (default: auto)\n");
+    printf("  --check                          Type-check only (no code generation)\n");
     printf("  --dump-ast                       Print AST and exit (no code generation)\n");
     printf("  --help, -h                       Show this help message\n");
     printf("\n");
@@ -370,6 +390,9 @@ int main(int argc, char *argv[]) {
             arg_offset++;
         } else if (strcmp(argv[arg_offset], "--dump-ast") == 0) {
             dump_ast_mode = true;
+            arg_offset++;
+        } else if (strcmp(argv[arg_offset], "--check") == 0) {
+            check_only_mode = true;
             arg_offset++;
         } else if (strcmp(argv[arg_offset], "--emit-header") == 0) {
             // Check for optional explicit path argument (must end in .h)
@@ -468,6 +491,14 @@ int main(int argc, char *argv[]) {
             fclose(f);
         }
         remove(tmp_path);
+        return 0;
+    }
+
+    // --check: type-check only, no output file needed
+    if (check_only_mode) {
+        if (!compile_source(argv[arg_offset], "/dev/null")) {
+            return 1;
+        }
         return 0;
     }
 

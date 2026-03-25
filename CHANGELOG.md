@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 the release pipeline automatically replaces `[current]` with the next version
 number before tagging the release.
 
+## [current]
+
+### Added
+
+- **`ae check` command**: Type-check without compiling. Runs lexer → parser → typechecker → type inference, then exits. No C code generated, no gcc invoked. ~30x faster than `ae build`. Also available as `aetherc --check`
+- **Unused variable warnings `[W1001]`**: Warns on declared-but-never-referenced local variables. Prefix with `_` to suppress (e.g., `_unused = 42`). Excludes function parameters and pattern bindings
+- **Unreachable code warnings `[W1002]`**: Detects code after `return`, `exit()`, or exhaustive `if`/`else` blocks where all branches terminate. Recurses into nested blocks
+
+### Fixed
+
+- **Selective imports**: `import std.math (sqrt, abs_int)` now works correctly. The prefix-stripping comparison was comparing user-facing names (`sqrt`) against C-level names (`math_sqrt`). Fixed in typechecker, codegen, and module merge. Non-selected symbols are properly rejected at both type-check and code generation time
+
 ## [0.30.0]
 
 ### Added

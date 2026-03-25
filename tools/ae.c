@@ -1217,6 +1217,40 @@ static int cmd_run(int argc, char** argv) {
     return rc;
 }
 
+static int cmd_check(int argc, char** argv) {
+    const char* file = NULL;
+
+    for (int i = 0; i < argc; i++) {
+        if (argv[i][0] != '-') {
+            file = argv[i];
+        }
+    }
+
+    // Project mode
+    if (!file && path_exists("aether.toml")) {
+        if (path_exists("src/main.ae"))
+            file = "src/main.ae";
+        else {
+            fprintf(stderr, "Error: aether.toml found but src/main.ae is missing.\n");
+            return 1;
+        }
+    }
+
+    if (!file) {
+        fprintf(stderr, "Usage: ae check <file.ae>\n");
+        return 1;
+    }
+
+    if (!path_exists(file)) {
+        fprintf(stderr, "Error: File not found: %s\n", file);
+        return 1;
+    }
+
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd), "\"%s\" --check \"%s\"", tc.compiler, file);
+    return run_cmd(cmd);
+}
+
 static int cmd_build(int argc, char** argv) {
     const char* file = NULL;
     const char* output_name = NULL;
@@ -2724,6 +2758,7 @@ static void print_usage(void) {
     printf("  init <name>          Create a new Aether project\n");
     printf("  run [file.ae]        Compile and run a program\n");
     printf("  build [file.ae]      Compile to executable\n");
+    printf("  check [file.ae]      Type-check without compiling\n");
     printf("  test [file|dir]      Discover and run tests\n");
     printf("  add <package>        Add a dependency\n");
     printf("  cache [clear]        Show or clear build cache\n");
@@ -2802,6 +2837,7 @@ int main(int argc, char** argv) {
 
     if (strcmp(cmd, "run") == 0)      return cmd_run(sub_argc, sub_argv);
     if (strcmp(cmd, "build") == 0)    return cmd_build(sub_argc, sub_argv);
+    if (strcmp(cmd, "check") == 0)    return cmd_check(sub_argc, sub_argv);
     if (strcmp(cmd, "test") == 0)     return cmd_test(sub_argc, sub_argv);
     if (strcmp(cmd, "examples") == 0) return cmd_examples(sub_argc, sub_argv);
     if (strcmp(cmd, "add") == 0)      return cmd_add(sub_argc, sub_argv);

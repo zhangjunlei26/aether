@@ -12,27 +12,6 @@ Planned features and improvements for upcoming Aether releases.
 
 > See [CHANGELOG.md](../CHANGELOG.md) for what shipped in each release.
 
-## Done
-
-### ~~`std.os` — Shell & Process Execution~~ ✓
-
-Shipped. `import std.os` provides `os.system()`, `os.exec()`, `os.getenv()`. See `examples/stdlib/os-demo.ae`.
-
-**Origin:** [Issue #39](https://github.com/nicolasmd87/aether/issues/39)
-
-### ~~Platform Portability Layer~~ ✓
-
-Shipped. Compile-time `AETHER_HAS_*` flags in `runtime/config/aether_optimization_config.h` (Tier 0) auto-detect platform capabilities and degrade gracefully. Override with `-DAETHER_NO_THREADING`, `-DAETHER_NO_FILESYSTEM`, `-DAETHER_NO_NETWORKING`, etc.
-
-**What's included:**
-- **9 feature flags**: `AETHER_HAS_THREADS`, `AETHER_HAS_ATOMICS`, `AETHER_HAS_FILESYSTEM`, `AETHER_HAS_NETWORKING`, `AETHER_HAS_NUMA`, `AETHER_HAS_SIMD`, `AETHER_HAS_AFFINITY`, `AETHER_HAS_GETENV`, `AETHER_HAS_MALLOC`
-- **Cooperative scheduler** (`runtime/scheduler/aether_scheduler_coop.c`): single-threaded backend, same API as multi-core scheduler
-- **Makefile `PLATFORM` variable**: `native` (default), `wasm`, `embedded` — selects scheduler and sets appropriate flags
-- **Stdlib stubs**: filesystem, networking, and OS modules return errors gracefully when features unavailable
-- **Atomics fallback**: `atomic_int` → `volatile int` when `AETHER_HAS_ATOMICS == 0` (safe for single-threaded)
-- **No-thread stubs** in `runtime/utils/aether_thread.h` for mutex/cond types
-- Zero behavior change on native platforms (all flags default to 1)
-
 ## Language Features
 
 ### Result Type — Structured Error Handling
@@ -104,6 +83,71 @@ main() {
 
 **Design constraint:** Capture by value (copy into closure struct) is the default. No hidden heap allocation. This keeps closures predictable and compatible with manual memory management.
 
+### Match Expressions
+
+Pattern matching currently only works in function definitions and receive blocks. A general `match` expression enables cleaner control flow without `if`/`else` chains.
+
+**Planned syntax (tentative):**
+
+```aether
+main() {
+    status = 2
+    msg = match status {
+        0 -> "ok"
+        1 -> "warning"
+        2 -> "error"
+        _ -> "unknown"
+    }
+    println(msg)
+}
+```
+
+**What's needed:**
+- New `AST_MATCH_EXPRESSION` node
+- Parser support for `match expr { pattern -> expr, ... }`
+- Codegen emits a chain of `if`/`else if` comparisons (or a switch for integer patterns)
+- Type inference: all arms must return the same type
+
+### For-In Loops
+
+`while` loops with manual indexing are verbose for iteration. A `for-in` loop reduces boilerplate.
+
+**Planned syntax (tentative):**
+
+```aether
+main() {
+    // Range iteration
+    for i in 0..10 {
+        println(i)
+    }
+
+    // Collection iteration (requires iterator protocol)
+    for item in list {
+        println(item)
+    }
+}
+```
+
+**What's needed:**
+- Range syntax `0..n` generating `for(int i=0; i<n; i++)` in C
+- Optional: iterator protocol for collections (requires closures or function pointers)
+
+### Type Aliases
+
+Type aliases improve readability with zero runtime cost (erased at compile time).
+
+**Planned syntax:**
+
+```aether
+type ID = int
+type Callback = (int) -> bool
+```
+
+**What's needed:**
+- Parser: `type Name = Type` declaration
+- Typechecker: alias resolution (replace alias with underlying type)
+- No codegen changes — aliases are purely a compile-time convenience
+
 ### Optional Cooperative Preemption
 
 Aether's scheduler is cooperative — each message handler runs to completion before the scheduler moves to the next actor. A handler that enters an infinite loop will block that core's scheduler thread. This is the same model as Go goroutines and Pony behaviours. BEAM is unique in having reduction-based preemption that prevents this.
@@ -123,32 +167,26 @@ The scheduler already enforces fairness *between* actors (caps at 64 messages pe
 
 Near-term improvements that build on existing infrastructure.
 
-### Actor Supervision Basics
+### Actor Timeouts
 
-The header `runtime/actors/aether_supervision.h` exists but is an empty stub. The goal is not full OTP — just the basics: crash detection, notification, and simple restart.
+Actors can currently wait forever for messages that never arrive. A timeout mechanism enables health checks, retries, and deadlock detection.
 
-**What's planned:**
-- `link(actor)` — get notified when a linked actor crashes
-- Exit signal propagation between linked actors
-- Simple one-for-one restart strategy (restart the crashed actor, leave others alone)
+**Planned syntax (tentative):**
 
-This is incremental and doesn't require the Result type to start — crash signals can use int status initially and upgrade to structured errors later.
+```aether
+actor Worker {
+    receive {
+        Task(data) -> { process(data) }
+    } after 5000 -> {
+        println("No tasks for 5 seconds, shutting down")
+    }
+}
+```
 
-### ~~Export Visibility Enforcement~~ ✓
-
-Shipped. `export` keyword controls which functions and constants are part of a module's public API. Non-exported symbols are private — used internally but not accessible via `module.name()`. If a module has no exports, all symbols remain public (backwards compatible). See [Module System Design](module-system-design.md#export-visibility).
-
-### ~~Interactive REPL~~ ✓
-
-Shipped. `ae repl` starts an interactive session with session persistence — assignments and constants survive across evaluations, variable reassignment replaces previous values, multi-line blocks auto-continue until braces close. Single-line auto-execute for complete statements. Commands: `:help`, `:quit`, `:reset`, `:show`. Error recovery: compile failures show error messages and the session continues. Run `ae repl` then `:help` for usage.
-
-### Selective Imports
-
-`import std.math (sqrt, PI)` already parses and the typechecker has partial filtering logic, but it's unreliable. Fixing the selective import path so only the listed symbols are visible in the importing module.
-
-### ~~Pure Aether Modules~~ ✓
-
-Shipped. Modules written in pure Aether (no C backing file) can be imported and used directly. Functions, constants, and intra-module calls all work. See [Module System Design](module-system-design.md#pure-aether-modules).
+**What's needed:**
+- `after` clause in receive blocks (parser + codegen)
+- Timer infrastructure in scheduler (rdtsc-based deadline per actor)
+- Timeout message delivered as a special reserved message type
 
 ### Package Registry
 
@@ -160,7 +198,7 @@ Major features that require significant architectural work.
 
 ### WebAssembly Target
 
-Aether compiles to C, and C compiles to WASM via Emscripten, so the path exists. The platform portability layer (see below) addresses the core blockers: pthreads, filesystem, and networking dependencies are now conditionally compiled via `AETHER_HAS_*` flags.
+Aether compiles to C, and C compiles to WASM via Emscripten, so the path exists. The platform portability layer addresses the core blockers: pthreads, filesystem, and networking dependencies are now conditionally compiled via `AETHER_HAS_*` flags.
 
 **Incremental approach:**
 - **Phase 1 (infrastructure done):** The cooperative scheduler (`aether_scheduler_coop.c`) provides a single-threaded backend that implements the same API as the multi-core scheduler. `PLATFORM=wasm` in the Makefile selects this scheduler and sets `-DAETHER_NO_THREADING -DAETHER_NO_FILESYSTEM -DAETHER_NO_NETWORKING`. Multi-actor programs work cooperatively — all actors run on core 0 via `aether_scheduler_poll()`. Timing uses `emscripten_get_now()` instead of `rdtsc`/`clock_gettime`.
@@ -194,45 +232,12 @@ All I/O in Aether is currently blocking. There is no io_uring (Linux), kqueue (m
 - Scheduler awareness of I/O-blocked actors (don't count them as idle)
 - Async variants of file and network operations in the stdlib
 
-### Generics / Monomorphization
-
-Type inference is currently monomorphic. The stdlib uses `void*` with manual casts (e.g., `list_add(list, (void*)(intptr_t)i)`). Generics would make collections type-safe with zero runtime cost.
-
-**What's needed:**
-- Type parameter syntax (e.g., `List<T>` or `List[T]`)
-- Type checker binding and substitution
-- Monomorphization in codegen — stamp out one C function per concrete type, no vtables, no runtime dispatch
-
-**Design constraint:** Monomorphization only. This generates more code but adds zero runtime overhead, consistent with "compile to clean C."
-
 ## Tooling
 
 ### Planned
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `ae fmt` | Not started | Source code formatter |
-| `ae check` | Not started | Type-check without compiling |
-| Dead code diagnostics | Not started | Warn on unused variables/functions |
-
-## Compiler Diagnostics
-
-### Planned
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Type mismatch hints | Not started | "expected 'string', got 'ptr'" with help text |
-| Unused variable warnings | Not started | Warn on declared-but-unused locals |
-| Unreachable code warnings | Not started | Detect dead branches after return/exit |
-
-**Goal:** Python 3.10-style "the compiler is teaching you" error messages. Example:
-
-```
-error[E0201]: type mismatch — expected 'string', got 'ptr'
-  --> src/main.ae:12:11
-   |
-12 |     print(result)
-   |           ^^^^^^ this is a 'ptr' (raw pointer), not a 'string'
-   |
-   help: use string.to_cstr(result) to convert to a printable string
-```
+| `ae fmt` | Not started | Source code formatter (deferred until syntax stabilizes) |
+| `ae build --target wasm` | Not started | CLI integration for WebAssembly builds |
+| Package registry v1 | Not started | Version constraints, lock files, dependency resolution |

@@ -1005,6 +1005,11 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
 
                     // Handle stdlib imports: import std.X
                     if (strncmp(module_path, "std.", 4) == 0) {
+                        const char* mod_name = module_path + 4;
+                        char mod_prefix[128];
+                        snprintf(mod_prefix, sizeof(mod_prefix), "%s_", mod_name);
+                        int mod_prefix_len = (int)strlen(mod_prefix);
+
                         // Look up cached module from orchestrator
                         AetherModule* mod_entry = module_find(module_path);
                         ASTNode* mod_ast = mod_entry ? mod_entry->ast : NULL;
@@ -1019,10 +1024,15 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
                                         ASTNode* first = child->children[0];
                                         if (first && first->type == AST_IDENTIFIER) {
                                             should_import = 0;
+                                            // Strip module prefix: "math_sqrt" -> "sqrt"
+                                            const char* short_name = decl->value;
+                                            if (strncmp(decl->value, mod_prefix, mod_prefix_len) == 0) {
+                                                short_name = decl->value + mod_prefix_len;
+                                            }
                                             for (int k = 0; k < child->child_count; k++) {
                                                 ASTNode* sel = child->children[k];
                                                 if (sel && sel->type == AST_IDENTIFIER &&
-                                                    strcmp(sel->value, decl->value) == 0) {
+                                                    strcmp(sel->value, short_name) == 0) {
                                                     should_import = 1;
                                                     break;
                                                 }

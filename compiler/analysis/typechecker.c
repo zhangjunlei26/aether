@@ -565,6 +565,183 @@ AeTokenType get_token_type_from_string(const char* str) {
     return TOKEN_ERROR;
 }
 
+// --- Unused variable analysis ---
+
+#define MAX_TRACKED_VARS 256
+
+typedef struct {
+    const char* name;
+    int line;
+    int col;
+    int used;
+} TrackedVar;
+
+// Collect all AST_IDENTIFIER references in a subtree (excluding declarations)
+static void collect_references(ASTNode* node, TrackedVar* vars, int var_count) {
+    if (!node) return;
+
+    // An identifier in expression position is a reference
+    if (node->type == AST_IDENTIFIER && node->value) {
+        for (int i = 0; i < var_count; i++) {
+            if (strcmp(vars[i].name, node->value) == 0) {
+                vars[i].used = 1;
+            }
+        }
+    }
+
+    // For variable declarations, the RHS is a reference but the name itself is not
+    if (node->type == AST_VARIABLE_DECLARATION) {
+        // Only walk children (RHS expression), not the declaration name
+        for (int i = 0; i < node->child_count; i++) {
+            collect_references(node->children[i], vars, var_count);
+        }
+        return;
+    }
+
+    for (int i = 0; i < node->child_count; i++) {
+        collect_references(node->children[i], vars, var_count);
+    }
+}
+
+// Collect variable declarations from a block (non-recursive into nested functions)
+static int collect_declarations(ASTNode* node, TrackedVar* vars, int var_count) {
+    if (!node || var_count >= MAX_TRACKED_VARS) return var_count;
+
+    if (node->type == AST_VARIABLE_DECLARATION && node->value) {
+        // Skip _ prefixed names (intentional discard)
+        if (node->value[0] != '_') {
+            vars[var_count].name = node->value;
+            vars[var_count].line = node->line;
+            vars[var_count].col = node->column;
+            vars[var_count].used = 0;
+            var_count++;
+        }
+    }
+
+    // Don't recurse into nested function definitions or actor definitions
+    if (node->type == AST_FUNCTION_DEFINITION || node->type == AST_ACTOR_DEFINITION) {
+        return var_count;
+    }
+
+    for (int i = 0; i < node->child_count; i++) {
+        var_count = collect_declarations(node->children[i], vars, var_count);
+    }
+    return var_count;
+}
+
+static void check_unused_variables(ASTNode* body) {
+    if (!body) return;
+
+    TrackedVar vars[MAX_TRACKED_VARS];
+    int var_count = 0;
+
+    // Collect declarations
+    for (int i = 0; i < body->child_count; i++) {
+        var_count = collect_declarations(body->children[i], vars, var_count);
+    }
+
+    if (var_count == 0) return;
+
+    // Collect references
+    for (int i = 0; i < body->child_count; i++) {
+        collect_references(body->children[i], vars, var_count);
+    }
+
+    // Warn about unused
+    for (int i = 0; i < var_count; i++) {
+        if (!vars[i].used) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "unused variable '%s'", vars[i].name);
+            AetherError warn = {
+                .filename = NULL,
+                .source_code = NULL,
+                .line = vars[i].line,
+                .column = vars[i].col,
+                .message = msg,
+                .suggestion = "prefix with '_' to suppress this warning",
+                .context = NULL,
+                .code = AETHER_WARN_UNUSED_VAR
+            };
+            aether_warning_report(&warn);
+            warning_count++;
+        }
+    }
+}
+
+// --- Unreachable code analysis ---
+
+// Check if a statement is a return or exit() call
+static int is_terminating(ASTNode* node) {
+    if (!node) return 0;
+    if (node->type == AST_RETURN_STATEMENT) return 1;
+    // Unwrap expression statement to check inner call
+    if (node->type == AST_EXPRESSION_STATEMENT && node->child_count > 0) {
+        return is_terminating(node->children[0]);
+    }
+    if (node->type == AST_FUNCTION_CALL && node->value &&
+        strcmp(node->value, "exit") == 0) return 1;
+    // if/else where BOTH branches terminate
+    if (node->type == AST_IF_STATEMENT && node->child_count >= 3) {
+        ASTNode* then_branch = node->children[1];
+        ASTNode* else_branch = node->children[2];
+        // Check last statement of each branch
+        if (then_branch && else_branch) {
+            int then_terminates = 0;
+            int else_terminates = 0;
+            if (then_branch->child_count > 0)
+                then_terminates = is_terminating(then_branch->children[then_branch->child_count - 1]);
+            else
+                then_terminates = is_terminating(then_branch);
+            if (else_branch->child_count > 0)
+                else_terminates = is_terminating(else_branch->children[else_branch->child_count - 1]);
+            else
+                else_terminates = is_terminating(else_branch);
+            return then_terminates && else_terminates;
+        }
+    }
+    return 0;
+}
+
+static void check_unreachable_code(ASTNode* body) {
+    if (!body) return;
+
+    for (int i = 0; i < body->child_count; i++) {
+        ASTNode* stmt = body->children[i];
+        if (is_terminating(stmt) && i + 1 < body->child_count) {
+            // Next statement is unreachable
+            ASTNode* unreachable = body->children[i + 1];
+            if (unreachable) {
+                char msg[256];
+                snprintf(msg, sizeof(msg), "unreachable code after %s",
+                         stmt->type == AST_RETURN_STATEMENT ? "return" :
+                         (stmt->type == AST_FUNCTION_CALL ? "exit()" : "terminating block"));
+                AetherError warn = {
+                    .filename = NULL,
+                    .source_code = NULL,
+                    .line = unreachable->line,
+                    .column = unreachable->column,
+                    .message = msg,
+                    .suggestion = "remove unreachable code or restructure control flow",
+                    .context = NULL,
+                    .code = AETHER_WARN_UNREACHABLE
+                };
+                aether_warning_report(&warn);
+                warning_count++;
+            }
+            break;  // Only warn once per block
+        }
+
+        // Recurse into blocks (if/else bodies, while bodies, etc.)
+        if (stmt->type == AST_IF_STATEMENT) {
+            for (int j = 1; j < stmt->child_count; j++) {
+                check_unreachable_code(stmt->children[j]);
+            }
+        } else if (stmt->type == AST_WHILE_LOOP && stmt->child_count > 1) {
+            check_unreachable_code(stmt->children[1]);
+        }
+    }
+}
+
 // Type checking functions
 int typecheck_program(ASTNode* program) {
     if (!program || program->type != AST_PROGRAM) return 0;
@@ -726,6 +903,11 @@ int typecheck_program(ASTNode* program) {
                     AetherModule* mod = module_find(module_path);
                     ASTNode* mod_ast = mod ? mod->ast : NULL;
                     if (mod_ast) {
+                        // Build prefix for stripping: "math_" from module "math"
+                        char prefix[128];
+                        snprintf(prefix, sizeof(prefix), "%s_", module_name);
+                        int prefix_len = (int)strlen(prefix);
+
                         // Extract extern declarations from the module
                         for (int j = 0; j < mod_ast->child_count; j++) {
                             ASTNode* decl = mod_ast->children[j];
@@ -736,10 +918,16 @@ int typecheck_program(ASTNode* program) {
                                     ASTNode* first = child->children[0];
                                     if (first && first->type == AST_IDENTIFIER) {
                                         should_import = 0;
+                                        // Strip module prefix for comparison:
+                                        // decl->value is "math_sqrt", sel->value is "sqrt"
+                                        const char* short_name = decl->value;
+                                        if (strncmp(decl->value, prefix, prefix_len) == 0) {
+                                            short_name = decl->value + prefix_len;
+                                        }
                                         for (int k = 0; k < child->child_count; k++) {
                                             ASTNode* sel = child->children[k];
                                             if (sel && sel->type == AST_IDENTIFIER &&
-                                                strcmp(sel->value, decl->value) == 0) {
+                                                strcmp(sel->value, short_name) == 0) {
                                                 should_import = 1;
                                                 break;
                                             }
@@ -769,9 +957,28 @@ int typecheck_program(ASTNode* program) {
                         for (int j = 0; j < mod_ast->child_count; j++) {
                             ASTNode* decl = mod_ast->children[j];
                             if (decl->type == AST_EXTERN_FUNCTION && decl->value) {
-                                if (!lookup_symbol_local(global_table, decl->value)) {
-                                    add_symbol(global_table, decl->value,
-                                               clone_type(decl->node_type), 0, 1, 0);
+                                // Check if selective import - only import specified functions
+                                int should_import = 1;
+                                if (child->child_count > 0) {
+                                    ASTNode* first = child->children[0];
+                                    if (first && first->type == AST_IDENTIFIER) {
+                                        should_import = 0;
+                                        for (int k = 0; k < child->child_count; k++) {
+                                            ASTNode* sel = child->children[k];
+                                            if (sel && sel->type == AST_IDENTIFIER &&
+                                                strcmp(sel->value, decl->value) == 0) {
+                                                should_import = 1;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (should_import) {
+                                    if (!lookup_symbol_local(global_table, decl->value)) {
+                                        add_symbol(global_table, decl->value,
+                                                   clone_type(decl->node_type), 0, 1, 0);
+                                    }
                                 }
                             }
                             // AST_FUNCTION_DEFINITION handled by module_merge_into_program()
@@ -811,7 +1018,22 @@ int typecheck_program(ASTNode* program) {
     for (int i = 0; i < program->child_count; i++) {
         typecheck_node(program->children[i], global_table);
     }
-    
+
+    // Third pass: unused variable + unreachable code analysis
+    for (int i = 0; i < program->child_count; i++) {
+        ASTNode* child = program->children[i];
+        if (child->type == AST_FUNCTION_DEFINITION && child->child_count > 0) {
+            ASTNode* body = child->children[child->child_count - 1];
+            check_unused_variables(body);
+            check_unreachable_code(body);
+        } else if (child->type == AST_MAIN_FUNCTION && child->child_count > 0) {
+            // main() has a BLOCK child containing the actual statements
+            ASTNode* main_body = child->children[0];
+            check_unused_variables(main_body);
+            check_unreachable_code(main_body);
+        }
+    }
+
     free_symbol_table(global_table);
     
     // Report errors and warnings
