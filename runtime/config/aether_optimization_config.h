@@ -128,44 +128,64 @@
 #if AETHER_HAS_ATOMICS
 #  include <stdatomic.h>
 #else
-// Single-threaded fallback: volatile serves as documentation, no real barriers needed
+// Single-threaded fallback: volatile serves as documentation, no real barriers needed.
+// All operations are plain reads/writes — safe because only one thread exists.
+// Uses inline functions instead of macros to avoid GCC statement expressions
+// (which MSVC doesn't support) and to provide proper type safety.
 typedef volatile int   atomic_int;
 typedef volatile _Bool atomic_bool;
 typedef volatile unsigned long long atomic_uint_fast64_t;
-#  define atomic_load(p)                    (*(p))
-#  define atomic_store(p, v)                (*(p) = (v))
-#  define atomic_load_explicit(p, mo)       (*(p))
-#  define atomic_store_explicit(p, v, mo)   (*(p) = (v))
-#  define atomic_fetch_add(p, v)            ({ typeof(*(p)) _old = *(p); *(p) += (v); _old; })
-#  define atomic_fetch_add_explicit(p, v, mo) atomic_fetch_add(p, v)
-#  define atomic_fetch_sub(p, v)            ({ typeof(*(p)) _old = *(p); *(p) -= (v); _old; })
-#  define atomic_fetch_sub_explicit(p, v, mo) atomic_fetch_sub(p, v)
-#  define atomic_flag_test_and_set(p)       ({ bool _old = (p)->_Value; (p)->_Value = 1; _old; })
-#  define atomic_flag_test_and_set_explicit(p, mo) atomic_flag_test_and_set(p)
-#  define atomic_flag_clear(p)              ((p)->_Value = 0)
-#  define atomic_flag_clear_explicit(p, mo) atomic_flag_clear(p)
 typedef struct { volatile int _Value; } atomic_flag;
 #  define ATOMIC_FLAG_INIT {0}
 #  define _Atomic(T) volatile T
-#  define atomic_init(p, v)                  (*(p) = (v))
-#  define atomic_exchange(p, v)              ({ typeof(*(p)) _old = *(p); *(p) = (v); _old; })
-#  define atomic_exchange_explicit(p, v, mo) atomic_exchange(p, v)
-#  define atomic_compare_exchange_strong(p, expected, desired) \
-    ({ typeof(*(p)) _exp = *(expected); bool _ok = (*(p) == _exp); \
-       if (_ok) *(p) = (desired); else *(expected) = *(p); _ok; })
-#  define atomic_compare_exchange_strong_explicit(p, expected, desired, s, f) \
-    atomic_compare_exchange_strong(p, expected, desired)
-#  define atomic_compare_exchange_weak(p, expected, desired) \
-    atomic_compare_exchange_strong(p, expected, desired)
-#  define atomic_compare_exchange_weak_explicit(p, expected, desired, s, f) \
-    atomic_compare_exchange_strong(p, expected, desired)
-#  define atomic_thread_fence(mo) ((void)0)
+
 // Memory order constants (no-ops in single-threaded)
 #  define memory_order_relaxed 0
 #  define memory_order_acquire 0
 #  define memory_order_release 0
 #  define memory_order_acq_rel 0
 #  define memory_order_seq_cst 0
+
+// Simple operations — safe as macros (no return-old-value semantics)
+#  define atomic_init(p, v)                  (*(p) = (v))
+#  define atomic_load(p)                     (*(p))
+#  define atomic_store(p, v)                 (*(p) = (v))
+#  define atomic_load_explicit(p, mo)        (*(p))
+#  define atomic_store_explicit(p, v, mo)    (*(p) = (v))
+#  define atomic_flag_clear(p)               ((p)->_Value = 0)
+#  define atomic_flag_clear_explicit(p, mo)  ((p)->_Value = 0)
+#  define atomic_thread_fence(mo)            ((void)0)
+
+// Fetch-modify operations return the OLD value. Implemented as inline
+// functions for int (the only type used in the runtime's single-threaded path).
+static inline int _aether_fetch_add_int(volatile int* p, int v) { int old = *p; *p += v; return old; }
+static inline int _aether_fetch_sub_int(volatile int* p, int v) { int old = *p; *p -= v; return old; }
+static inline int _aether_exchange_int(volatile int* p, int v)  { int old = *p; *p = v;  return old; }
+static inline bool _aether_flag_test_and_set(atomic_flag* f)    { bool old = (bool)f->_Value; f->_Value = 1; return old; }
+
+#  define atomic_fetch_add(p, v)              _aether_fetch_add_int((volatile int*)(p), (int)(v))
+#  define atomic_fetch_add_explicit(p, v, mo) _aether_fetch_add_int((volatile int*)(p), (int)(v))
+#  define atomic_fetch_sub(p, v)              _aether_fetch_sub_int((volatile int*)(p), (int)(v))
+#  define atomic_fetch_sub_explicit(p, v, mo) _aether_fetch_sub_int((volatile int*)(p), (int)(v))
+#  define atomic_exchange(p, v)               _aether_exchange_int((volatile int*)(p), (int)(v))
+#  define atomic_exchange_explicit(p, v, mo)  _aether_exchange_int((volatile int*)(p), (int)(v))
+#  define atomic_flag_test_and_set(p)              _aether_flag_test_and_set(p)
+#  define atomic_flag_test_and_set_explicit(p, mo) _aether_flag_test_and_set(p)
+
+// Compare-exchange: if *p == *expected, set *p = desired and return true.
+// Otherwise, set *expected = *p and return false.
+static inline bool _aether_cas_int(volatile int* p, int* expected, int desired) {
+    if (*p == *expected) { *p = desired; return true; }
+    *expected = *p; return false;
+}
+#  define atomic_compare_exchange_strong(p, expected, desired) \
+    _aether_cas_int((volatile int*)(p), (int*)(expected), (int)(desired))
+#  define atomic_compare_exchange_strong_explicit(p, expected, desired, s, f) \
+    _aether_cas_int((volatile int*)(p), (int*)(expected), (int)(desired))
+#  define atomic_compare_exchange_weak(p, expected, desired) \
+    _aether_cas_int((volatile int*)(p), (int*)(expected), (int)(desired))
+#  define atomic_compare_exchange_weak_explicit(p, expected, desired, s, f) \
+    _aether_cas_int((volatile int*)(p), (int*)(expected), (int)(desired))
 #endif
 
 // Runtime-queryable platform capabilities

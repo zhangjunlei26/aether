@@ -78,6 +78,56 @@ jobs:
       run: make ci
 
   # ============================================================
+  # Platform portability — cooperative scheduler, WASM, embedded
+  # Verifies Aether compiles and runs on threadless platforms.
+  # ============================================================
+  ci-coop:
+    name: Cooperative Scheduler (no pthreads)
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install toolchain
+      run: sudo apt-get update && sudo apt-get install -y gcc make bc
+
+    - name: Run cooperative scheduler CI
+      run: make ci-coop
+
+  ci-wasm:
+    name: WebAssembly (Emscripten)
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Emscripten
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: 3.1.51
+
+    - name: Install native GCC
+      run: sudo apt-get update && sudo apt-get install -y gcc make bc
+
+    - name: Run WASM CI
+      run: make ci-wasm
+
+  ci-embedded:
+    name: Embedded ARM (Cortex-M4)
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install ARM cross-compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc make gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+    - name: Run embedded CI
+      run: make ci-embedded
+
+  # ============================================================
   # Memory safety — Valgrind + AddressSanitizer on Linux/GCC
   # Separate from main CI because it needs special build flags
   # and is slower. Runs in parallel with the ci job.
