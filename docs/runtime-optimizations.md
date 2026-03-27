@@ -516,6 +516,36 @@ Optimization Statistics:
   Linear loops collapsed: 3
 ```
 
+### Cooperative Preemption (Opt-In)
+
+**Implementation:** `runtime/scheduler/multicore_scheduler.c`, `compiler/codegen/codegen_stmt.c`
+
+Two independent mechanisms, both zero-cost when disabled:
+
+**Scheduler-side** (`AETHER_PREEMPT=1`): After each `actor->step()` in the drain loop, check elapsed time. If the batch exceeds the threshold (default 1ms), break and move to the next actor.
+
+```c
+uint64_t _drain_start = preempt_enabled ? aether_now_ns() : 0;
+while (...) {
+    actor->step(actor);
+    if (_drain_start && (aether_now_ns() - _drain_start) >= threshold_ns)
+        break;
+}
+```
+
+**Codegen-side** (`aetherc --preempt`): Insert `sched_yield()` at loop back-edges. Reduction counter limits yield frequency to every 10000 iterations.
+
+```c
+// Generated at top of every while/for body when --preempt is active
+if (--_aether_reductions <= 0) { _aether_reductions = 10000; sched_yield(); }
+```
+
+### Actor Timeouts
+
+**Implementation:** `compiler/codegen/codegen_actor.c`, `runtime/scheduler/multicore_scheduler.h`
+
+`ActorBase` carries `timeout_ns` and `last_activity_ns`. The generated step function checks the nanosecond clock before `mailbox_receive()`. The scheduler polls timeout-active actors even when their mailbox is empty.
+
 ## References
 
 - Lock-Free Programming: Harris, "A Pragmatic Implementation of Non-Blocking Linked-Lists"

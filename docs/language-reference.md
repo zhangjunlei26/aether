@@ -617,6 +617,25 @@ actor Counter {
 }
 ```
 
+### Receive Timeouts
+
+The `after` clause fires a handler if no message arrives within N milliseconds:
+
+```aether
+actor Monitor {
+    state alive = 1
+
+    receive {
+        Heartbeat -> { alive = 1 }
+    } after 5000 -> {
+        println("No heartbeat for 5 seconds")
+        alive = 0
+    }
+}
+```
+
+The timeout is one-shot: it is cancelled when any message is received. The countdown starts when the actor's mailbox becomes empty.
+
 ### State Variables
 
 State persists across messages:
@@ -941,7 +960,7 @@ The following identifiers are reserved:
 | `while`, `for`, `in`, `break`, `continue` | Loops |
 | `return` | Function return |
 | `match`, `switch`, `case`, `default` | Pattern matching / dispatch |
-| `actor`, `receive`, `spawn`, `reply` | Actor system |
+| `actor`, `receive`, `spawn`, `reply`, `after` | Actor system |
 | `message`, `struct` | Type definitions |
 | `state` | Actor state (only reserved inside actor bodies) |
 | `import`, `extern` | Modules and C interop |

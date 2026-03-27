@@ -37,9 +37,34 @@ On platforms without pthreads (WebAssembly, embedded) or when threading is expli
 # Test cooperative mode on native
 make ci-coop
 
-# Build for WASM
+# Build for WASM via CLI
+ae build --target wasm hello.ae
+
+# Build for WASM via Makefile
 make stdlib PLATFORM=wasm
 ```
+
+---
+
+## Actor Timeouts
+
+Actors with a `receive ... after N` clause have `timeout_ns` and `last_activity_ns` fields in `ActorBase`. The generated step function checks the clock before `mailbox_receive()`:
+
+1. If the mailbox is empty and `timeout_ns > 0`, `last_activity_ns` is set to the current time (start countdown)
+2. On the next poll, if `(now - last_activity_ns) >= timeout_ns`, the timeout handler fires and the timeout is disabled (one-shot)
+3. If a message arrives, both `timeout_ns` and `last_activity_ns` are reset to 0 (cancelled)
+
+Both the multicore and cooperative schedulers poll actors with active timeouts even when their mailbox is empty.
+
+---
+
+## Cooperative Preemption
+
+Opt-in, zero cost when disabled. Two independent levels:
+
+**Scheduler-side** (`AETHER_PREEMPT=1`): After each `actor->step()` call in the drain loop, the scheduler checks elapsed time via `aether_now_ns()`. If the batch exceeds the threshold (default 1ms, configurable via `AETHER_PREEMPT_MS`), it breaks out and moves to the next actor. Cost when disabled: zero (branch skipped).
+
+**Codegen-side** (`aetherc --preempt`): Inserts `sched_yield()` at the top of every `while` and `for` loop body. A thread-local reduction counter (10000) controls frequency — yields only when the counter hits zero. Cost when `--preempt` is not passed: zero (code not generated).
 
 ---
 
