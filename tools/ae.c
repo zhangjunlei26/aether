@@ -1770,12 +1770,13 @@ static int cmd_add(int argc, char** argv) {
 
     printf("Adding %s%s%s...\n", package, version ? "@" : "", version ? version : "");
 
-    // Cache directory
-    char cache_dir[1024];
+    // Cache directory — sized generously so GCC's -Wformat-truncation
+    // doesn't complain (real paths are ~60 bytes, never close to limits)
+    char cache_dir[512];
     snprintf(cache_dir, sizeof(cache_dir), "%s/.aether/packages", get_home_dir());
 
-    char pkg_dir[2048];
-    snprintf(pkg_dir, sizeof(pkg_dir), "%s/%s", cache_dir, package);
+    char pkg_dir[1024];
+    snprintf(pkg_dir, sizeof(pkg_dir), "%.511s/%.511s", cache_dir, package);
 
     if (!dir_exists(pkg_dir)) {
         printf("Downloading...\n");
@@ -1785,20 +1786,12 @@ static int cmd_add(int argc, char** argv) {
         char* slash = strrchr(parent, '/');
         if (slash) { *slash = '\0'; mkdirs(parent); }
 
-#if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-truncation"
-#endif
-        char cmd[2048];
+        char cmd[4096];
         if (version) {
-            // Clone full repo to checkout specific tag
             snprintf(cmd, sizeof(cmd), "git clone https://%s %s", package, pkg_dir);
         } else {
             snprintf(cmd, sizeof(cmd), "git clone --depth 1 https://%s %s", package, pkg_dir);
         }
-#if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
         if (run_cmd(cmd) != 0) {
             fprintf(stderr, "Failed to download package.\n");
             fprintf(stderr, "Check that the repository exists: https://%s\n", package);

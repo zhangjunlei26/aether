@@ -449,7 +449,7 @@ char* module_resolve_stdlib_path(const char* module_name) {
 // Resolve a local module path (e.g., "mypackage.utils") to a file path.
 char* module_resolve_local_path(const char* module_path) {
     char converted[512];
-    char path[sizeof(converted) + 16];
+    char path[2048];
 
     // Convert dots to slashes
     strncpy(converted, module_path, sizeof(converted) - 1);
