@@ -838,6 +838,9 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "static int64_t _aether_clock_ns(void) {");
     print_line(gen, "    return (int64_t)(emscripten_get_now() * 1000000.0);");
     print_line(gen, "}");
+    print_line(gen, "#elif defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 0)");
+    print_line(gen, "// Freestanding (bare-metal): no clock_gettime, return 0");
+    print_line(gen, "static int64_t _aether_clock_ns(void) { return 0; }");
     print_line(gen, "#else");
     print_line(gen, "static int64_t _aether_clock_ns(void) {");
     print_line(gen, "    struct timespec _ts;");
