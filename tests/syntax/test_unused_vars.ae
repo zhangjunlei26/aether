@@ -4,7 +4,8 @@
 
 main() {
     used = 42
-    println("used = ${used}")
+    print("used = ")
+    println(used)
 
     // _prefixed: intentional discard, no warning
     _ignored = 99
