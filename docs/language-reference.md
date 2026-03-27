@@ -877,6 +877,20 @@ result = string.new("hello");
 if (file.exists("config.txt") == 1) { }
 ```
 
+### Selective Imports
+
+Import only specific symbols from a module:
+
+```aether
+import std.math (sqrt, pow)
+
+main() {
+    x = math.sqrt(16.0)    // works
+    y = math.pow(2.0, 3.0) // works
+    // math.sin(1.0)       // error: not imported
+}
+```
+
 ### Import with Alias (Planned)
 
 > **Note:** Import aliasing is parsed but not yet fully functional. Use the default namespace for now.
@@ -990,6 +1004,64 @@ When used directly inside `print`/`println`, the compiler optimizes to a `printf
 | `getenv(name)` | Get environment variable (returns string) |
 | `atoi(s)` | Convert string to int |
 | `exit(code)` | Terminate program with exit code (defaults to 0) |
+
+---
+
+## Compiler Warnings
+
+The compiler emits structured warnings for common issues:
+
+### Unused Variables [W1001]
+
+Variables declared but never referenced produce a warning. Prefix with `_` to suppress:
+
+```aether
+main() {
+    x = 42          // warning[W1001]: unused variable 'x'
+    _unused = 42    // no warning — intentional discard
+    y = 10
+    println(y)      // y is used, no warning
+}
+```
+
+### Unreachable Code [W1002]
+
+Code after `return`, `exit()`, or exhaustive `if`/`else` blocks is flagged:
+
+```aether
+check(x: int) -> {
+    if x > 0 { return 1 }
+    else { return 0 }
+    println("never reached")    // warning[W1002]: unreachable code
+}
+```
+
+Use `ae check file.ae` to see warnings without compiling (~30x faster than `ae build`).
+
+---
+
+## Match Expressions
+
+`match` can be used as a statement or as an expression:
+
+```aether
+// Statement — executes the matching arm
+match status {
+    0 -> println("ok")
+    1 -> println("warning")
+    _ -> println("error")
+}
+
+// Expression — assigns the matching arm's value
+msg = match status {
+    0 -> "ok"
+    1 -> "warning"
+    _ -> "error"
+}
+println(msg)
+```
+
+Supported patterns: integer literals, string literals, `_` (wildcard), list patterns.
 
 ---
 

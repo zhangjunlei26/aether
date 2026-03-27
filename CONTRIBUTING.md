@@ -144,6 +144,9 @@ ASSERT_NOT_NULL(ptr)            // Assert pointer is not NULL
 ### Running Tests
 
 ```bash
+# Type-check without compiling (~30x faster, good for iteration)
+ae check file.ae
+
 # All tests
 make test
 

@@ -169,6 +169,32 @@ ae add gitlab.com/user/repo           # GitLab
 ae add codeberg.org/user/repo         # Codeberg
 ```
 
+## Error Handling
+
+Functions that can fail return `(value, error)` tuples. Check the error first, handle it, then continue — no `else` needed:
+
+```aether
+safe_divide(a: int, b: int) -> {
+    if b == 0 {
+        return 0, "division by zero"
+    }
+    return a / b, ""
+}
+
+main() {
+    result, err = safe_divide(10, 3)
+    if err != "" {
+        println("Error: ${err}")
+        exit(1)
+    }
+    println("Result: ${result}")
+
+    // Discard error with _
+    val, _ = safe_divide(42, 7)
+    println(val)
+}
+```
+
 ## Interactive REPL
 
 Experiment with Aether interactively:

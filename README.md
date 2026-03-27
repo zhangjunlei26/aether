@@ -147,6 +147,7 @@ make ae
 ae init <name>           # Create a new project
 ae run [file.ae]         # Compile and run (file or project)
 ae build [file.ae]       # Compile to executable
+ae check [file.ae]       # Type-check without compiling (~30x faster)
 ae test [file|dir]       # Discover and run tests
 ae examples [dir]        # Build all example programs
 ae add <host/user/repo>  # Add a dependency (any git host)
@@ -402,10 +403,13 @@ Aether is under active development. The compiler, runtime, and standard library 
 
 **Known Limitations:**
 - Package registry supports any git host but lacks transitive dependency resolution and lock file integrity checking
+- Stdlib still uses `int` returns for error handling (migration to result types planned)
 
 **Roadmap:**
-- Hot code reloading
-- Package registry
+- Closures and first-class functions
+- Stdlib migration to result types
+- Async I/O (io_uring/kqueue/IOCP)
+- WebAssembly Phase 2 (Web Workers)
 
 ## Contributing
 
