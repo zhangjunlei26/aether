@@ -278,7 +278,7 @@ test-ae: compiler ae stdlib
 	printf 'else\n'                                                                            >> "$$script"; \
 	printf '  cmd="$$root/build/ae build $$f -o $$root/build/test_$$name"\n'                   >> "$$script"; \
 	printf 'fi\n'                                                                              >> "$$script"; \
-	printf 'if eval "$$cmd" 2>/dev/null; then\n'                                               >> "$$script"; \
+	printf 'if eval "$$cmd" 2>"$$tmpdir/err_$$name.txt"; then\n'                                >> "$$script"; \
 	printf '  if "$$root/build/test_$$name" >/dev/null 2>&1; then\n'                           >> "$$script"; \
 	printf '    echo "  [PASS] $$name"; touch "$$tmpdir/PASS_$$name"\n'                        >> "$$script"; \
 	printf '  else\n'                                                                          >> "$$script"; \
@@ -286,6 +286,7 @@ test-ae: compiler ae stdlib
 	printf '  fi\n'                                                                            >> "$$script"; \
 	printf 'else\n'                                                                            >> "$$script"; \
 	printf '  echo "  [FAIL] $$name (compile error)"; touch "$$tmpdir/FAIL_$$name"\n'          >> "$$script"; \
+	printf '  head -5 "$$tmpdir/err_$$name.txt" 2>/dev/null\n'                                 >> "$$script"; \
 	printf 'fi\n'                                                                              >> "$$script"; \
 	chmod +x "$$script"; \
 	root=$$(pwd); \
