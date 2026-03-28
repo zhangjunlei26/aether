@@ -891,7 +891,11 @@ ci-windows: clean compiler
 		if [ ! -f "$$out_c" ]; then \
 			echo "SKIP"; \
 		elif x86_64-w64-mingw32-gcc -O2 -fsyntax-only \
+			-Iruntime -Iruntime/actors -Iruntime/scheduler \
+			-Iruntime/utils -Iruntime/memory -Iruntime/config \
+			-Istd -Istd/string -Istd/io -Istd/math -Istd/net -Istd/collections -Istd/json \
 			-Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
+			-Wno-missing-field-initializers -Wno-unused-variable -Wno-unused-label \
 			"$$out_c" 2>/tmp/mingw_err.txt; then \
 			echo "OK"; \
 			pass=$$((pass + 1)); \
