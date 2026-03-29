@@ -602,6 +602,21 @@ static void collect_references(ASTNode* node, TrackedVar* vars, int var_count) {
         }
     }
 
+    // Match statements with list patterns implicitly reference <expr>_len variables
+    // (the codegen generates: int _match_len = <expr>_len;)
+    if (node->type == AST_MATCH_STATEMENT && node->child_count > 0) {
+        ASTNode* match_expr = node->children[0];
+        if (match_expr && match_expr->type == AST_IDENTIFIER && match_expr->value) {
+            char len_name[256];
+            snprintf(len_name, sizeof(len_name), "%s_len", match_expr->value);
+            for (int i = 0; i < var_count; i++) {
+                if (strcmp(vars[i].name, len_name) == 0) {
+                    vars[i].used = 1;
+                }
+            }
+        }
+    }
+
     // For variable declarations, the RHS is a reference but the name itself is not
     if (node->type == AST_VARIABLE_DECLARATION) {
         // Only walk children (RHS expression), not the declaration name
