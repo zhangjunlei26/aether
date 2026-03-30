@@ -15,6 +15,9 @@ typedef enum {
     AETHER_ERR_REDEFINITION = 400,
     AETHER_ERR_INVALID_OPERAND = 500,
     AETHER_ERR_ACTOR_ERROR = 600,
+    // Warnings (W-series)
+    AETHER_WARN_UNUSED_VAR = 1001,
+    AETHER_WARN_UNREACHABLE = 1002,
 } AetherErrorCode;
 
 // Error reporting with source context

@@ -145,6 +145,56 @@ ae build hello.ae -o hello
 ./hello
 ```
 
+**Build for WebAssembly:**
+
+```bash
+ae build --target wasm hello.ae
+node hello.js
+```
+
+Requires [Emscripten](https://emscripten.org/) (`emcc` on PATH).
+
+**Type-check without compiling:**
+
+```bash
+ae check hello.ae
+```
+
+**Add a package (any git host):**
+
+```bash
+ae add github.com/user/repo          # latest from GitHub
+ae add github.com/user/repo@v1.0.0   # specific version
+ae add gitlab.com/user/repo           # GitLab
+ae add codeberg.org/user/repo         # Codeberg
+```
+
+## Error Handling
+
+Functions that can fail return `(value, error)` tuples. Check the error first, handle it, then continue — no `else` needed:
+
+```aether
+safe_divide(a: int, b: int) -> {
+    if b == 0 {
+        return 0, "division by zero"
+    }
+    return a / b, ""
+}
+
+main() {
+    result, err = safe_divide(10, 3)
+    if err != "" {
+        println("Error: ${err}")
+        exit(1)
+    }
+    println("Result: ${result}")
+
+    // Discard error with _
+    val, _ = safe_divide(42, 7)
+    println(val)
+}
+```
+
 ## Interactive REPL
 
 Experiment with Aether interactively:

@@ -16,6 +16,8 @@ Aether is a compiled language that brings actor-based concurrency to systems pro
 - Type inference with optional annotations
 - Compiles to readable C for portability and C library interop
 - Lock-free message passing with adaptive optimizations
+- Go-style result types: `a, err = func()` with `_` discard
+- Package management: `ae add host/user/repo[@version]` (GitHub, GitLab, Bitbucket, any git host)
 
 ## Runtime Features
 
@@ -46,10 +48,13 @@ The Aether runtime implements a native actor system with optimized message passi
 - **Compile-time platform detection** via `AETHER_HAS_*` flags (threads, atomics, filesystem, networking, NUMA, SIMD, affinity)
 - **Cooperative scheduler** for single-threaded platforms (WebAssembly, embedded, bare-metal)
 - **Graceful degradation** — stdlib stubs return errors when features are unavailable
+- **`ae build --target wasm`** compiles to WebAssembly via Emscripten
 - **`PLATFORM=wasm|embedded`** Makefile targets for cross-compilation
 - **Docker CI images** for Emscripten (WASM) and ARM (embedded) verification
 
 ### Advanced Features
+- **Actor timeouts** — `receive { ... } after N -> { ... }` fires handler if no message arrives within N ms
+- **Cooperative preemption** (opt-in) — `AETHER_PREEMPT=1` breaks long handlers, `--preempt` yields at loop back-edges
 - **SIMD batch processing** with AVX2 support
 - **NUMA-aware allocation** for multi-socket systems
 - **CPU feature detection** for runtime optimization selection
@@ -142,9 +147,10 @@ make ae
 ae init <name>           # Create a new project
 ae run [file.ae]         # Compile and run (file or project)
 ae build [file.ae]       # Compile to executable
+ae check [file.ae]       # Type-check without compiling (~30x faster)
 ae test [file|dir]       # Discover and run tests
 ae examples [dir]        # Build all example programs
-ae add <package>         # Add a dependency (GitHub repos)
+ae add <host/user/repo>  # Add a dependency (any git host)
 ae repl                  # Start interactive REPL
 ae cache                 # Show build cache info
 ae cache clear           # Clear the build cache
@@ -396,11 +402,14 @@ Aether is under active development. The compiler, runtime, and standard library 
 - Docker CI for cross-platform verification (Emscripten WASM, ARM embedded)
 
 **Known Limitations:**
-- No versioned package registry yet (local modules and stdlib work; `ae add` can clone GitHub repos but has no dependency resolution or lock files)
+- Package registry supports any git host but lacks transitive dependency resolution and lock file integrity checking
+- Stdlib still uses `int` returns for error handling (migration to result types planned)
 
 **Roadmap:**
-- Hot code reloading
-- Package registry
+- Closures and first-class functions
+- Stdlib migration to result types
+- Async I/O (io_uring/kqueue/IOCP)
+- WebAssembly Phase 2 (Web Workers)
 
 ## Contributing
 

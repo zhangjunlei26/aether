@@ -115,11 +115,10 @@ main() {
 
 Features not yet implemented:
 
-- `import math.geometry (Point, distance)` — selective imports (parsed but not enforced)
-- `import math.geometry as geo` — import aliases
-- `import github.com/user/package` — remote package imports
+- `import math.geometry as geo` — import aliases (parsed but not yet functional)
 - Exporting structs and actors from modules
 - Re-exports (module A re-exporting module B's symbols)
+- Transitive dependency resolution
 
 ---
 
@@ -167,8 +166,8 @@ license = "MIT"
 description = "My awesome Aether package"
 
 [dependencies]
-# Dependencies go here (future feature)
-# http_client = "1.0"
+# Add with: ae add github.com/user/repo
+# github.com/user/mylib = "v1.0.0"
 
 [dev-dependencies]
 # Test dependencies
@@ -242,6 +241,11 @@ For nested modules like `import mypackage.utils`:
 - Dots are converted to slashes: `mypackage/utils/module.ae`
 - Same search paths are used with the converted path
 
+7. `~/.aether/packages/<name>/src/module.ae` - Installed package (via `ae add`)
+8. `~/.aether/packages/<name>/module.ae` - Installed package (flat layout)
+
+Packages installed with `ae add` are searched after local paths. The package name is the first component of the import path.
+
 ### Namespace Convention
 
 Function names must be prefixed with the namespace:
@@ -301,14 +305,14 @@ After module orchestration, the compiler clones each module's function and const
 **Not yet supported:**
 - Actors from modules (dispatch tables assume main program scope)
 - Message definitions from modules
-- Selective imports (`import mymath (add, PI)`)
 - Re-exports (module A re-exporting module B's functions)
 - Module-level mutable state
 
 ### Current Limitations
 
-- Package publishing/registry not yet implemented
-- Remote package downloads not yet functional
+- No transitive dependency resolution (flat deps only)
+- No lock file integrity checking
+- No package publishing command (`ae publish`)
 
 ### Roadmap
 

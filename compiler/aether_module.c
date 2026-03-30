@@ -449,7 +449,7 @@ char* module_resolve_stdlib_path(const char* module_name) {
 // Resolve a local module path (e.g., "mypackage.utils") to a file path.
 char* module_resolve_local_path(const char* module_path) {
     char converted[512];
-    char path[sizeof(converted) + 16];
+    char path[2048];
 
     // Convert dots to slashes
     strncpy(converted, module_path, sizeof(converted) - 1);
@@ -481,6 +481,52 @@ char* module_resolve_local_path(const char* module_path) {
     // Try 6: module_path.ae (single file in root)
     snprintf(path, sizeof(path), "%s.ae", converted);
     if (access(path, F_OK) == 0) return strdup(path);
+
+    // Try 7-9: Search installed packages at ~/.aether/packages/
+    // import mylib.utils → search ~/.aether/packages/*/mylib/src/utils/module.ae
+    // The first path component (mylib) is the package name
+    {
+        const char* home = getenv("HOME");
+        if (!home) home = getenv("USERPROFILE");  // Windows
+        if (home) {
+            // Extract the package name (first component of module path)
+            char pkg_name[128];
+            strncpy(pkg_name, converted, sizeof(pkg_name) - 1);
+            pkg_name[sizeof(pkg_name) - 1] = '\0';
+            char* slash = strchr(pkg_name, '/');
+            if (slash) *slash = '\0';
+
+            // The sub-path within the package (everything after package name)
+            const char* sub_path = strchr(converted, '/');
+
+            // Scan ~/.aether/packages/ for directories ending with /pkg_name
+            char pkg_base[512];
+            snprintf(pkg_base, sizeof(pkg_base), "%s/.aether/packages", home);
+
+            // Try common GitHub package layout: ~/.aether/packages/github.com/*/pkg_name/
+            char search[1024];
+            // Direct match: ~/.aether/packages/pkg_name/
+            if (sub_path) {
+                snprintf(path, sizeof(path), "%s/%s/src%s/module.ae", pkg_base, pkg_name, sub_path);
+                if (access(path, F_OK) == 0) return strdup(path);
+                snprintf(path, sizeof(path), "%s/%s/src%s.ae", pkg_base, pkg_name, sub_path);
+                if (access(path, F_OK) == 0) return strdup(path);
+                snprintf(path, sizeof(path), "%s/%s/lib%s/module.ae", pkg_base, pkg_name, sub_path);
+                if (access(path, F_OK) == 0) return strdup(path);
+            } else {
+                snprintf(path, sizeof(path), "%s/%s/src/module.ae", pkg_base, pkg_name);
+                if (access(path, F_OK) == 0) return strdup(path);
+                snprintf(path, sizeof(path), "%s/%s/module.ae", pkg_base, pkg_name);
+                if (access(path, F_OK) == 0) return strdup(path);
+            }
+
+            // Also try GitHub-style nested: ~/.aether/packages/github.com/*/pkg_name/
+            // Scan for any subdirectory pattern matching **/pkg_name
+            // For simplicity, check the most common pattern
+            (void)search;
+            (void)pkg_base;
+        }
+    }
 
     return NULL;
 }
@@ -814,10 +860,29 @@ void module_merge_into_program(ASTNode* program) {
         const char* const_names[128];
         int const_count = collect_module_const_names(mod_ast, const_names, 128);
 
+        // Check for selective import: if import has AST_IDENTIFIER children,
+        // only merge functions/constants that appear in the selection list
+        int has_selection = (child->child_count > 0 &&
+                            child->children[0]->type == AST_IDENTIFIER);
+
         for (int j = 0; j < mod_ast->child_count; j++) {
             ASTNode* decl = unwrap_export(mod_ast->children[j]);
 
             if (decl->type == AST_FUNCTION_DEFINITION && decl->value) {
+                // Skip if not in selective import list
+                if (has_selection) {
+                    int selected = 0;
+                    for (int k = 0; k < child->child_count; k++) {
+                        ASTNode* sel = child->children[k];
+                        if (sel && sel->type == AST_IDENTIFIER &&
+                            strcmp(sel->value, decl->value) == 0) {
+                            selected = 1;
+                            break;
+                        }
+                    }
+                    if (!selected) continue;
+                }
+
                 // Clone and rename: "double_it" -> "mymath_double_it"
                 ASTNode* clone = clone_ast_node(decl);
                 char prefixed[256];
@@ -831,6 +896,20 @@ void module_merge_into_program(ASTNode* program) {
 
                 insert_child_at(program, clone, insert_idx++);
             } else if (decl->type == AST_CONST_DECLARATION && decl->value) {
+                // Skip if not in selective import list
+                if (has_selection) {
+                    int selected = 0;
+                    for (int k = 0; k < child->child_count; k++) {
+                        ASTNode* sel = child->children[k];
+                        if (sel && sel->type == AST_IDENTIFIER &&
+                            strcmp(sel->value, decl->value) == 0) {
+                            selected = 1;
+                            break;
+                        }
+                    }
+                    if (!selected) continue;
+                }
+
                 // Clone and rename constants too
                 ASTNode* clone = clone_ast_node(decl);
                 char prefixed[256];

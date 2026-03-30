@@ -41,6 +41,7 @@ CodeGenerator* create_code_generator(FILE* output) {
     gen->declared_vars = NULL;
     gen->declared_var_count = 0;
     gen->generating_lvalue = 0;  // Not generating lvalue by default
+    gen->interp_as_printf = 0;  // Default: interp generates _aether_interp() not printf()
     gen->in_condition = 0;  // Not in condition by default
     gen->in_main_loop = 0;  // Not in main loop by default
     gen->in_main_function = 0;
@@ -60,6 +61,12 @@ CodeGenerator* create_code_generator(FILE* output) {
     gen->extern_registry_capacity = 0;
     // MSVC compat: counter for ask-operator temp variables
     gen->ask_temp_counter = 0;
+    gen->match_result_var = NULL;
+    gen->preempt_loops = 0;
+    gen->current_func_return_type = NULL;
+    gen->tuple_type_names = NULL;
+    gen->tuple_type_count = 0;
+    gen->tuple_type_capacity = 0;
     // Ask/reply type map
     gen->reply_type_map = NULL;
     gen->reply_type_count = 0;
@@ -529,6 +536,20 @@ const char* get_c_type(Type* type) {
             }
             return buffer;
         }
+        case TYPE_TUPLE: {
+            static char buffers[4][256];
+            static int buf_idx = 0;
+            char* buffer = buffers[buf_idx++ & 3];
+            int pos = snprintf(buffer, 256, "_tuple");
+            for (int i = 0; i < type->tuple_count && pos < 240; i++) {
+                const char* elem = get_c_type(type->tuple_types[i]);
+                // Sanitize: "const char*" -> "string", "void*" -> "ptr"
+                if (strcmp(elem, "const char*") == 0) elem = "string";
+                else if (strcmp(elem, "void*") == 0) elem = "ptr";
+                pos += snprintf(buffer + pos, 256 - pos, "_%s", elem);
+            }
+            return buffer;
+        }
         case TYPE_UNKNOWN: {
             AetherError w = {NULL, NULL, 0, 0,
                              "unresolved type in codegen, defaulting to int",
@@ -546,6 +567,31 @@ const char* get_c_type(Type* type) {
             return "void";
         }
     }
+}
+
+// Emit a typedef for a tuple type if not already emitted
+void ensure_tuple_typedef(CodeGenerator* gen, Type* type) {
+    if (!type || type->kind != TYPE_TUPLE) return;
+    const char* name = get_c_type(type);
+
+    // Check if already emitted
+    for (int i = 0; i < gen->tuple_type_count; i++) {
+        if (strcmp(gen->tuple_type_names[i], name) == 0) return;
+    }
+
+    // Emit typedef
+    fprintf(gen->output, "typedef struct { ");
+    for (int i = 0; i < type->tuple_count; i++) {
+        fprintf(gen->output, "%s _%d; ", get_c_type(type->tuple_types[i]), i);
+    }
+    fprintf(gen->output, "} %s;\n", name);
+
+    // Register
+    if (gen->tuple_type_count >= gen->tuple_type_capacity) {
+        gen->tuple_type_capacity = gen->tuple_type_capacity ? gen->tuple_type_capacity * 2 : 8;
+        gen->tuple_type_names = realloc(gen->tuple_type_names, gen->tuple_type_capacity * sizeof(char*));
+    }
+    gen->tuple_type_names[gen->tuple_type_count++] = strdup(name);
 }
 
 const char* get_c_operator(const char* aether_op) {
@@ -747,6 +793,7 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "#include <emscripten.h>");
     print_line(gen, "#else");
     print_line(gen, "#include <unistd.h>");
+    print_line(gen, "#include <sched.h>");
     print_line(gen, "#endif");
     /* aligned_alloc: C11 POSIX; Windows uses _aligned_malloc with swapped args */
     print_line(gen, "#ifdef _WIN32");
@@ -763,6 +810,15 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "#    define unlikely(x) (x)");
     print_line(gen, "#  endif");
     print_line(gen, "#endif");
+    // Cooperative preemption: reduction counter for loop yield points
+    if (gen->preempt_loops) {
+        print_line(gen, "static int _aether_reductions = 10000;");
+        print_line(gen, "#ifdef _WIN32");
+        print_line(gen, "#define sched_yield() SwitchToThread()");
+        print_line(gen, "#elif defined(__EMSCRIPTEN__)");
+        print_line(gen, "#define sched_yield() ((void)0)");
+        print_line(gen, "#endif");
+    }
     /* GCC/Clang vs MSVC: guards for statement expressions ({...}) and computed goto */
     print_line(gen, "#ifndef AETHER_GCC_COMPAT");
     print_line(gen, "#  if (defined(__GNUC__) || defined(__clang__)) && !defined(__EMSCRIPTEN__)");
@@ -771,8 +827,13 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "#    define AETHER_GCC_COMPAT 0");
     print_line(gen, "#  endif");
     print_line(gen, "#endif");
-    /* clock_ns helper — statement-expression on GCC, helper function on MSVC */
-    print_line(gen, "#if !AETHER_GCC_COMPAT");
+    /* Suppress unused-function warnings for runtime helpers that may not
+       be called in every program (clock_ns, interp, safe_str) */
+    print_line(gen, "#if defined(__GNUC__) || defined(__clang__)");
+    print_line(gen, "#pragma GCC diagnostic push");
+    print_line(gen, "#pragma GCC diagnostic ignored \"-Wunused-function\"");
+    print_line(gen, "#endif");
+    /* clock_ns helper — always available (used by timeout checks + clock_ns() builtin) */
     print_line(gen, "#ifdef _WIN32");
     print_line(gen, "static int64_t _aether_clock_ns(void) {");
     print_line(gen, "    LARGE_INTEGER freq, now;");
@@ -784,6 +845,8 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "static int64_t _aether_clock_ns(void) {");
     print_line(gen, "    return (int64_t)(emscripten_get_now() * 1000000.0);");
     print_line(gen, "}");
+    print_line(gen, "#elif defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 0)");
+    print_line(gen, "static int64_t _aether_clock_ns(void) { return 0; }");
     print_line(gen, "#else");
     print_line(gen, "static int64_t _aether_clock_ns(void) {");
     print_line(gen, "    struct timespec _ts;");
@@ -791,9 +854,7 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "    return (int64_t)_ts.tv_sec * 1000000000LL + _ts.tv_nsec;");
     print_line(gen, "}");
     print_line(gen, "#endif");
-    print_line(gen, "#endif");
-    /* String interpolation helper — MSVC can't use ({ ... }) statement expressions */
-    print_line(gen, "#if !AETHER_GCC_COMPAT");
+    /* String interpolation helper — portable, always available */
     print_line(gen, "#include <stdarg.h>");
     print_line(gen, "static void* _aether_interp(const char* fmt, ...) {");
     print_line(gen, "    va_list args, args2;");
@@ -806,11 +867,13 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
     print_line(gen, "    va_end(args2);");
     print_line(gen, "    return (void*)str;");
     print_line(gen, "}");
-    print_line(gen, "#endif");
     /* NULL-safe string helper for print/println — avoids double-evaluating the expression */
     print_line(gen, "static inline const char* _aether_safe_str(const void* s) {");
     print_line(gen, "    return s ? (const char*)s : \"(null)\";");
     print_line(gen, "}");
+    print_line(gen, "#if defined(__GNUC__) || defined(__clang__)");
+    print_line(gen, "#pragma GCC diagnostic pop");
+    print_line(gen, "#endif");
     print_line(gen, "");
     // Declare runtime args function (avoid full header to prevent conflicts with actor runtime)
     print_line(gen, "void aether_args_init(int argc, char** argv);");
@@ -873,6 +936,32 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
         print_line(gen, "    return val;");
         print_line(gen, "}");
         print_line(gen, "#endif");
+    }
+    print_line(gen, "");
+
+    // Pre-scan: merge tuple return types across all returns in each function,
+    // then emit tuple typedefs. Must happen before forward declarations.
+    extern void merge_return_tuple_types(ASTNode* node, Type* merged);
+    for (int i = 0; i < program->child_count; i++) {
+        ASTNode* child = program->children[i];
+        if (child && child->type == AST_FUNCTION_DEFINITION && child->node_type &&
+            child->node_type->kind == TYPE_TUPLE) {
+            merge_return_tuple_types(child, child->node_type);
+            ensure_tuple_typedef(gen, child->node_type);
+        }
+    }
+    // Propagate merged return types to all function call sites in the program
+    // (call node_types may have UNKNOWN elements from before the merge)
+    for (int i = 0; i < program->child_count; i++) {
+        ASTNode* child = program->children[i];
+        if (!child) continue;
+        // For each function with a tuple return type, update matching call sites
+        if (child->type == AST_FUNCTION_DEFINITION && child->node_type &&
+            child->node_type->kind == TYPE_TUPLE && child->value) {
+            // Find all calls to this function in the program and update their node_type
+            extern void propagate_tuple_type_to_calls(ASTNode* node, const char* func_name, Type* type);
+            propagate_tuple_type_to_calls(program, child->value, child->node_type);
+        }
     }
     print_line(gen, "");
 
@@ -1005,6 +1094,11 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
 
                     // Handle stdlib imports: import std.X
                     if (strncmp(module_path, "std.", 4) == 0) {
+                        const char* mod_name = module_path + 4;
+                        char mod_prefix[128];
+                        snprintf(mod_prefix, sizeof(mod_prefix), "%s_", mod_name);
+                        int mod_prefix_len = (int)strlen(mod_prefix);
+
                         // Look up cached module from orchestrator
                         AetherModule* mod_entry = module_find(module_path);
                         ASTNode* mod_ast = mod_entry ? mod_entry->ast : NULL;
@@ -1019,10 +1113,15 @@ void generate_program(CodeGenerator* gen, ASTNode* program) {
                                         ASTNode* first = child->children[0];
                                         if (first && first->type == AST_IDENTIFIER) {
                                             should_import = 0;
+                                            // Strip module prefix: "math_sqrt" -> "sqrt"
+                                            const char* short_name = decl->value;
+                                            if (strncmp(decl->value, mod_prefix, mod_prefix_len) == 0) {
+                                                short_name = decl->value + mod_prefix_len;
+                                            }
                                             for (int k = 0; k < child->child_count; k++) {
                                                 ASTNode* sel = child->children[k];
                                                 if (sel && sel->type == AST_IDENTIFIER &&
-                                                    strcmp(sel->value, decl->value) == 0) {
+                                                    strcmp(sel->value, short_name) == 0) {
                                                     should_import = 1;
                                                     break;
                                                 }

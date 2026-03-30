@@ -9,16 +9,16 @@ readme = "README.md"
 keywords = ["example", "actors", "concurrent"]
 
 [dependencies]
-# Add your dependencies here
-# aether-http = "^1.0"
-# aether-json = "0.5"
+# Add dependencies with: ae add host/user/repo[@version]
+# github.com/user/mylib = "v1.0.0"
+# gitlab.com/user/utils = "latest"
 
 [dev-dependencies]
 # Development-only dependencies
 # aether-test = "0.2"
 
 [build]
-target = "native"
+target = "native"           # "native" (default) or "wasm" (WebAssembly via Emscripten)
 optimizations = "aggressive"
 debug-symbols = false
 

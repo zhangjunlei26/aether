@@ -27,6 +27,7 @@
 #define AETHER_OPTIMIZATION_CONFIG_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include "../utils/aether_compiler.h"
 
@@ -378,6 +379,11 @@ typedef struct {
     AetherProfile profile;
     int msg_pool_size;    // Actual pool size (env override or from profile)
     int actor_pool_size;  // Actual pool size (env override or from profile)
+
+    // Cooperative preemption (opt-in, zero cost when disabled)
+    // Scheduler-side: break out of drain loop if handler exceeds threshold
+    atomic_bool preempt_enabled;         // AETHER_PREEMPT=1 env var
+    uint64_t preempt_threshold_ns;       // Default 1ms (1000000 ns)
 
     // Statistics
     atomic_uint_fast64_t actors_pooled;

@@ -414,6 +414,51 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             }
             break;
         }
+        case AST_TUPLE_DESTRUCTURE: {
+            // a, b = func() — last child is RHS, others are variable declarations
+            if (stmt->child_count < 2) break;
+            int var_count = stmt->child_count - 1;
+            ASTNode* rhs = stmt->children[var_count];
+
+            // Infer tuple type from RHS
+            Type* rhs_type = rhs->node_type;
+            if (rhs_type && rhs_type->kind == TYPE_TUPLE) {
+                ensure_tuple_typedef(gen, rhs_type);
+            }
+
+            // Generate: _tuple_X_Y _tmp = func();
+            const char* tuple_type_name = rhs_type ? get_c_type(rhs_type) : "_tuple_unknown";
+            static int tuple_tmp_counter = 0;
+            int tmp_id = tuple_tmp_counter++;
+            print_indent(gen);
+            fprintf(gen->output, "%s _tup%d = ", tuple_type_name, tmp_id);
+            generate_expression(gen, rhs);
+            fprintf(gen->output, ";\n");
+
+            // Generate: type a = _tmp._0; type b = _tmp._1; ...
+            for (int j = 0; j < var_count; j++) {
+                ASTNode* var = stmt->children[j];
+                if (var->value && strcmp(var->value, "_") == 0) continue;  // Skip discard
+
+                // Prefer tuple element type over var's node_type (may be UNKNOWN)
+                const char* var_type;
+                if (rhs_type && rhs_type->kind == TYPE_TUPLE && j < rhs_type->tuple_count &&
+                    rhs_type->tuple_types[j]->kind != TYPE_UNKNOWN) {
+                    var_type = get_c_type(rhs_type->tuple_types[j]);
+                } else {
+                    var_type = get_c_type(var->node_type);
+                }
+                print_indent(gen);
+                if (is_var_declared(gen, var->value)) {
+                    fprintf(gen->output, "%s = _tup%d._%d;\n", var->value, tmp_id, j);
+                } else {
+                    mark_var_declared(gen, var->value);
+                    fprintf(gen->output, "%s %s = _tup%d._%d;\n", var_type, var->value, tmp_id, j);
+                }
+            }
+            break;
+        }
+
         case AST_VARIABLE_DECLARATION: {
             // Check if this is a state variable assignment in an actor
             int is_state_var = 0;
@@ -435,6 +480,32 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                 }
                 fprintf(gen->output, ";\n");
             } else {
+                // Match-as-expression: x = match val { ... }
+                if (stmt->child_count > 0 && stmt->children[0] &&
+                    stmt->children[0]->type == AST_MATCH_STATEMENT) {
+                    if (!is_var_declared(gen, stmt->value)) {
+                        mark_var_declared(gen, stmt->value);
+                        // Infer type from first match arm result
+                        const char* c_type = get_c_type(stmt->node_type);
+                        ASTNode* match_node = stmt->children[0];
+                        if ((!stmt->node_type || stmt->node_type->kind == TYPE_UNKNOWN) &&
+                            match_node->child_count >= 2) {
+                            ASTNode* first_arm = match_node->children[1];
+                            if (first_arm && first_arm->child_count >= 2 && first_arm->children[1]) {
+                                Type* arm_type = first_arm->children[1]->node_type;
+                                if (arm_type) c_type = get_c_type(arm_type);
+                            }
+                        }
+                        print_indent(gen);
+                        fprintf(gen->output, "%s %s;\n", c_type, stmt->value);
+                    }
+                    // Generate match with result assignment
+                    gen->match_result_var = stmt->value;
+                    generate_statement(gen, stmt->children[0]);
+                    gen->match_result_var = NULL;
+                    break;
+                }
+
                 // Check if this is a reassignment (Python-style)
                 if (is_var_declared(gen, stmt->value)) {
                     // Already declared - generate assignment only
@@ -646,12 +717,15 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             fprintf(gen->output, ") {\n");
             
             indent(gen);
+            if (gen->preempt_loops) {
+                print_line(gen, "if (--_aether_reductions <= 0) { _aether_reductions = 10000; sched_yield(); }");
+            }
             if (stmt->child_count > 3 && stmt->children[3]) {
                 // Body is always a statement (could be a block or single statement)
                 generate_statement(gen, stmt->children[3]); // body
             }
             unindent(gen);
-            
+
             print_line(gen, "}");
             break;
             
@@ -679,6 +753,10 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
             fprintf(gen->output, ") {\n");
 
             indent(gen);
+            // Cooperative preemption: yield to OS at loop back-edges
+            if (gen->preempt_loops) {
+                print_line(gen, "if (--_aether_reductions <= 0) { _aether_reductions = 10000; sched_yield(); }");
+            }
             if (stmt->child_count > 1) {
                 generate_statement(gen, stmt->children[1]);
             }
@@ -815,8 +893,11 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                         // Statement-level node (e.g. print, return)
                         generate_statement(gen, result);
                     } else {
-                        // Single expression, make it a statement
+                        // Single expression — assign to result var or emit as statement
                         print_indent(gen);
+                        if (gen->match_result_var) {
+                            fprintf(gen->output, "%s = ", gen->match_result_var);
+                        }
                         generate_expression(gen, result);
                         fprintf(gen->output, ";\n");
                     }
@@ -918,6 +999,37 @@ void generate_statement(CodeGenerator* gen, ASTNode* stmt) {
                     stmt->children[0]->type == AST_PRINT_STATEMENT) {
                     generate_statement(gen, stmt->children[0]);
                     print_line(gen, "return;");
+                } else if (stmt->child_count > 1) {
+                    // Multi-value return: return a, b → return (_tuple_X_Y){a, b}
+                    print_indent(gen);
+                    // Use the function's known return type if it's a tuple
+                    // (avoids UNKNOWN types from unresolved identifiers)
+                    Type* tuple = NULL;
+                    int owned = 0;
+                    if (gen->current_func_return_type &&
+                        gen->current_func_return_type->kind == TYPE_TUPLE) {
+                        tuple = gen->current_func_return_type;
+                    } else {
+                        // Fallback: build from expression types
+                        tuple = create_type(TYPE_TUPLE);
+                        tuple->tuple_count = stmt->child_count;
+                        tuple->tuple_types = malloc(stmt->child_count * sizeof(Type*));
+                        for (int j = 0; j < stmt->child_count; j++) {
+                            tuple->tuple_types[j] = stmt->children[j]->node_type
+                                ? clone_type(stmt->children[j]->node_type)
+                                : create_type(TYPE_INT);
+                        }
+                        owned = 1;
+                    }
+                    ensure_tuple_typedef(gen, tuple);
+                    const char* tname = get_c_type(tuple);
+                    fprintf(gen->output, "return (%s){", tname);
+                    for (int j = 0; j < stmt->child_count; j++) {
+                        if (j > 0) fprintf(gen->output, ", ");
+                        generate_expression(gen, stmt->children[j]);
+                    }
+                    fprintf(gen->output, "};\n");
+                    if (owned) free_type(tuple);
                 } else {
                     print_indent(gen);
                     fprintf(gen->output, "return");

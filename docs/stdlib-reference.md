@@ -2,7 +2,7 @@
 
 Complete reference for Aether's standard library modules.
 
-> **Note:** The standard library is under active development. The runtime provides C implementations in `std/` that are linked via the `ae` tool.
+> **Note:** The standard library is under active development. Functions currently use `int` returns (1 = success, 0 = failure). Migration to Go-style result types (`val, err = func()`) is planned. See the [error handling example](../examples/basics/error-handling.ae) for the recommended pattern in user code.
 
 ## Using the Standard Library
 

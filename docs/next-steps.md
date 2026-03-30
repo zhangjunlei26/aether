@@ -2,78 +2,9 @@
 
 Planned features and improvements for upcoming Aether releases.
 
-**Design principles guiding this roadmap:**
-- Lock as little as possible — minimal ceremony, actors can't share state
-- Zero-cost when not used — opt-in features add no overhead when disabled
-- Compile to clean C — generated code stays readable and debuggable
-- Actors are the native abstraction — everything else serves them
-- Manual memory, no GC — `defer` is the tool, arenas for actors
-- Practical over academic — ship what programs need
-
 > See [CHANGELOG.md](../CHANGELOG.md) for what shipped in each release.
 
-## Done
-
-### ~~`std.os` — Shell & Process Execution~~ ✓
-
-Shipped. `import std.os` provides `os.system()`, `os.exec()`, `os.getenv()`. See `examples/stdlib/os-demo.ae`.
-
-**Origin:** [Issue #39](https://github.com/nicolasmd87/aether/issues/39)
-
-### ~~Platform Portability Layer~~ ✓
-
-Shipped. Compile-time `AETHER_HAS_*` flags in `runtime/config/aether_optimization_config.h` (Tier 0) auto-detect platform capabilities and degrade gracefully. Override with `-DAETHER_NO_THREADING`, `-DAETHER_NO_FILESYSTEM`, `-DAETHER_NO_NETWORKING`, etc.
-
-**What's included:**
-- **9 feature flags**: `AETHER_HAS_THREADS`, `AETHER_HAS_ATOMICS`, `AETHER_HAS_FILESYSTEM`, `AETHER_HAS_NETWORKING`, `AETHER_HAS_NUMA`, `AETHER_HAS_SIMD`, `AETHER_HAS_AFFINITY`, `AETHER_HAS_GETENV`, `AETHER_HAS_MALLOC`
-- **Cooperative scheduler** (`runtime/scheduler/aether_scheduler_coop.c`): single-threaded backend, same API as multi-core scheduler
-- **Makefile `PLATFORM` variable**: `native` (default), `wasm`, `embedded` — selects scheduler and sets appropriate flags
-- **Stdlib stubs**: filesystem, networking, and OS modules return errors gracefully when features unavailable
-- **Atomics fallback**: `atomic_int` → `volatile int` when `AETHER_HAS_ATOMICS == 0` (safe for single-threaded)
-- **No-thread stubs** in `runtime/utils/aether_thread.h` for mutex/cond types
-- Zero behavior change on native platforms (all flags default to 1)
-
 ## Language Features
-
-### Result Type — Structured Error Handling
-
-Currently all stdlib functions return `int` where `1` = success and `0` = failure. This works but has drawbacks: the caller can silently ignore errors, there's no way to carry error details, and it's easy to confuse success/failure when mixing with C conventions.
-
-Go-style multiple return values would fit Aether's inferred-type philosophy — no generics or sum types needed. The compiler already knows types through inference, so a `(value, err)` pair just works.
-
-**Planned syntax (tentative):**
-
-```aether
-import std.file
-import std.io
-
-main() {
-    // Multiple return values — err is a string (or empty "" on success)
-    f, err = file.open("data.txt", "r")
-    if err {
-        println("Failed: ${err}")
-        exit(1)
-    }
-    content = file.read_all(f)
-    file.close(f)
-
-    // Ignore the error (explicit _ discard)
-    data, _ = io.read_file("config.txt")
-
-    // Or default on failure
-    content = io.read_file("config.txt") or "default config"
-}
-```
-
-**What's needed:**
-- Multiple return values from functions (codegen emits a C struct or out-parameter)
-- Tuple destructuring in assignment (`a, b = func()`)
-- Error type convention: empty string `""` = no error, non-empty = error message
-- Optional: `or` keyword for inline defaults on error
-
-**Why not now:** Aether currently supports only single return values. Adding multiple returns touches the parser (tuple destructuring), type inference (propagating paired types), and codegen (struct returns or out-params). The `1`/`0` int convention is consistent across the stdlib today and works for v0.x. Multiple returns is the natural next step once the core language stabilizes.
-
-**Origin:** Observed during stdlib hardening — `file.delete()`, `file.write()`, `dir.create()` were returning raw POSIX values (`0`/`-1`) instead of Aether's `1`/`0` convention. Even after fixing the convention, the underlying problem remains: int return values can't carry error context and are easy to ignore.
 
 ### Closures and First-Class Functions
 
@@ -104,85 +35,32 @@ main() {
 
 **Design constraint:** Capture by value (copy into closure struct) is the default. No hidden heap allocation. This keeps closures predictable and compatible with manual memory management.
 
-### Optional Cooperative Preemption
+### Stdlib Migration to Result Types
 
-Aether's scheduler is cooperative — each message handler runs to completion before the scheduler moves to the next actor. A handler that enters an infinite loop will block that core's scheduler thread. This is the same model as Go goroutines and Pony behaviours. BEAM is unique in having reduction-based preemption that prevents this.
-
-The scheduler already enforces fairness *between* actors (caps at 64 messages per actor per batch, yields for cross-core messages), but within a single handler there is no preemption.
-
-> **Note:** The cooperative scheduler (`aether_scheduler_coop.c`) is a different concept — it's the single-threaded backend for threadless platforms (WASM, embedded), not a fairness mechanism. Cooperative preemption is about interrupting long-running handlers within the existing multi-threaded scheduler.
-
-**Planned approach (opt-in, zero cost when disabled):**
-
-- **Scheduler-side:** After each `actor->step()` call in the drain loop, check a cycle counter. If a handler exceeded a time threshold (e.g., ~1ms), break out and re-queue the actor. Cost: ~1 `rdtsc` read per step call, only when enabled.
-- **Codegen-side (advanced):** A compiler flag inserts `aether_check_preempt()` calls at loop back-edges in generated C code. This decrements a reduction counter and yields when it hits zero. Cost: 2-3 cycles per loop iteration. Default off.
-
-**Design constraint:** Default off, zero overhead when disabled. Fits the "lock as little as possible" philosophy. Programs that keep handlers short (which is best practice in any actor system) pay nothing.
+Result types (`a, err = func()`) are implemented in the language. The stdlib I/O functions (`file.open`, `io.read_file`, `file.write`, etc.) still use the old `int` return convention. Migrating them to `(value, error)` returns is a breaking change planned for a future release.
 
 ## Quick Wins
 
-Near-term improvements that build on existing infrastructure.
+### Package Registry — Transitive Dependencies
 
-### Actor Supervision Basics
+`ae add` supports versioned packages (`ae add github.com/user/repo@v1.0.0`) and the module resolver finds installed packages. Next: transitive dependency resolution, lock file integrity, and `ae update`.
 
-The header `runtime/actors/aether_supervision.h` exists but is an empty stub. The goal is not full OTP — just the basics: crash detection, notification, and simple restart.
+### `or` Keyword for Error Defaults
 
-**What's planned:**
-- `link(actor)` — get notified when a linked actor crashes
-- Exit signal propagation between linked actors
-- Simple one-for-one restart strategy (restart the crashed actor, leave others alone)
-
-This is incremental and doesn't require the Result type to start — crash signals can use int status initially and upgrade to structured errors later.
-
-### ~~Export Visibility Enforcement~~ ✓
-
-Shipped. `export` keyword controls which functions and constants are part of a module's public API. Non-exported symbols are private — used internally but not accessible via `module.name()`. If a module has no exports, all symbols remain public (backwards compatible). See [Module System Design](module-system-design.md#export-visibility).
-
-### ~~Interactive REPL~~ ✓
-
-Shipped. `ae repl` starts an interactive session with session persistence — assignments and constants survive across evaluations, variable reassignment replaces previous values, multi-line blocks auto-continue until braces close. Single-line auto-execute for complete statements. Commands: `:help`, `:quit`, `:reset`, `:show`. Error recovery: compile failures show error messages and the session continues. Run `ae repl` then `:help` for usage.
-
-### Selective Imports
-
-`import std.math (sqrt, PI)` already parses and the typechecker has partial filtering logic, but it's unreliable. Fixing the selective import path so only the listed symbols are visible in the importing module.
-
-### ~~Pure Aether Modules~~ ✓
-
-Shipped. Modules written in pure Aether (no C backing file) can be imported and used directly. Functions, constants, and intra-module calls all work. See [Module System Design](module-system-design.md#pure-aether-modules).
-
-### Package Registry
-
-`ae add` can clone GitHub repos today but there's no versioned registry, no dependency resolution, and no lock files. Starting with a GitHub-based package index (similar to early Cargo), version constraints in `aether.toml`, and a lock file format.
+Sugar for defaulting on error: `content = io.read_file("config.txt") or "default"`. Requires result types to be fully adopted in stdlib first.
 
 ## Future
 
 Major features that require significant architectural work.
 
-### WebAssembly Target
+### WebAssembly Target — Phase 2
 
-Aether compiles to C, and C compiles to WASM via Emscripten, so the path exists. The platform portability layer (see below) addresses the core blockers: pthreads, filesystem, and networking dependencies are now conditionally compiled via `AETHER_HAS_*` flags.
+Phase 1 is complete: `ae build --target wasm` compiles Aether to WebAssembly via Emscripten. Multi-actor programs work cooperatively.
 
-**Incremental approach:**
-- **Phase 1 (infrastructure done):** The cooperative scheduler (`aether_scheduler_coop.c`) provides a single-threaded backend that implements the same API as the multi-core scheduler. `PLATFORM=wasm` in the Makefile selects this scheduler and sets `-DAETHER_NO_THREADING -DAETHER_NO_FILESYSTEM -DAETHER_NO_NETWORKING`. Multi-actor programs work cooperatively — all actors run on core 0 via `aether_scheduler_poll()`. Timing uses `emscripten_get_now()` instead of `rdtsc`/`clock_gettime`.
-- **Phase 2 (future):** Multi-actor programs using Web Workers as scheduler threads, with message passing over `postMessage`.
-
-**What's done:**
-- `AETHER_HAS_*` compile-time flags with auto-detection and `-DAETHER_NO_*` overrides
-- Cooperative scheduler (`runtime/scheduler/aether_scheduler_coop.c`) — same API, single-threaded
-- Stdlib stubs for filesystem, networking, OS operations when features unavailable
-- Emscripten timing fallback in generated code (`emscripten_get_now()`)
-- `PLATFORM=wasm` Makefile target (selects cooperative scheduler, disables pthreads/fs/net)
-- Atomics fallback (`atomic_int` → `volatile int`) for single-threaded builds
-- Docker CI images (`docker/Dockerfile.wasm`, `docker/Dockerfile.embedded`) for cross-platform verification
-- `make ci-wasm` (Emscripten compile + Node.js execution), `make ci-embedded` (ARM syntax-check)
-- `make ci-coop` for testing cooperative mode on native
-- Cooperative scheduler tests: multi-actor state, message chains, 10-actor stress, ask/reply
-
-**What's remaining:**
-- `ae build --target wasm` CLI integration
-- Emscripten-specific output (`.wasm` + `.js` glue, HTML template)
+**What's remaining (Phase 2):**
+- Multi-actor programs using Web Workers as scheduler threads with `postMessage`
+- Emscripten-specific output (HTML template for browser)
 - WASI support for non-browser environments
-- End-to-end testing with real Emscripten toolchain in Docker
 
 ### Async I/O Integration
 
@@ -194,45 +72,10 @@ All I/O in Aether is currently blocking. There is no io_uring (Linux), kqueue (m
 - Scheduler awareness of I/O-blocked actors (don't count them as idle)
 - Async variants of file and network operations in the stdlib
 
-### Generics / Monomorphization
-
-Type inference is currently monomorphic. The stdlib uses `void*` with manual casts (e.g., `list_add(list, (void*)(intptr_t)i)`). Generics would make collections type-safe with zero runtime cost.
-
-**What's needed:**
-- Type parameter syntax (e.g., `List<T>` or `List[T]`)
-- Type checker binding and substitution
-- Monomorphization in codegen — stamp out one C function per concrete type, no vtables, no runtime dispatch
-
-**Design constraint:** Monomorphization only. This generates more code but adds zero runtime overhead, consistent with "compile to clean C."
-
 ## Tooling
 
 ### Planned
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `ae fmt` | Not started | Source code formatter |
-| `ae check` | Not started | Type-check without compiling |
-| Dead code diagnostics | Not started | Warn on unused variables/functions |
-
-## Compiler Diagnostics
-
-### Planned
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Type mismatch hints | Not started | "expected 'string', got 'ptr'" with help text |
-| Unused variable warnings | Not started | Warn on declared-but-unused locals |
-| Unreachable code warnings | Not started | Detect dead branches after return/exit |
-
-**Goal:** Python 3.10-style "the compiler is teaching you" error messages. Example:
-
-```
-error[E0201]: type mismatch — expected 'string', got 'ptr'
-  --> src/main.ae:12:11
-   |
-12 |     print(result)
-   |           ^^^^^^ this is a 'ptr' (raw pointer), not a 'string'
-   |
-   help: use string.to_cstr(result) to convert to a printable string
-```
+| `ae fmt` | Not started | Source code formatter (deferred until syntax stabilizes) |

@@ -4,6 +4,8 @@
 
 Aether provides a standard library for strings, I/O, math, file system, networking, and actor concurrency. The library is automatically linked when you compile Aether programs.
 
+> **Note:** Stdlib functions currently use `int` returns (1 = success, 0 = failure). The language supports Go-style result types (`val, err = func()`) for user-defined functions — stdlib migration is planned. See the [error handling example](../examples/basics/error-handling.ae).
+
 ## Namespace Calling Convention
 
 Functions are called using **namespace-style syntax**: `namespace.function()`

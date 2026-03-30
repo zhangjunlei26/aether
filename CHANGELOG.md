@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 the release pipeline automatically replaces `[current]` with the next version
 number before tagging the release.
 
+## [current]
+
+### Added
+
+- **`ae check` command**: Type-check without compiling. Runs lexer → parser → typechecker → type inference, then exits. No C code generated, no gcc invoked. ~30x faster than `ae build`. Also available as `aetherc --check`
+- **Unused variable warnings `[W1001]`**: Warns on declared-but-never-referenced local variables. Prefix with `_` to suppress (e.g., `_unused = 42`). Excludes function parameters and pattern bindings
+- **Unreachable code warnings `[W1002]`**: Detects code after `return`, `exit()`, or exhaustive `if`/`else` blocks where all branches terminate. Recurses into nested blocks
+- **Match expressions**: `msg = match x { 0 -> "ok", 1 -> "err", _ -> "unknown" }` — match can now be used as an expression on the right side of an assignment. Type is inferred from the first arm's result
+- **For-in loop and match tests**: `test_for_in.ae` (range loops, variable bounds, nested), `test_match.ae` (statement match, expression match, wildcard, string/int patterns)
+- **`ae build --target wasm`**: Compiles Aether to WebAssembly via Emscripten. Detects `emcc` on PATH, uses cooperative scheduler, sets `AETHER_NO_*` flags automatically. Produces `.js` + `.wasm` pair. Also reads `[build].target` from `aether.toml`
+- **Actor timeouts**: `receive { Pattern -> body } after N -> { timeout_body }` fires timeout handler if no message arrives within N milliseconds. One-shot: cancelled when a message is received. `TOKEN_AFTER` keyword, `AST_TIMEOUT_ARM` node, `timeout_ns`/`last_activity_ns` fields in `ActorBase`, scheduler awareness for timeout polling
+- **Cooperative preemption (opt-in)**: Two levels, both zero-cost when disabled. Scheduler-side: `AETHER_PREEMPT=1` env var enables time-based drain loop break after 1ms (configurable via `AETHER_PREEMPT_MS`). Codegen-side: `aetherc --preempt` inserts `sched_yield()` at loop back-edges with reduction counter (10000 iterations per yield). Prevents tight loops from starving other actors
+- **`_aether_clock_ns` always available**: Moved nanosecond clock helper out of `#if !AETHER_GCC_COMPAT` guard so it's available on all platforms (needed by timeout checks)
+- **Result types (multiple return values)**: Go-style `a, err = func()` tuple destructuring. Functions return multiple values with `return val, err`. `_` discards unwanted values. TYPE_TUPLE in type system, AST_TUPLE_DESTRUCTURE in parser, tuple struct generation in codegen. Chained error propagation works correctly across function boundaries
+- **Package registry v1**: `ae add host/user/repo[@version]` downloads packages from any git host (GitHub, GitLab, Bitbucket, Codeberg, self-hosted) with optional version tags. Module resolver searches `~/.aether/packages/` for installed packages. Version stored in `aether.toml` `[dependencies]`
+
+### Breaking Changes
+
+- **Stdlib I/O functions** will migrate to `(value, error)` return types in a future release. Current `int` returns still work. The `error-handling.ae` example demonstrates the new pattern.
+
+### Fixed
+
+- **Selective imports**: `import std.math (sqrt, abs_int)` now works correctly. The prefix-stripping comparison was comparing user-facing names (`sqrt`) against C-level names (`math_sqrt`). Fixed in typechecker, codegen, and module merge. Non-selected symbols are properly rejected at both type-check and code generation time
+- **Match-as-expression codegen**: Parser now attaches match as child of variable declaration. Codegen declares variable, then generates match with `var = arm_result;` in each arm. Type inference propagates arm result type to variable
+
 ## [0.30.0]
 
 ### Added

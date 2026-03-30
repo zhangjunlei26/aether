@@ -278,7 +278,7 @@ test-ae: compiler ae stdlib
 	printf 'else\n'                                                                            >> "$$script"; \
 	printf '  cmd="$$root/build/ae build $$f -o $$root/build/test_$$name"\n'                   >> "$$script"; \
 	printf 'fi\n'                                                                              >> "$$script"; \
-	printf 'if eval "$$cmd" 2>/dev/null; then\n'                                               >> "$$script"; \
+	printf 'if eval "$$cmd" 2>"$$tmpdir/err_$$name.txt"; then\n'                                >> "$$script"; \
 	printf '  if "$$root/build/test_$$name" >/dev/null 2>&1; then\n'                           >> "$$script"; \
 	printf '    echo "  [PASS] $$name"; touch "$$tmpdir/PASS_$$name"\n'                        >> "$$script"; \
 	printf '  else\n'                                                                          >> "$$script"; \
@@ -286,6 +286,7 @@ test-ae: compiler ae stdlib
 	printf '  fi\n'                                                                            >> "$$script"; \
 	printf 'else\n'                                                                            >> "$$script"; \
 	printf '  echo "  [FAIL] $$name (compile error)"; touch "$$tmpdir/FAIL_$$name"\n'          >> "$$script"; \
+	printf '  head -5 "$$tmpdir/err_$$name.txt" 2>/dev/null\n'                                 >> "$$script"; \
 	printf 'fi\n'                                                                              >> "$$script"; \
 	chmod +x "$$script"; \
 	root=$$(pwd); \
@@ -302,9 +303,18 @@ test-ae: compiler ae stdlib
 	passed=$$(ls "$$tmpdir"/PASS_* 2>/dev/null | wc -l | tr -d ' '); \
 	failed=$$(ls "$$tmpdir"/FAIL_* 2>/dev/null | wc -l | tr -d ' '); \
 	total=$$((passed + failed)); \
-	rm -rf "$$tmpdir"; \
 	echo ""; \
+	if [ "$$failed" -gt 0 ]; then \
+		echo "=== FAILURE DETAILS ==="; \
+		for fail_file in "$$tmpdir"/FAIL_*; do \
+			fname=$$(basename "$$fail_file" | sed 's/^FAIL_//'); \
+			echo "--- $$fname ---"; \
+			cat "$$tmpdir/err_$$fname.txt" 2>/dev/null || echo "(no error output)"; \
+			echo ""; \
+		done; \
+	fi; \
 	echo "Aether Tests: $$passed passed, $$failed failed, $$total total"; \
+	rm -rf "$$tmpdir"; \
 	if [ "$$failed" -gt 0 ]; then exit 1; fi
 endif
 
@@ -891,7 +901,11 @@ ci-windows: clean compiler
 		if [ ! -f "$$out_c" ]; then \
 			echo "SKIP"; \
 		elif x86_64-w64-mingw32-gcc -O2 -fsyntax-only \
+			-Iruntime -Iruntime/actors -Iruntime/scheduler \
+			-Iruntime/utils -Iruntime/memory -Iruntime/config \
+			-Istd -Istd/string -Istd/io -Istd/math -Istd/net -Istd/collections -Istd/json \
 			-Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
+			-Wno-missing-field-initializers -Wno-unused-variable -Wno-unused-label \
 			"$$out_c" 2>/tmp/mingw_err.txt; then \
 			echo "OK"; \
 			pass=$$((pass + 1)); \

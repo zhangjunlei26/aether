@@ -296,7 +296,20 @@ For platforms without pthreads (WebAssembly, embedded, bare-metal), the cooperat
 - Ask/reply is synchronous (poll until reply_ready)
 - `aether_send_message_sync()` heap-allocates message data (no zero-copy stack optimization — mailbox FIFO order means the sent message may not be the next one consumed)
 
-**Selection:** The Makefile selects the scheduler based on `PLATFORM` or auto-detects `AETHER_NO_THREADING` in `EXTRA_CFLAGS`. Only one scheduler .c file is compiled into the binary.
+**Selection:** The Makefile selects the scheduler based on `PLATFORM` or auto-detects `AETHER_NO_THREADING` in `EXTRA_CFLAGS`. Only one scheduler .c file is compiled into the binary. Users can also use `ae build --target wasm` for Emscripten builds.
+
+### Actor Timeouts
+
+Actors with `receive { ... } after N -> { ... }` carry `timeout_ns` and `last_activity_ns` fields in `ActorBase`. The generated step function checks `_aether_clock_ns()` before `mailbox_receive()`. If the idle duration exceeds the threshold, the timeout handler fires (one-shot — cancelled when any message arrives). Both schedulers poll timeout-active actors even when their mailbox is empty.
+
+### Cooperative Preemption (Opt-In)
+
+Two independent mechanisms prevent long-running handlers from starving other actors:
+
+1. **Scheduler-side** (`AETHER_PREEMPT=1`): Time-based drain loop break after configurable threshold (default 1ms)
+2. **Codegen-side** (`aetherc --preempt`): `sched_yield()` inserted at loop back-edges with reduction counter (every 10000 iterations)
+
+Both are zero-cost when disabled. This matches Go's cooperative preemption model (pre-1.14).
 
 ### Platform Detection (Tier 0)
 

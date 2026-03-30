@@ -56,6 +56,20 @@ typedef struct {
     // MSVC compat: counter for ask-operator temp variables (_ask_result_N)
     int ask_temp_counter;
 
+    // Match-as-expression: when non-NULL, match arms assign to this variable
+    const char* match_result_var;
+
+    // Cooperative preemption: insert sched_yield() at loop back-edges
+    int preempt_loops;
+
+    // Current function's return type (for multi-return codegen)
+    Type* current_func_return_type;
+
+    // Tuple struct registry: track generated tuple typedefs to avoid duplicates
+    char** tuple_type_names;    // e.g., "_tuple_int_string"
+    int tuple_type_count;
+    int tuple_type_capacity;
+
     // Ask/reply type map: request message name -> reply message name.
     // Built by scanning actor receive handlers for reply statements.
     struct ReplyTypeEntry {
@@ -84,6 +98,7 @@ void generate_main_function(CodeGenerator* gen, ASTNode* main);
 void generate_statement(CodeGenerator* gen, ASTNode* stmt);
 void generate_expression(CodeGenerator* gen, ASTNode* expr);
 void generate_type(CodeGenerator* gen, Type* type);
+void ensure_tuple_typedef(CodeGenerator* gen, Type* type);
 
 // Utility functions
 void indent(CodeGenerator* gen);

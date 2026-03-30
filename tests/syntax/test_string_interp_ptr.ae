@@ -1,6 +1,6 @@
-// Test: string interpolation returns ptr (not int)
+// Test: string interpolation as values (heap-allocated path)
 // Verifies that interpolated strings can be stored, returned from functions,
-// and passed around as ptr values
+// passed around as ptr values, and handle various types
 
 format_msg(n) -> {
     msg = "count=${n}"
@@ -8,23 +8,34 @@ format_msg(n) -> {
 }
 
 main() {
-    // Interpolated string assigned to variable (heap-allocated path)
+    // Integer interpolation
     x = 42
     s = "value: ${x}"
     println(s)
 
-    // Interpolated string returned from a function
+    // String interpolation
+    name = "world"
+    greeting = "hello ${name}"
+    println(greeting)
+
+    // Expression interpolation
+    a = 3
+    b = 4
+    expr_result = "${a} + ${b} = ${a + b}"
+    println(expr_result)
+
+    // Returned from a function
     result = format_msg(7)
     println(result)
 
-    // Interpolated string in a conditional
+    // In a conditional
     flag = 1
     label = if flag == 1 { "on: ${flag}" } else { "off: ${flag}" }
     println(label)
 
     // Multiple interpolated strings
-    a = "first: ${1}"
-    b = "second: ${2}"
-    println(a)
-    println(b)
+    m1 = "first: ${1}"
+    m2 = "second: ${2}"
+    println(m1)
+    println(m2)
 }

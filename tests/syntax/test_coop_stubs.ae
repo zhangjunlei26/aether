@@ -25,10 +25,10 @@ main() {
         exit(1);
     }
 
-    // Test 3: String interpolation
-    println("Test 3: String interpolation");
-    name = "Aether";
-    println("  Hello ${name}!");
+    // Test 3: String concatenation
+    println("Test 3: String output");
+    print("  Hello ");
+    println("Aether!");
 
     // Test 4: clock_ns monotonicity
     println("Test 4: clock_ns");

@@ -65,6 +65,10 @@ static const char* get_common_suggestion(AetherErrorCode code) {
             return "ensure operands have compatible types for this operation";
         case AETHER_ERR_ACTOR_ERROR:
             return "check actor definition syntax and state variables";
+        case AETHER_WARN_UNUSED_VAR:
+            return "prefix with '_' to suppress this warning";
+        case AETHER_WARN_UNREACHABLE:
+            return "remove unreachable code or restructure control flow";
         default:
             return NULL;
     }
@@ -189,10 +193,18 @@ void aether_warning_report(AetherError* warning) {
     warning_count_global++;
     
     // Print warning header (yellow instead of red)
-    fprintf(stderr, "%s%swarning%s: %s\n",
-            AETHER_COLOR_YELLOW, AETHER_COLOR_BOLD,
-            AETHER_COLOR_RESET,
-            warning->message);
+    if (warning->code >= 1000) {
+        fprintf(stderr, "%s%swarning[W%04d]%s: %s\n",
+                AETHER_COLOR_YELLOW, AETHER_COLOR_BOLD,
+                warning->code,
+                AETHER_COLOR_RESET,
+                warning->message);
+    } else {
+        fprintf(stderr, "%s%swarning%s: %s\n",
+                AETHER_COLOR_YELLOW, AETHER_COLOR_BOLD,
+                AETHER_COLOR_RESET,
+                warning->message);
+    }
     
     // Print location
     if (warning->filename) {

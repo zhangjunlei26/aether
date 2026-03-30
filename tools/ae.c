@@ -224,19 +224,68 @@ static int posix_run(const char* cmd_str, int quiet) {
 }
 #endif
 
+// Windows: use _spawnvp to avoid cmd.exe quoting issues with system()
+#ifdef _WIN32
+#include <process.h>
+#include <io.h>
+#ifndef _O_WRONLY
+#define _O_WRONLY 1
+#endif
+static int win_run(const char* cmd_str, int quiet) {
+    if (tc.verbose) fprintf(stderr, "[cmd] %s\n", cmd_str);
+    char buf[16384];
+    strncpy(buf, cmd_str, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    char* toks[512];
+    int n = 0;
+    for (char* p = buf; *p && n < 511; ) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        if (*p == '"') {
+            p++;
+            toks[n++] = p;
+            while (*p && *p != '"') p++;
+            if (*p) *p++ = '\0';
+        } else {
+            toks[n++] = p;
+            while (*p && *p != ' ') p++;
+            if (*p) *p++ = '\0';
+        }
+    }
+    toks[n] = NULL;
+    if (n == 0) return 0;
+
+    // Redirect stdout/stderr for quiet modes
+    int saved_stdout = -1, saved_stderr = -1;
+    if (quiet == 1 || quiet == 2) {
+        fflush(stdout);
+        saved_stdout = _dup(1);
+        int nul = _open("nul", _O_WRONLY);
+        if (nul >= 0) { _dup2(nul, 1); _close(nul); }
+    }
+    if (quiet == 1) {
+        fflush(stderr);
+        saved_stderr = _dup(2);
+        int nul = _open("nul", _O_WRONLY);
+        if (nul >= 0) { _dup2(nul, 2); _close(nul); }
+    }
+
+    int ret = (int)_spawnvp(_P_WAIT, toks[0], (const char* const*)toks);
+
+    // Restore
+    if (saved_stdout >= 0) { _dup2(saved_stdout, 1); _close(saved_stdout); }
+    if (saved_stderr >= 0) { _dup2(saved_stderr, 2); _close(saved_stderr); }
+
+    return ret;
+}
+#endif
+
 static int run_cmd(const char* cmd) {
 #ifndef _WIN32
     return posix_run(cmd, 0);
 #else
-    if (tc.verbose) fprintf(stderr, "[cmd] %s\n", cmd);
-    // cmd.exe quirk: when the command line starts with '"', it strips the outer
-    // quote pair, mangling paths. Use "cmd /c "..." " to preserve inner quotes.
-    if (cmd[0] == '"') {
-        char full[16384 + 16];
-        snprintf(full, sizeof(full), "cmd /c \"%s\"", cmd);
-        return system(full);
-    }
-    return system(cmd);
+    return win_run(cmd, 0);
 #endif
 }
 
@@ -245,12 +294,7 @@ static int run_cmd_quiet(const char* cmd) {
 #ifndef _WIN32
     return posix_run(cmd, 1);
 #else
-    char full[16384 + 32];
-    if (cmd[0] == '"')
-        snprintf(full, sizeof(full), "cmd /c \"%s\" >nul 2>&1", cmd);
-    else
-        snprintf(full, sizeof(full), "%s >nul 2>&1", cmd);
-    return system(full);
+    return win_run(cmd, 1);
 #endif
 }
 
@@ -259,12 +303,7 @@ static int run_cmd_show_warnings(const char* cmd) {
 #ifndef _WIN32
     return posix_run(cmd, 2);
 #else
-    char full[16384 + 32];
-    if (cmd[0] == '"')
-        snprintf(full, sizeof(full), "cmd /c \"%s\" >nul", cmd);
-    else
-        snprintf(full, sizeof(full), "%s >nul", cmd);
-    return system(full);
+    return win_run(cmd, 2);
 #endif
 }
 
@@ -1059,6 +1098,85 @@ static void build_gcc_cmd(char* cmd, size_t size,
 #endif
 }
 
+static int build_wasm_cmd(char* cmd, size_t size,
+                          const char* c_file, const char* out_file) {
+    // Build include paths from toolchain root
+    char includes[8192];
+    if (tc.include_flags[0]) {
+        strncpy(includes, tc.include_flags, sizeof(includes) - 1);
+        includes[sizeof(includes) - 1] = '\0';
+    } else {
+        static const char* include_dirs[] = {
+            "runtime", "runtime/actors", "runtime/scheduler",
+            "runtime/utils", "runtime/memory", "runtime/config",
+            "std", "std/string", "std/io", "std/math",
+            "std/net", "std/collections", "std/json", NULL
+        };
+        includes[0] = '\0';
+        for (int i = 0; include_dirs[i]; i++) {
+            char flag[2048];
+            snprintf(flag, sizeof(flag), "-I%s/%s ", tc.root, include_dirs[i]);
+            strncat(includes, flag, sizeof(includes) - strlen(includes) - 1);
+        }
+    }
+
+    // Runtime source files (cooperative scheduler, not multicore)
+    static const char* wasm_runtime_files[] = {
+        "runtime/scheduler/aether_scheduler_coop.c",
+        "runtime/scheduler/scheduler_optimizations.c",
+        "runtime/config/aether_optimization_config.c",
+        "runtime/memory/memory.c",
+        "runtime/memory/aether_arena.c",
+        "runtime/memory/aether_pool.c",
+        "runtime/memory/aether_memory_stats.c",
+        "runtime/utils/aether_tracing.c",
+        "runtime/utils/aether_bounds_check.c",
+        "runtime/utils/aether_test.c",
+        "runtime/memory/aether_arena_optimized.c",
+        "runtime/aether_runtime_types.c",
+        "runtime/utils/aether_cpu_detect.c",
+        "runtime/memory/aether_batch.c",
+        "runtime/utils/aether_simd_vectorized.c",
+        "runtime/aether_runtime.c",
+        "runtime/aether_numa.c",
+        "runtime/actors/aether_send_buffer.c",
+        "runtime/actors/aether_send_message.c",
+        "runtime/actors/aether_actor_thread.c",
+        "std/string/aether_string.c",
+        "std/math/aether_math.c",
+        "std/net/aether_http.c",
+        "std/net/aether_http_server.c",
+        "std/net/aether_net.c",
+        "std/collections/aether_collections.c",
+        "std/json/aether_json.c",
+        "std/fs/aether_fs.c",
+        "std/log/aether_log.c",
+        "std/io/aether_io.c",
+        "std/os/aether_os.c",
+        "std/collections/aether_hashmap.c",
+        "std/collections/aether_set.c",
+        "std/collections/aether_vector.c",
+        "std/collections/aether_pqueue.c",
+        NULL
+    };
+    char runtime[8192];
+    runtime[0] = '\0';
+    for (int i = 0; wasm_runtime_files[i]; i++) {
+        char path[2048];
+        snprintf(path, sizeof(path), "%s/%s ", tc.root, wasm_runtime_files[i]);
+        strncat(runtime, path, sizeof(runtime) - strlen(runtime) - 1);
+    }
+
+    snprintf(cmd, size,
+        "emcc -O2 -DAETHER_NO_THREADING -DAETHER_NO_FILESYSTEM -DAETHER_NO_NETWORKING "
+        "%s \"%s\" %s -o \"%s\" -lm "
+        "-Wall -Wextra -Wno-unused-parameter -Wno-unused-function "
+        "-Wno-unused-variable -Wno-missing-field-initializers -Wno-unused-label",
+        includes, c_file, runtime, out_file);
+
+    return 1;
+}
+
 // --------------------------------------------------------------------------
 // Commands
 // --------------------------------------------------------------------------
@@ -1217,14 +1335,52 @@ static int cmd_run(int argc, char** argv) {
     return rc;
 }
 
+static int cmd_check(int argc, char** argv) {
+    const char* file = NULL;
+
+    for (int i = 0; i < argc; i++) {
+        if (argv[i][0] != '-') {
+            file = argv[i];
+        }
+    }
+
+    // Project mode
+    if (!file && path_exists("aether.toml")) {
+        if (path_exists("src/main.ae"))
+            file = "src/main.ae";
+        else {
+            fprintf(stderr, "Error: aether.toml found but src/main.ae is missing.\n");
+            return 1;
+        }
+    }
+
+    if (!file) {
+        fprintf(stderr, "Usage: ae check <file.ae>\n");
+        return 1;
+    }
+
+    if (!path_exists(file)) {
+        fprintf(stderr, "Error: File not found: %s\n", file);
+        return 1;
+    }
+
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd), "\"%s\" --check \"%s\"", tc.compiler, file);
+    return run_cmd(cmd);
+}
+
 static int cmd_build(int argc, char** argv) {
     const char* file = NULL;
     const char* output_name = NULL;
     char extra_files[2048] = "";
 
+    const char* target = NULL;
+
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             output_name = argv[++i];
+        } else if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
+            target = argv[++i];
         } else if (strcmp(argv[i], "--extra") == 0 && i + 1 < argc) {
             if (extra_files[0]) strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
             strncat(extra_files, argv[++i], sizeof(extra_files) - strlen(extra_files) - 1);
@@ -1232,6 +1388,28 @@ static int cmd_build(int argc, char** argv) {
             file = argv[i];
         }
     }
+
+    // Read target from aether.toml if not specified on CLI
+    if (!target && path_exists("aether.toml")) {
+        static char toml_target[64];
+        TomlDocument* doc = toml_parse_file("aether.toml");
+        if (doc) {
+            const char* val = toml_get_value(doc, "build", "target");
+            if (val && strcmp(val, "native") != 0) {
+                strncpy(toml_target, val, sizeof(toml_target) - 1);
+                toml_target[sizeof(toml_target) - 1] = '\0';
+                target = toml_target;
+            }
+            toml_free_document(doc);
+        }
+    }
+
+    // Validate target
+    if (target && strcmp(target, "wasm") != 0 && strcmp(target, "native") != 0) {
+        fprintf(stderr, "Error: Unknown target '%s'. Valid targets: native, wasm\n", target);
+        return 1;
+    }
+    int is_wasm = target && strcmp(target, "wasm") == 0;
 
     // Resolve directory argument (e.g. "." or "myproject/") to src/main.ae
     if (file && dir_exists(file)) {
@@ -1292,40 +1470,88 @@ static int cmd_build(int argc, char** argv) {
         snprintf(exe_file, sizeof(exe_file), "%s" EXE_EXT, base);
     }
 
-    printf("Building %s...\n", file);
+    // Override output extension for wasm target
+    if (is_wasm) {
+        // Replace .exe or binary with .js (emcc produces .js + .wasm pair)
+        char* dot = strrchr(exe_file, '.');
+        if (dot && strcmp(dot, EXE_EXT) == 0) {
+            strcpy(dot, ".js");
+        } else {
+            strncat(exe_file, ".js", sizeof(exe_file) - strlen(exe_file) - 1);
+        }
+    }
+
+    // Pre-flight: verify emcc for wasm target before starting compilation
+    if (is_wasm && run_cmd_quiet("emcc --version") != 0) {
+        fprintf(stderr, "Error: Emscripten (emcc) not found on PATH.\n");
+        fprintf(stderr, "Install: https://emscripten.org/docs/getting_started/downloads.html\n");
+        fprintf(stderr, "  git clone https://github.com/emscripten-core/emsdk.git\n");
+        fprintf(stderr, "  cd emsdk && ./emsdk install latest && ./emsdk activate latest\n");
+        fprintf(stderr, "  source ./emsdk_env.sh\n");
+        return 1;
+    }
+
+    printf("Building %s%s...\n", file, is_wasm ? " (wasm)" : "");
 
     // Step 1: .ae to .c
     snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, file, c_file);
 
+    // Always run visible on failure; print diagnostic on Windows
     int aetherc_ret = tc.verbose ? run_cmd(cmd) : run_cmd_quiet(cmd);
     if (aetherc_ret != 0) {
+        fprintf(stderr, "[diag] aetherc returned %d for: %s\n", aetherc_ret, file);
+        fprintf(stderr, "[diag] cmd: %s\n", cmd);
+        // Retry visible
         snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, file, c_file);
-        run_cmd(cmd);
+        int retry_ret = run_cmd(cmd);
+        fprintf(stderr, "[diag] retry returned %d\n", retry_ret);
         fprintf(stderr, "Compilation failed.\n");
         return 1;
     }
 
-    // Step 2: .c to executable with runtime (-O2 for release builds)
-    // Merge extra_sources from aether.toml [[bin]] with any --extra CLI args
-    {
-        char toml_extra[2048] = "";
-        get_extra_sources_for_bin(file, toml_extra, sizeof(toml_extra));
-        if (toml_extra[0]) {
-            if (extra_files[0]) strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
-            strncat(extra_files, toml_extra, sizeof(extra_files) - strlen(extra_files) - 1);
+    // Step 2: .c to executable (or wasm) with runtime
+    if (is_wasm) {
+        if (!build_wasm_cmd(cmd, sizeof(cmd), c_file, exe_file)) {
+            return 1;
         }
-    }
-    const char* extra = extra_files[0] ? extra_files : NULL;
-    build_gcc_cmd(cmd, sizeof(cmd), c_file, exe_file, true, extra);
-    int gcc_ret = tc.verbose ? run_cmd(cmd) : run_cmd_quiet(cmd);
-    if (gcc_ret != 0) {
+    } else {
+        // Merge extra_sources from aether.toml [[bin]] with any --extra CLI args
+        {
+            char toml_extra[2048] = "";
+            get_extra_sources_for_bin(file, toml_extra, sizeof(toml_extra));
+            if (toml_extra[0]) {
+                if (extra_files[0]) strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
+                strncat(extra_files, toml_extra, sizeof(extra_files) - strlen(extra_files) - 1);
+            }
+        }
+        const char* extra = extra_files[0] ? extra_files : NULL;
         build_gcc_cmd(cmd, sizeof(cmd), c_file, exe_file, true, extra);
+    }
+
+    int build_ret = tc.verbose ? run_cmd(cmd) : run_cmd_quiet(cmd);
+    if (build_ret != 0) {
+        // Retry with visible output for error messages
+        if (is_wasm) {
+            build_wasm_cmd(cmd, sizeof(cmd), c_file, exe_file);
+        } else {
+            const char* extra = extra_files[0] ? extra_files : NULL;
+            build_gcc_cmd(cmd, sizeof(cmd), c_file, exe_file, true, extra);
+        }
         run_cmd(cmd);
         fprintf(stderr, "Build failed.\n");
         return 1;
     }
 
     printf("Built: %s\n", exe_file);
+    if (is_wasm) {
+        // .wasm file is co-located with .js
+        char wasm_file[2048];
+        strncpy(wasm_file, exe_file, sizeof(wasm_file) - 1);
+        char* js_ext = strrchr(wasm_file, '.');
+        if (js_ext) strcpy(js_ext, ".wasm");
+        printf("       %s\n", wasm_file);
+        printf("Run with: node %s\n", exe_file);
+    }
     return 0;
 }
 
@@ -1542,21 +1768,41 @@ static int cmd_test(int argc, char** argv) {
 
 static int cmd_add(int argc, char** argv) {
     if (argc < 1 || argv[0][0] == '-') {
-        fprintf(stderr, "Usage: ae add <package>\n");
-        fprintf(stderr, "Example: ae add github.com/user/repo\n");
+        fprintf(stderr, "Usage: ae add <host>/<user>/<repo>[@version]\n");
+        fprintf(stderr, "Examples:\n");
+        fprintf(stderr, "  ae add github.com/user/repo\n");
+        fprintf(stderr, "  ae add github.com/user/repo@v1.2.0\n");
+        fprintf(stderr, "  ae add gitlab.com/user/repo\n");
         return 1;
     }
 
-    const char* package = argv[0];
+    // Parse package@version
+    char pkg_buf[1024];
+    strncpy(pkg_buf, argv[0], sizeof(pkg_buf) - 1);
+    pkg_buf[sizeof(pkg_buf) - 1] = '\0';
+
+    const char* version = NULL;
+    char* at = strchr(pkg_buf, '@');
+    if (at) {
+        *at = '\0';
+        version = at + 1;
+    }
+    const char* package = pkg_buf;
 
     if (!path_exists("aether.toml")) {
         fprintf(stderr, "Error: No aether.toml found. Run 'ae init <name>' first.\n");
         return 1;
     }
 
-    if (strncmp(package, "github.com/", 11) != 0) {
-        fprintf(stderr, "Error: Only GitHub packages supported.\n");
-        fprintf(stderr, "Format: ae add github.com/user/repo\n");
+    // Validate: must look like a git-hostable URL (host.tld/user/repo)
+    // Supports GitHub, GitLab, Bitbucket, Codeberg, self-hosted, etc.
+    if (!strchr(package, '/') || !strchr(package, '.')) {
+        fprintf(stderr, "Error: Package must be a git-hostable path.\n");
+        fprintf(stderr, "Format: ae add <host>/<user>/<repo>[@version]\n");
+        fprintf(stderr, "Examples:\n");
+        fprintf(stderr, "  ae add github.com/user/repo\n");
+        fprintf(stderr, "  ae add gitlab.com/user/repo@v1.0.0\n");
+        fprintf(stderr, "  ae add codeberg.org/user/repo\n");
         return 1;
     }
 
@@ -1566,14 +1812,15 @@ static int cmd_add(int argc, char** argv) {
         return 1;
     }
 
-    printf("Adding %s...\n", package);
+    printf("Adding %s%s%s...\n", package, version ? "@" : "", version ? version : "");
 
-    // Cache directory
-    char cache_dir[1024];
+    // Cache directory — sized generously so GCC's -Wformat-truncation
+    // doesn't complain (real paths are ~60 bytes, never close to limits)
+    char cache_dir[512];
     snprintf(cache_dir, sizeof(cache_dir), "%s/.aether/packages", get_home_dir());
 
-    char pkg_dir[2048];
-    snprintf(pkg_dir, sizeof(pkg_dir), "%s/%s", cache_dir, package);
+    char pkg_dir[1024];
+    snprintf(pkg_dir, sizeof(pkg_dir), "%.511s/%.511s", cache_dir, package);
 
     if (!dir_exists(pkg_dir)) {
         printf("Downloading...\n");
@@ -1583,20 +1830,37 @@ static int cmd_add(int argc, char** argv) {
         char* slash = strrchr(parent, '/');
         if (slash) { *slash = '\0'; mkdirs(parent); }
 
-        // GCC conservatively assumes package (argv string) may be PATH_MAX-sized;
-        // package names are short in practice (< 256 bytes).
-#if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-truncation"
-#endif
-        char cmd[2048];
-        snprintf(cmd, sizeof(cmd), "git clone --depth 1 https://%s %s", package, pkg_dir);
-#if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
+        char cmd[4096];
+        if (version) {
+            snprintf(cmd, sizeof(cmd), "git clone https://%s %s", package, pkg_dir);
+        } else {
+            snprintf(cmd, sizeof(cmd), "git clone --depth 1 https://%s %s", package, pkg_dir);
+        }
         if (run_cmd(cmd) != 0) {
             fprintf(stderr, "Failed to download package.\n");
+            fprintf(stderr, "Check that the repository exists: https://%s\n", package);
             return 1;
+        }
+
+        // Checkout specific version tag if requested
+        if (version) {
+            char tag[128];
+            if (version[0] == 'v') {
+                snprintf(tag, sizeof(tag), "%s", version);
+            } else {
+                snprintf(tag, sizeof(tag), "v%s", version);
+            }
+            snprintf(cmd, sizeof(cmd), "cd \"%s\" && git checkout %s 2>/dev/null || git checkout v%s 2>/dev/null",
+                     pkg_dir, tag, version);
+            if (run_cmd_quiet(cmd) != 0) {
+                fprintf(stderr, "Error: Version '%s' not found.\n", version);
+                // List available tags
+                snprintf(cmd, sizeof(cmd), "cd \"%s\" && git tag -l 'v*' | sort -V | tail -10", pkg_dir);
+                fprintf(stderr, "Available versions:\n");
+                (void)run_cmd(cmd);
+                return 1;
+            }
+            printf("Checked out %s\n", tag);
         }
     }
 
@@ -1641,11 +1905,11 @@ static int cmd_add(int argc, char** argv) {
         }
         if (next_sect) {
             fwrite(content, 1, next_sect - content, f);
-            fprintf(f, "%s = \"latest\"\n", package);
+            fprintf(f, "%s = \"%s\"\n", package, version ? version : "latest");
             fputs(next_sect, f);
         } else {
             fputs(content, f);
-            fprintf(f, "%s = \"latest\"\n", package);
+            fprintf(f, "%s = \"%s\"\n", package, version ? version : "latest");
         }
         fclose(f);
     } else {
@@ -1657,7 +1921,7 @@ static int cmd_add(int argc, char** argv) {
             return 1;
         }
         fprintf(f, "\n[dependencies]\n");
-        fprintf(f, "%s = \"latest\"\n", package);
+        fprintf(f, "%s = \"%s\"\n", package, version ? version : "latest");
         fclose(f);
     }
 
@@ -2459,6 +2723,41 @@ static int cmd_version_use(const char* version) {
     resolve_version_bin_dir(ver_dir, src_bin, sizeof(src_bin));
 
 #ifdef _WIN32
+    // Backup the currently active version to versions/ before overwriting.
+    // This preserves the initial install (e.g., v0.30.0 installed via install.sh
+    // lives in ~/.aether/ directly, not in versions/).
+    {
+        char avpath_bak[512];
+        snprintf(avpath_bak, sizeof(avpath_bak), "%s\\.aether\\active_version", home);
+        FILE* avf_bak = fopen(avpath_bak, "r");
+        if (avf_bak) {
+            char cur_ver[64] = "";
+            if (fgets(cur_ver, sizeof(cur_ver), avf_bak)) {
+                char* nl = strchr(cur_ver, '\n');
+                if (nl) *nl = '\0';
+            }
+            fclose(avf_bak);
+            if (cur_ver[0]) {
+                char cur_vtag[64];
+                if (cur_ver[0] != 'v') snprintf(cur_vtag, sizeof(cur_vtag), "v%s", cur_ver);
+                else { strncpy(cur_vtag, cur_ver, sizeof(cur_vtag) - 1); cur_vtag[sizeof(cur_vtag)-1] = '\0'; }
+                char cur_ver_dir[512];
+                snprintf(cur_ver_dir, sizeof(cur_ver_dir), "%s\\.aether\\versions\\%s", home, cur_vtag);
+                if (!dir_exists(cur_ver_dir)) {
+                    // Current version not in versions/ — back it up
+                    char bak_cmd[2048];
+                    char dest_root_bak[512];
+                    snprintf(dest_root_bak, sizeof(dest_root_bak), "%s\\.aether", home);
+                    mkdirs(cur_ver_dir);
+                    snprintf(bak_cmd, sizeof(bak_cmd),
+                        "robocopy \"%s\" \"%s\" /E /NFL /NDL /NJH /NJS /IS /IT /XD versions cache >nul 2>&1",
+                        dest_root_bak, cur_ver_dir);
+                    (void)system(bak_cmd);
+                }
+            }
+        }
+    }
+
     // Copy the entire version directory to ~/.aether/ so lib/, include/,
     // share/ are available alongside bin/.
     char dest_root[512];
@@ -2564,9 +2863,33 @@ static int cmd_version_use(const char* version) {
 }
 
 // "ae version [list|install|use]"
+// Read the active version from ~/.aether/active_version, fall back to compiled-in
+static const char* get_active_version(void) {
+    static char active[64];
+    const char* home = get_home_dir();
+    char avpath[512];
+#ifdef _WIN32
+    snprintf(avpath, sizeof(avpath), "%s\\.aether\\active_version", home);
+#else
+    snprintf(avpath, sizeof(avpath), "%s/.aether/active_version", home);
+#endif
+    FILE* f = fopen(avpath, "r");
+    if (f) {
+        if (fgets(active, sizeof(active), f)) {
+            // Trim newline
+            char* nl = strchr(active, '\n');
+            if (nl) *nl = '\0';
+            fclose(f);
+            if (active[0]) return active;
+        }
+        fclose(f);
+    }
+    return AE_VERSION;
+}
+
 static int cmd_version(int argc, char** argv) {
     if (argc == 0) {
-        printf("ae %s (Aether Language)\n", AE_VERSION);
+        printf("ae %s (Aether Language)\n", get_active_version());
         printf("Platform: " AE_PLATFORM "\n");
         printf("\nSubcommands:\n");
         printf("  ae version list              List all available releases\n");
@@ -2724,6 +3047,8 @@ static void print_usage(void) {
     printf("  init <name>          Create a new Aether project\n");
     printf("  run [file.ae]        Compile and run a program\n");
     printf("  build [file.ae]      Compile to executable\n");
+    printf("  build --target wasm  Compile to WebAssembly (.js + .wasm)\n");
+    printf("  check [file.ae]      Type-check without compiling\n");
     printf("  test [file|dir]      Discover and run tests\n");
     printf("  add <package>        Add a dependency\n");
     printf("  cache [clear]        Show or clear build cache\n");
@@ -2802,6 +3127,7 @@ int main(int argc, char** argv) {
 
     if (strcmp(cmd, "run") == 0)      return cmd_run(sub_argc, sub_argv);
     if (strcmp(cmd, "build") == 0)    return cmd_build(sub_argc, sub_argv);
+    if (strcmp(cmd, "check") == 0)    return cmd_check(sub_argc, sub_argv);
     if (strcmp(cmd, "test") == 0)     return cmd_test(sub_argc, sub_argv);
     if (strcmp(cmd, "examples") == 0) return cmd_examples(sub_argc, sub_argv);
     if (strcmp(cmd, "add") == 0)      return cmd_add(sub_argc, sub_argv);
