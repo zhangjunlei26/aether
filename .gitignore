@@ -12,6 +12,7 @@
 *.log
 .claude/
 -o
+log
 
 # Generated C code (from .ae compilation)
 output.c

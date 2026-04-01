@@ -12,52 +12,64 @@
 //   ae version              Show version
 //   ae help                 Show help
 
+#include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-#include <limits.h>
 #include <sys/stat.h>
 
 
 #ifdef _WIN32
-#include <windows.h>
-#include <direct.h>
-#include <process.h>   // getpid() / _getpid() on MinGW and MSVC
-#define PATH_SEP "\\"
-#define EXE_EXT ".exe"
-#define mkdir_p(path) _mkdir(path)
+#    include <direct.h>
+#    include <process.h> // getpid() / _getpid() on MinGW and MSVC
+#    include <windows.h>
+#    define PATH_SEP "\\"
+#    define EXE_EXT ".exe"
+#    define mkdir_p(path) _mkdir(path)
 // MSVC uses _popen/_pclose; MinGW maps popen/pclose but be explicit
-#ifndef popen
-#  define popen  _popen
-#  define pclose _pclose
-#endif
+#    ifndef popen
+#        define popen _popen
+#        define pclose _pclose
+#    endif
 // MinGW exposes getpid() in <process.h>; MSVC only has _getpid()
-#ifndef getpid
-#  define getpid _getpid
-#endif
+#    ifndef getpid
+#        define getpid _getpid
+#    endif
 #else
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/wait.h>
-#include <spawn.h>
-#include <libgen.h>
-#include <dirent.h>
-#define PATH_SEP "/"
-#define EXE_EXT ""
-#define mkdir_p(path) mkdir(path, 0755)
+#    include <dirent.h>
+#    include <fcntl.h>
+#    include <libgen.h>
+#    include <spawn.h>
+#    include <sys/wait.h>
+#    include <unistd.h>
+#    define PATH_SEP "/"
+#    define EXE_EXT ""
+#    define mkdir_p(path) mkdir(path, 0755)
 extern char** environ;
 #endif
 
 #ifdef __APPLE__
-#include <mach-o/dyld.h>
+#    include <mach-o/dyld.h>
 #endif
 
 #include "apkg/toml_parser.h"
 
+// For direct tcc -run ./tools/ae.c compilation
+#ifdef TCC_RUN
+#    include "../std/collections/aether_hashmap.c"
+#    include "../std/collections/aether_pqueue.c"
+#    include "../std/collections/aether_set.c"
+#    include "../std/collections/aether_vector.c"
+#    include "../std/log/aether_log.c"
+#    include "../std/string/aether_string.c"
+#    include "apkg/toml_parser.c"
+#    include "apkg/util.c"
+#endif
+
 // Version is set by Makefile from VERSION file
 #ifndef AETHER_VERSION
-#define AETHER_VERSION "0.0.0-dev"
+#    define AETHER_VERSION "0.0.0-dev"
 #endif
 #define AE_VERSION AETHER_VERSION
 
@@ -67,12 +79,15 @@ extern char** environ;
 static const char* get_temp_dir(void) {
 #ifdef _WIN32
     const char* t = getenv("TEMP");
-    if (!t) t = getenv("TMP");
-    if (!t) t = ".";
+    if (!t)
+        t = getenv("TMP");
+    if (!t)
+        t = ".";
     return t;
 #else
     const char* t = getenv("TMPDIR");
-    if (t && t[0]) return t;
+    if (t && t[0])
+        return t;
     return "/tmp";
 #endif
 }
@@ -82,14 +97,14 @@ static const char* get_temp_dir(void) {
 // --------------------------------------------------------------------------
 
 typedef struct {
-    char root[1024];           // Aether root directory
-    char compiler[2048];       // Path to aetherc (root + /bin/aetherc = up to 1036 bytes)
-    char lib[1024];            // Path to libaether.a (if exists)
-    char include_flags[4096];  // -I flags for GCC
-    char runtime_srcs[8192];   // Runtime .c files (source fallback)
-    bool has_lib;              // Whether precompiled lib exists
-    bool dev_mode;             // Running from source tree
-    bool verbose;              // Verbose output
+    char root[1024];          // Aether root directory
+    char compiler[2048];      // Path to aetherc (root + /bin/aetherc = up to 1036 bytes)
+    char lib[1024];           // Path to libaether.a (if exists)
+    char include_flags[4096]; // -I flags for GCC
+    char runtime_srcs[8192];  // Runtime .c files (source fallback)
+    bool has_lib;             // Whether precompiled lib exists
+    bool dev_mode;            // Running from source tree
+    bool verbose;             // Verbose output
 } Toolchain;
 
 static Toolchain tc = {0};
@@ -98,7 +113,7 @@ static Toolchain tc = {0};
 // Cache infrastructure
 // --------------------------------------------------------------------------
 
-static void mkdirs(const char* path);  // forward declaration
+static void mkdirs(const char* path); // forward declaration
 
 static char s_cache_dir[512] = "";
 
@@ -108,7 +123,8 @@ static char s_cache_dir[512] = "";
 static const char* get_home_dir(void) {
 #ifdef _WIN32
     const char* h = getenv("USERPROFILE");
-    if (!h || !h[0]) h = getenv("HOME");
+    if (!h || !h[0])
+        h = getenv("HOME");
     return h ? h : "C:\\Users\\Public";
 #else
     const char* h = getenv("HOME");
@@ -117,7 +133,8 @@ static const char* get_home_dir(void) {
 }
 
 static void init_cache_dir(void) {
-    if (s_cache_dir[0]) return;
+    if (s_cache_dir[0])
+        return;
     const char* home = get_home_dir();
     snprintf(s_cache_dir, sizeof(s_cache_dir), "%s/.aether/cache", home);
     mkdirs(s_cache_dir);
@@ -126,19 +143,26 @@ static void init_cache_dir(void) {
 // FNV-64 hash of a string
 static unsigned long long fnv64_str(const char* s) {
     unsigned long long h = 14695981039346656037ULL;
-    while (*s) { h ^= (unsigned char)*s++; h *= 1099511628211ULL; }
+    while (*s) {
+        h ^= (unsigned char)*s++;
+        h *= 1099511628211ULL;
+    }
     return h;
 }
 
 // FNV-64 hash of a file's contents
 static unsigned long long fnv64_file(const char* path) {
     FILE* f = fopen(path, "rb");
-    if (!f) return 0;
+    if (!f)
+        return 0;
     unsigned long long h = 14695981039346656037ULL;
     unsigned char buf[4096];
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
-        for (size_t i = 0; i < n; i++) { h ^= buf[i]; h *= 1099511628211ULL; }
+        for (size_t i = 0; i < n; i++) {
+            h ^= buf[i];
+            h *= 1099511628211ULL;
+        }
     }
     fclose(f);
     return h;
@@ -148,7 +172,8 @@ static unsigned long long fnv64_file(const char* path) {
 // Returns 0 if source cannot be read (caching disabled)
 static unsigned long long compute_cache_key(const char* ae_file, const char* flags) {
     unsigned long long src_hash = fnv64_file(ae_file);
-    if (src_hash == 0) return 0;
+    if (src_hash == 0)
+        return 0;
 
     char key_buf[1024];
     int pos = 0;
@@ -175,29 +200,37 @@ static unsigned long long compute_cache_key(const char* ae_file, const char* fla
 // but our controlled commands never need it).
 // quiet=0: show all output, quiet=1: hide stdout+stderr, quiet=2: hide stdout only (keep stderr for warnings)
 static int posix_run(const char* cmd_str, int quiet) {
-    if (tc.verbose) fprintf(stderr, "[cmd] %s\n", cmd_str);
+    if (tc.verbose)
+        fprintf(stderr, "[cmd] %s\n", cmd_str);
     char buf[16384];
     strncpy(buf, cmd_str, sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = '\0';
 
     char* toks[512];
     int n = 0;
-    for (char* p = buf; *p && n < 511; ) {
-        while (*p == ' ') p++;
-        if (!*p) break;
+    for (char* p = buf; *p && n < 511;) {
+        while (*p == ' ')
+            p++;
+        if (!*p)
+            break;
         if (*p == '"') {
-            p++;  // skip opening quote
+            p++; // skip opening quote
             toks[n++] = p;
-            while (*p && *p != '"') p++;
-            if (*p) *p++ = '\0';  // null-terminate and skip closing quote
+            while (*p && *p != '"')
+                p++;
+            if (*p)
+                *p++ = '\0'; // null-terminate and skip closing quote
         } else {
             toks[n++] = p;
-            while (*p && *p != ' ') p++;
-            if (*p) *p++ = '\0';
+            while (*p && *p != ' ')
+                p++;
+            if (*p)
+                *p++ = '\0';
         }
     }
     toks[n] = NULL;
-    if (n == 0) return 0;
+    if (n == 0)
+        return 0;
 
     posix_spawn_file_actions_t fa;
     posix_spawn_file_actions_init(&fa);
@@ -212,49 +245,58 @@ static int posix_run(const char* cmd_str, int quiet) {
     pid_t pid;
     int ret = posix_spawnp(&pid, toks[0], &fa, NULL, toks, environ);
     posix_spawn_file_actions_destroy(&fa);
-    if (ret != 0) return -1;
+    if (ret != 0)
+        return -1;
 
     int status = 0;
     waitpid(pid, &status, 0);
     if (WIFEXITED(status))
         return WEXITSTATUS(status);
     if (WIFSIGNALED(status))
-        return -WTERMSIG(status);  // negative signal number
+        return -WTERMSIG(status); // negative signal number
     return -1;
 }
 #endif
 
 // Windows: use _spawnvp to avoid cmd.exe quoting issues with system()
 #ifdef _WIN32
-#include <process.h>
-#include <io.h>
-#ifndef _O_WRONLY
-#define _O_WRONLY 1
-#endif
+#    include <io.h>
+#    include <process.h>
+#    ifndef _O_WRONLY
+#        define _O_WRONLY 1
+#    endif
 static int win_run(const char* cmd_str, int quiet) {
-    if (tc.verbose) fprintf(stderr, "[cmd] %s\n", cmd_str);
+    if (tc.verbose)
+        fprintf(stderr, "[cmd] %s\n", cmd_str);
     char buf[16384];
     strncpy(buf, cmd_str, sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = '\0';
 
     char* toks[512];
     int n = 0;
-    for (char* p = buf; *p && n < 511; ) {
-        while (*p == ' ') p++;
-        if (!*p) break;
+    for (char* p = buf; *p && n < 511;) {
+        while (*p == ' ')
+            p++;
+        if (!*p)
+            break;
         if (*p == '"') {
             p++;
             toks[n++] = p;
-            while (*p && *p != '"') p++;
-            if (*p) *p++ = '\0';
+            while (*p && *p != '"')
+                p++;
+            if (*p)
+                *p++ = '\0';
         } else {
             toks[n++] = p;
-            while (*p && *p != ' ') p++;
-            if (*p) *p++ = '\0';
+            while (*p && *p != ' ')
+                p++;
+            if (*p)
+                *p++ = '\0';
         }
     }
     toks[n] = NULL;
-    if (n == 0) return 0;
+    if (n == 0)
+        return 0;
 
     // Redirect stdout/stderr for quiet modes
     int saved_stdout = -1, saved_stderr = -1;
@@ -262,20 +304,32 @@ static int win_run(const char* cmd_str, int quiet) {
         fflush(stdout);
         saved_stdout = _dup(1);
         int nul = _open("nul", _O_WRONLY);
-        if (nul >= 0) { _dup2(nul, 1); _close(nul); }
+        if (nul >= 0) {
+            _dup2(nul, 1);
+            _close(nul);
+        }
     }
     if (quiet == 1) {
         fflush(stderr);
         saved_stderr = _dup(2);
         int nul = _open("nul", _O_WRONLY);
-        if (nul >= 0) { _dup2(nul, 2); _close(nul); }
+        if (nul >= 0) {
+            _dup2(nul, 2);
+            _close(nul);
+        }
     }
 
     int ret = (int)_spawnvp(_P_WAIT, toks[0], (const char* const*)toks);
 
     // Restore
-    if (saved_stdout >= 0) { _dup2(saved_stdout, 1); _close(saved_stdout); }
-    if (saved_stderr >= 0) { _dup2(saved_stderr, 2); _close(saved_stderr); }
+    if (saved_stdout >= 0) {
+        _dup2(saved_stdout, 1);
+        _close(saved_stdout);
+    }
+    if (saved_stderr >= 0) {
+        _dup2(saved_stderr, 2);
+        _close(saved_stderr);
+    }
 
     return ret;
 }
@@ -309,12 +363,11 @@ static int run_cmd_show_warnings(const char* cmd) {
 
 // Validate that a path is safe for use in shell commands (no metacharacters)
 static bool is_safe_path(const char* path) {
-    if (!path) return false;
+    if (!path)
+        return false;
     for (const char* p = path; *p; p++) {
         // Reject shell metacharacters that could enable command injection
-        if (*p == '`' || *p == '$' || *p == '|' || *p == ';' ||
-            *p == '&' || *p == '\n' || *p == '\r' || *p == '\'' ||
-            *p == '!' || *p == '(' || *p == ')') {
+        if (*p == '`' || *p == '$' || *p == '|' || *p == ';' || *p == '&' || *p == '\n' || *p == '\r' || *p == '\'' || *p == '!' || *p == '(' || *p == ')') {
             return false;
         }
     }
@@ -333,12 +386,12 @@ static bool path_exists(const char* path) {
 // Validate a string contains only safe characters for shell commands.
 // Allows: alphanumeric, '.', '/', '-', '_', '@'
 static bool is_safe_shell_arg(const char* s) {
-    if (!s || !*s) return false;
+    if (!s || !*s)
+        return false;
     for (const char* p = s; *p; p++) {
         char c = *p;
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '.' || c == '/' ||
-            c == '-' || c == '_' || c == '@') continue;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '/' || c == '-' || c == '_' || c == '@')
+            continue;
         return false;
     }
     return true;
@@ -367,12 +420,16 @@ static char* get_basename(const char* path) {
     const char* fslash = strrchr(path, '/');
     const char* bslash = strrchr(path, '\\');
     const char* base = (!fslash) ? bslash : (!bslash) ? fslash : (fslash > bslash ? fslash : bslash);
-    if (!base) base = path; else base++;
+    if (!base)
+        base = path;
+    else
+        base++;
     static char result[256];
     strncpy(result, base, sizeof(result) - 1);
     result[sizeof(result) - 1] = '\0';
     char* dot = strrchr(result, '.');
-    if (dot) *dot = '\0';
+    if (dot)
+        *dot = '\0';
     return result;
 }
 
@@ -384,7 +441,12 @@ static bool get_exe_dir(char* buf, size_t size) {
         char resolved[PATH_MAX];
         if (realpath(buf, resolved)) {
             char* slash = strrchr(resolved, '/');
-            if (slash) { *slash = '\0'; strncpy(buf, resolved, size - 1); buf[size - 1] = '\0'; return true; }
+            if (slash) {
+                *slash = '\0';
+                strncpy(buf, resolved, size - 1);
+                buf[size - 1] = '\0';
+                return true;
+            }
         }
     }
 #elif defined(__linux__)
@@ -392,14 +454,20 @@ static bool get_exe_dir(char* buf, size_t size) {
     if (len > 0) {
         buf[len] = '\0';
         char* slash = strrchr(buf, '/');
-        if (slash) { *slash = '\0'; return true; }
+        if (slash) {
+            *slash = '\0';
+            return true;
+        }
     }
 #elif defined(_WIN32)
     DWORD len = GetModuleFileNameA(NULL, buf, (DWORD)size);
     if (len > 0 && len < (DWORD)size) {
         buf[len] = '\0';
         char* slash = strrchr(buf, '\\');
-        if (slash) { *slash = '\0'; return true; }
+        if (slash) {
+            *slash = '\0';
+            return true;
+        }
     }
 #endif
     return false;
@@ -414,8 +482,8 @@ static bool get_exe_dir(char* buf, size_t size) {
 // exceeding the buffer.  In practice src is ~30-50 bytes and snprintf
 // truncates safely, so suppress the false positive.
 #if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-truncation"
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wformat-truncation"
 #endif
 static void discover_toolchain(void) {
     char exe_dir[1024] = {0};
@@ -449,7 +517,7 @@ static void discover_toolchain(void) {
         strncpy(home_clean, home, sizeof(home_clean) - 1);
         home_clean[sizeof(home_clean) - 1] = '\0';
         size_t len = strlen(home_clean);
-        while (len > 0 && (home_clean[len-1] == '\r' || home_clean[len-1] == '\n' || home_clean[len-1] == ' '))
+        while (len > 0 && (home_clean[len - 1] == '\r' || home_clean[len - 1] == '\n' || home_clean[len - 1] == ' '))
             home_clean[--len] = '\0';
         home = home_clean;
     }
@@ -466,7 +534,8 @@ static void discover_toolchain(void) {
             if (dir_exists(share_probe) || path_exists(lib_probe)) {
                 snprintf(tc.root, sizeof(tc.root), "%s/current", home);
                 strncpy(tc.compiler, current_compiler, sizeof(tc.compiler) - 1);
-                if (tc.verbose) fprintf(stderr, "[toolchain] compiler=%s (via current symlink)\n", tc.compiler);
+                if (tc.verbose)
+                    fprintf(stderr, "[toolchain] compiler=%s (via current symlink)\n", tc.compiler);
                 goto found_root;
             }
             // Check if the direct ~/.aether/ layout will work before warning —
@@ -491,7 +560,8 @@ static void discover_toolchain(void) {
             if (dir_exists(share_check)) {
                 snprintf(tc.root, sizeof(tc.root), "%s/current", home);
                 strncpy(tc.compiler, current_compiler, sizeof(tc.compiler) - 1);
-                if (tc.verbose) fprintf(stderr, "[toolchain] compiler=%s (via current symlink, flat layout)\n", tc.compiler);
+                if (tc.verbose)
+                    fprintf(stderr, "[toolchain] compiler=%s (via current symlink, flat layout)\n", tc.compiler);
                 goto found_root;
             }
             // Also check for lib
@@ -514,7 +584,8 @@ static void discover_toolchain(void) {
         }
         strncpy(tc.root, home, sizeof(tc.root) - 1);
         snprintf(tc.compiler, sizeof(tc.compiler), "%s/bin/aetherc" EXE_EXT, tc.root);
-        if (tc.verbose) fprintf(stderr, "[toolchain] compiler=%s exists=%d\n", tc.compiler, path_exists(tc.compiler));
+        if (tc.verbose)
+            fprintf(stderr, "[toolchain] compiler=%s exists=%d\n", tc.compiler, path_exists(tc.compiler));
         if (path_exists(tc.compiler)) {
             // Verify AETHER_HOME has sources or lib — otherwise build will fail
             char share_check[1024], lib_check[1024];
@@ -534,14 +605,17 @@ static void discover_toolchain(void) {
         char candidate[1024];
         bool is_installed = false;
         snprintf(candidate, sizeof(candidate), "%s/../lib/aether", exe_dir);
-        if (dir_exists(candidate)) is_installed = true;
+        if (dir_exists(candidate))
+            is_installed = true;
         if (!is_installed) {
             snprintf(candidate, sizeof(candidate), "%s/../share/aether", exe_dir);
-            if (dir_exists(candidate)) is_installed = true;
+            if (dir_exists(candidate))
+                is_installed = true;
         }
         if (!is_installed) {
             snprintf(candidate, sizeof(candidate), "%s/../lib/libaether.a", exe_dir);
-            if (path_exists(candidate)) is_installed = true;
+            if (path_exists(candidate))
+                is_installed = true;
         }
         if (is_installed) {
             // If a 'current' symlink exists (from ae version use), prefer it
@@ -556,12 +630,14 @@ static void discover_toolchain(void) {
                 if (dir_exists(cs) || path_exists(cl)) {
                     snprintf(tc.root, sizeof(tc.root), "%s/../current", exe_dir);
                     snprintf(tc.compiler, sizeof(tc.compiler), "%s/aetherc" EXE_EXT, exe_dir);
-                    if (path_exists(tc.compiler)) goto found_root;
+                    if (path_exists(tc.compiler))
+                        goto found_root;
                 }
             }
             snprintf(tc.root, sizeof(tc.root), "%s/..", exe_dir);
             snprintf(tc.compiler, sizeof(tc.compiler), "%s/aetherc" EXE_EXT, exe_dir);
-            if (path_exists(tc.compiler)) goto found_root;
+            if (path_exists(tc.compiler))
+                goto found_root;
         }
     }
 
@@ -579,20 +655,18 @@ static void discover_toolchain(void) {
     }
 
     // Strategy 5: Standard install paths
-    const char* standard_paths[] = {
-        "/usr/local/bin/aetherc",
-        "/usr/bin/aetherc",
-        NULL
-    };
+    const char* standard_paths[] = {"/usr/local/bin/aetherc", "/usr/bin/aetherc", NULL};
     for (int i = 0; standard_paths[i]; i++) {
         if (path_exists(standard_paths[i])) {
             strncpy(tc.compiler, standard_paths[i], sizeof(tc.compiler) - 1);
             tc.compiler[sizeof(tc.compiler) - 1] = '\0';
             strncpy(tc.root, standard_paths[i], sizeof(tc.root) - 1);
             char* slash = strrchr(tc.root, '/');
-            if (slash) *slash = '\0';
+            if (slash)
+                *slash = '\0';
             slash = strrchr(tc.root, '/');
-            if (slash) *slash = '\0';
+            if (slash)
+                *slash = '\0';
             goto found_root;
         }
     }
@@ -618,11 +692,11 @@ found_root:
     // Propagate AETHER_HOME to child processes (aetherc) so module
     // resolution works even when the shell environment is not configured.
 #ifdef _WIN32
-    {
-        char env_buf[1100];
-        snprintf(env_buf, sizeof(env_buf), "AETHER_HOME=%s", tc.root);
-        _putenv(env_buf);
-    }
+{
+    char env_buf[1100];
+    snprintf(env_buf, sizeof(env_buf), "AETHER_HOME=%s", tc.root);
+    _putenv(env_buf);
+}
 #else
     setenv("AETHER_HOME", tc.root, 0);
 #endif
@@ -647,145 +721,128 @@ found_root:
     tc.has_lib = path_exists(tc.lib);
 
     if (tc.verbose) {
-        fprintf(stderr, "[toolchain] lib: %s (%s)\n", tc.lib,
-                tc.has_lib ? "found" : "not found, using source fallback");
+        fprintf(stderr, "[toolchain] lib: %s (%s)\n", tc.lib, tc.has_lib ? "found" : "not found, using source fallback");
     }
 
     // Build include flags and source file lists
     if (tc.dev_mode) {
         snprintf(tc.include_flags, sizeof(tc.include_flags),
-            "-I%s/runtime -I%s/runtime/actors -I%s/runtime/scheduler "
-            "-I%s/runtime/utils -I%s/runtime/memory -I%s/runtime/config "
-            "-I%s/std -I%s/std/string -I%s/std/io -I%s/std/math "
-            "-I%s/std/net -I%s/std/collections -I%s/std/json "
-            "-I%s/std/fs -I%s/std/log",
-            tc.root, tc.root, tc.root, tc.root, tc.root, tc.root,
-            tc.root, tc.root, tc.root, tc.root, tc.root, tc.root,
-            tc.root, tc.root, tc.root);
+                 "-I%s/runtime -I%s/runtime/actors -I%s/runtime/scheduler "
+                 "-I%s/runtime/utils -I%s/runtime/memory -I%s/runtime/config "
+                 "-I%s/std -I%s/std/string -I%s/std/io -I%s/std/math "
+                 "-I%s/std/net -I%s/std/collections -I%s/std/json "
+                 "-I%s/std/fs -I%s/std/log",
+                 tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root);
 
         if (!tc.has_lib) {
             snprintf(tc.runtime_srcs, sizeof(tc.runtime_srcs),
-                "%s/runtime/scheduler/multicore_scheduler.c "
-                "%s/runtime/scheduler/scheduler_optimizations.c "
-                "%s/runtime/config/aether_optimization_config.c "
-                "%s/runtime/memory/memory.c "
-                "%s/runtime/memory/aether_arena.c "
-                "%s/runtime/memory/aether_pool.c "
-                "%s/runtime/memory/aether_memory_stats.c "
-                "%s/runtime/utils/aether_tracing.c "
-                "%s/runtime/utils/aether_bounds_check.c "
-                "%s/runtime/utils/aether_test.c "
-                "%s/runtime/memory/aether_arena_optimized.c "
-                "%s/runtime/aether_runtime_types.c "
-                "%s/runtime/utils/aether_cpu_detect.c "
-                "%s/runtime/memory/aether_batch.c "
-                "%s/runtime/utils/aether_simd_vectorized.c "
-                "%s/runtime/aether_runtime.c "
-                "%s/runtime/aether_numa.c "
-                "%s/runtime/actors/aether_send_buffer.c "
-                "%s/runtime/actors/aether_send_message.c "
-                "%s/runtime/actors/aether_actor_thread.c "
-                "%s/std/string/aether_string.c "
-                "%s/std/math/aether_math.c "
-                "%s/std/net/aether_http.c "
-                "%s/std/net/aether_http_server.c "
-                "%s/std/net/aether_net.c "
-                "%s/std/collections/aether_collections.c "
-                "%s/std/json/aether_json.c "
-                "%s/std/io/aether_io.c "
-                "%s/std/fs/aether_fs.c "
-                "%s/std/log/aether_log.c "
-                "%s/std/os/aether_os.c "
-                "%s/std/collections/aether_hashmap.c "
-                "%s/std/collections/aether_set.c "
-                "%s/std/collections/aether_vector.c "
-                "%s/std/collections/aether_pqueue.c",
-                tc.root, tc.root, tc.root, tc.root, tc.root,
-                tc.root, tc.root, tc.root, tc.root, tc.root,
-                tc.root, tc.root, tc.root, tc.root, tc.root,
-                tc.root, tc.root, tc.root, tc.root, tc.root,
-                tc.root, tc.root, tc.root, tc.root, tc.root,
-                tc.root, tc.root, tc.root, tc.root, tc.root,
-                tc.root, tc.root, tc.root, tc.root, tc.root);
+                     "%s/runtime/scheduler/multicore_scheduler.c "
+                     "%s/runtime/scheduler/scheduler_optimizations.c "
+                     "%s/runtime/config/aether_optimization_config.c "
+                     "%s/runtime/memory/memory.c "
+                     "%s/runtime/memory/aether_arena.c "
+                     "%s/runtime/memory/aether_pool.c "
+                     "%s/runtime/memory/aether_memory_stats.c "
+                     "%s/runtime/utils/aether_tracing.c "
+                     "%s/runtime/utils/aether_bounds_check.c "
+                     "%s/runtime/utils/aether_test.c "
+                     "%s/runtime/memory/aether_arena_optimized.c "
+                     "%s/runtime/aether_runtime_types.c "
+                     "%s/runtime/utils/aether_cpu_detect.c "
+                     "%s/runtime/memory/aether_batch.c "
+                     "%s/runtime/utils/aether_simd_vectorized.c "
+                     "%s/runtime/aether_runtime.c "
+                     "%s/runtime/aether_numa.c "
+                     "%s/runtime/actors/aether_send_buffer.c "
+                     "%s/runtime/actors/aether_send_message.c "
+                     "%s/runtime/actors/aether_actor_thread.c "
+                     "%s/std/string/aether_string.c "
+                     "%s/std/math/aether_math.c "
+                     "%s/std/net/aether_http.c "
+                     "%s/std/net/aether_http_server.c "
+                     "%s/std/net/aether_net.c "
+                     "%s/std/collections/aether_collections.c "
+                     "%s/std/json/aether_json.c "
+                     "%s/std/io/aether_io.c "
+                     "%s/std/fs/aether_fs.c "
+                     "%s/std/log/aether_log.c "
+                     "%s/std/os/aether_os.c "
+                     "%s/std/collections/aether_hashmap.c "
+                     "%s/std/collections/aether_set.c "
+                     "%s/std/collections/aether_vector.c "
+                     "%s/std/collections/aether_pqueue.c",
+                     tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root,
+                     tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root);
         }
     } else {
         // Installed layout: headers in include/aether/, source in share/aether/
         // Include both paths so source compilation can find headers via either route
         snprintf(tc.include_flags, sizeof(tc.include_flags),
-            "-I%s/include/aether/runtime -I%s/include/aether/runtime/actors "
-            "-I%s/include/aether/runtime/scheduler -I%s/include/aether/runtime/utils "
-            "-I%s/include/aether/runtime/memory -I%s/include/aether/runtime/config "
-            "-I%s/include/aether/std -I%s/include/aether/std/string "
-            "-I%s/include/aether/std/io -I%s/include/aether/std/math "
-            "-I%s/include/aether/std/net -I%s/include/aether/std/collections "
-            "-I%s/include/aether/std/json -I%s/include/aether/std/fs "
-            "-I%s/include/aether/std/log "
-            "-I%s/share/aether/runtime -I%s/share/aether/runtime/actors "
-            "-I%s/share/aether/runtime/scheduler -I%s/share/aether/runtime/utils "
-            "-I%s/share/aether/runtime/memory -I%s/share/aether/runtime/config "
-            "-I%s/share/aether/std -I%s/share/aether/std/string "
-            "-I%s/share/aether/std/io -I%s/share/aether/std/math "
-            "-I%s/share/aether/std/net -I%s/share/aether/std/collections "
-            "-I%s/share/aether/std/json -I%s/share/aether/std/fs "
-            "-I%s/share/aether/std/log",
-            tc.root, tc.root, tc.root, tc.root, tc.root, tc.root,
-            tc.root, tc.root, tc.root, tc.root, tc.root, tc.root,
-            tc.root, tc.root, tc.root, tc.root, tc.root, tc.root,
-            tc.root, tc.root, tc.root, tc.root, tc.root, tc.root,
-            tc.root, tc.root, tc.root, tc.root, tc.root, tc.root);
+                 "-I%s/include/aether/runtime -I%s/include/aether/runtime/actors "
+                 "-I%s/include/aether/runtime/scheduler -I%s/include/aether/runtime/utils "
+                 "-I%s/include/aether/runtime/memory -I%s/include/aether/runtime/config "
+                 "-I%s/include/aether/std -I%s/include/aether/std/string "
+                 "-I%s/include/aether/std/io -I%s/include/aether/std/math "
+                 "-I%s/include/aether/std/net -I%s/include/aether/std/collections "
+                 "-I%s/include/aether/std/json -I%s/include/aether/std/fs "
+                 "-I%s/include/aether/std/log "
+                 "-I%s/share/aether/runtime -I%s/share/aether/runtime/actors "
+                 "-I%s/share/aether/runtime/scheduler -I%s/share/aether/runtime/utils "
+                 "-I%s/share/aether/runtime/memory -I%s/share/aether/runtime/config "
+                 "-I%s/share/aether/std -I%s/share/aether/std/string "
+                 "-I%s/share/aether/std/io -I%s/share/aether/std/math "
+                 "-I%s/share/aether/std/net -I%s/share/aether/std/collections "
+                 "-I%s/share/aether/std/json -I%s/share/aether/std/fs "
+                 "-I%s/share/aether/std/log",
+                 tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root,
+                 tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root, tc.root);
 
         // Source fallback: when libaether.a is not available, compile from share/aether/
         if (!tc.has_lib) {
             char src[1024];
             snprintf(src, sizeof(src), "%s/share/aether", tc.root);
             snprintf(tc.runtime_srcs, sizeof(tc.runtime_srcs),
-                "%s/runtime/scheduler/multicore_scheduler.c "
-                "%s/runtime/scheduler/scheduler_optimizations.c "
-                "%s/runtime/config/aether_optimization_config.c "
-                "%s/runtime/memory/memory.c "
-                "%s/runtime/memory/aether_arena.c "
-                "%s/runtime/memory/aether_pool.c "
-                "%s/runtime/memory/aether_memory_stats.c "
-                "%s/runtime/utils/aether_tracing.c "
-                "%s/runtime/utils/aether_bounds_check.c "
-                "%s/runtime/utils/aether_test.c "
-                "%s/runtime/memory/aether_arena_optimized.c "
-                "%s/runtime/aether_runtime_types.c "
-                "%s/runtime/utils/aether_cpu_detect.c "
-                "%s/runtime/memory/aether_batch.c "
-                "%s/runtime/utils/aether_simd_vectorized.c "
-                "%s/runtime/aether_runtime.c "
-                "%s/runtime/aether_numa.c "
-                "%s/runtime/actors/aether_send_buffer.c "
-                "%s/runtime/actors/aether_send_message.c "
-                "%s/runtime/actors/aether_actor_thread.c "
-                "%s/std/string/aether_string.c "
-                "%s/std/math/aether_math.c "
-                "%s/std/net/aether_http.c "
-                "%s/std/net/aether_http_server.c "
-                "%s/std/net/aether_net.c "
-                "%s/std/collections/aether_collections.c "
-                "%s/std/json/aether_json.c "
-                "%s/std/io/aether_io.c "
-                "%s/std/fs/aether_fs.c "
-                "%s/std/log/aether_log.c "
-                "%s/std/os/aether_os.c "
-                "%s/std/collections/aether_hashmap.c "
-                "%s/std/collections/aether_set.c "
-                "%s/std/collections/aether_vector.c "
-                "%s/std/collections/aether_pqueue.c",
-                src, src, src, src, src,
-                src, src, src, src, src,
-                src, src, src, src, src,
-                src, src, src, src, src,
-                src, src, src, src, src,
-                src, src, src, src, src,
-                src, src, src, src, src);
+                     "%s/runtime/scheduler/multicore_scheduler.c "
+                     "%s/runtime/scheduler/scheduler_optimizations.c "
+                     "%s/runtime/config/aether_optimization_config.c "
+                     "%s/runtime/memory/memory.c "
+                     "%s/runtime/memory/aether_arena.c "
+                     "%s/runtime/memory/aether_pool.c "
+                     "%s/runtime/memory/aether_memory_stats.c "
+                     "%s/runtime/utils/aether_tracing.c "
+                     "%s/runtime/utils/aether_bounds_check.c "
+                     "%s/runtime/utils/aether_test.c "
+                     "%s/runtime/memory/aether_arena_optimized.c "
+                     "%s/runtime/aether_runtime_types.c "
+                     "%s/runtime/utils/aether_cpu_detect.c "
+                     "%s/runtime/memory/aether_batch.c "
+                     "%s/runtime/utils/aether_simd_vectorized.c "
+                     "%s/runtime/aether_runtime.c "
+                     "%s/runtime/aether_numa.c "
+                     "%s/runtime/actors/aether_send_buffer.c "
+                     "%s/runtime/actors/aether_send_message.c "
+                     "%s/runtime/actors/aether_actor_thread.c "
+                     "%s/std/string/aether_string.c "
+                     "%s/std/math/aether_math.c "
+                     "%s/std/net/aether_http.c "
+                     "%s/std/net/aether_http_server.c "
+                     "%s/std/net/aether_net.c "
+                     "%s/std/collections/aether_collections.c "
+                     "%s/std/json/aether_json.c "
+                     "%s/std/io/aether_io.c "
+                     "%s/std/fs/aether_fs.c "
+                     "%s/std/log/aether_log.c "
+                     "%s/std/os/aether_os.c "
+                     "%s/std/collections/aether_hashmap.c "
+                     "%s/std/collections/aether_set.c "
+                     "%s/std/collections/aether_vector.c "
+                     "%s/std/collections/aether_pqueue.c",
+                     src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src, src);
         }
     }
 }
 #if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic pop
+#    pragma GCC diagnostic pop
 #endif
 
 // Get link_flags from aether.toml [build] section
@@ -794,13 +851,16 @@ static const char* get_link_flags(void) {
     static char flags[1024] = "";
     static bool checked = false;
 
-    if (checked) return flags;
+    if (checked)
+        return flags;
     checked = true;
 
-    if (!path_exists("aether.toml")) return flags;
+    if (!path_exists("aether.toml"))
+        return flags;
 
     TomlDocument* doc = toml_parse_file("aether.toml");
-    if (!doc) return flags;
+    if (!doc)
+        return flags;
 
     const char* val = toml_get_value(doc, "build", "link_flags");
     if (val) {
@@ -819,19 +879,18 @@ static const char* get_link_flags(void) {
 
 // Pinned WinLibs release — GCC 14.2.0 UCRT, x86-64, no LLVM (~250 MB).
 // Update WINLIBS_TAG + WINLIBS_ZIP together when upgrading.
-#define WINLIBS_TAG "14.2.0posix-12.0.0-ucrt-r3"
-#define WINLIBS_ZIP "winlibs-x86_64-posix-seh-gcc-14.2.0-mingw-w64ucrt-12.0.0-r3.zip"
-#define WINLIBS_URL \
-    "https://github.com/brechtsanders/winlibs_mingw/releases/download/" \
-    WINLIBS_TAG "/" WINLIBS_ZIP
+#    define WINLIBS_TAG "14.2.0posix-12.0.0-ucrt-r3"
+#    define WINLIBS_ZIP "winlibs-x86_64-posix-seh-gcc-14.2.0-mingw-w64ucrt-12.0.0-r3.zip"
+#    define WINLIBS_URL "https://github.com/brechtsanders/winlibs_mingw/releases/download/" WINLIBS_TAG "/" WINLIBS_ZIP
 
-static char s_gcc_bin[1024] = "gcc";  // path to gcc; updated by ensure_gcc_windows()
-static bool s_gcc_ready      = false; // set after first successful check
+static char s_gcc_bin[1024] = "gcc"; // path to gcc; updated by ensure_gcc_windows()
+static bool s_gcc_ready = false;     // set after first successful check
 
 // Checks PATH, then ~/.aether/tools/, then downloads WinLibs on demand.
 // Returns true when gcc is usable; false means the user must intervene.
 static bool ensure_gcc_windows(void) {
-    if (s_gcc_ready) return true;
+    if (s_gcc_ready)
+        return true;
 
     // 1. Already on PATH?
     if (system("gcc --version >nul 2>&1") == 0) {
@@ -840,25 +899,26 @@ static bool ensure_gcc_windows(void) {
     }
 
     // 2. Already installed to ~/.aether/tools/ from a previous run?
-    const char* home  = get_home_dir();
+    const char* home = get_home_dir();
     char tools_dir[1024], tools_bin[1024], tools_gcc[1024];
-    snprintf(tools_dir, sizeof(tools_dir), "%s\\.aether\\tools",           home);
-    snprintf(tools_bin, sizeof(tools_bin), "%s\\mingw64\\bin",             tools_dir);
-    snprintf(tools_gcc, sizeof(tools_gcc), "%s\\mingw64\\bin\\gcc.exe",    tools_dir);
+    snprintf(tools_dir, sizeof(tools_dir), "%s\\.aether\\tools", home);
+    snprintf(tools_bin, sizeof(tools_bin), "%s\\mingw64\\bin", tools_dir);
+    snprintf(tools_gcc, sizeof(tools_gcc), "%s\\mingw64\\bin\\gcc.exe", tools_dir);
 
     struct stat st;
-    if (stat(tools_gcc, &st) == 0) goto found;
+    if (stat(tools_gcc, &st) == 0)
+        goto found;
 
     // 3. Auto-download (one-time, ~250 MB).
     printf("[ae] GCC not found. Downloading MinGW-w64 GCC (~250 MB) -- one-time setup...\n");
     fflush(stdout);
 
-    mkdirs(tools_dir);  // Create ~/.aether/tools/ (and parents)
+    mkdirs(tools_dir); // Create ~/.aether/tools/ (and parents)
 
     // Write a tiny PowerShell script to avoid shell-quoting nightmares.
     char ps_path[1024], zip_path[1024];
-    snprintf(ps_path,  sizeof(ps_path),  "%s\\install_gcc.ps1", tools_dir);
-    snprintf(zip_path, sizeof(zip_path), "%s\\mingw.zip",        tools_dir);
+    snprintf(ps_path, sizeof(ps_path), "%s\\install_gcc.ps1", tools_dir);
+    snprintf(zip_path, sizeof(zip_path), "%s\\mingw.zip", tools_dir);
 
     FILE* ps = fopen(ps_path, "w");
     if (!ps) {
@@ -866,23 +926,23 @@ static bool ensure_gcc_windows(void) {
         goto fail;
     }
     fprintf(ps,
-        "$ProgressPreference = 'SilentlyContinue'\n"
-        "Write-Host '[ae] Downloading GCC...'\n"
-        "Invoke-WebRequest -Uri '%s' -OutFile '%s'\n"
-        "Write-Host '[ae] Extracting...'\n"
-        "Expand-Archive -Path '%s' -DestinationPath '%s' -Force\n"
-        "Remove-Item -Path '%s' -Force\n"
-        "Write-Host '[ae] GCC ready.'\n",
-        WINLIBS_URL, zip_path, zip_path, tools_dir, zip_path);
+            "$ProgressPreference = 'SilentlyContinue'\n"
+            "Write-Host '[ae] Downloading GCC...'\n"
+            "Invoke-WebRequest -Uri '%s' -OutFile '%s'\n"
+            "Write-Host '[ae] Extracting...'\n"
+            "Expand-Archive -Path '%s' -DestinationPath '%s' -Force\n"
+            "Remove-Item -Path '%s' -Force\n"
+            "Write-Host '[ae] GCC ready.'\n",
+            WINLIBS_URL, zip_path, zip_path, tools_dir, zip_path);
     fclose(ps);
 
     {
         char run_ps[2048];
-        snprintf(run_ps, sizeof(run_ps),
-            "powershell -NoProfile -ExecutionPolicy Bypass -File \"%s\"", ps_path);
+        snprintf(run_ps, sizeof(run_ps), "powershell -NoProfile -ExecutionPolicy Bypass -File \"%s\"", ps_path);
         int ret = system(run_ps);
         remove(ps_path);
-        if (ret != 0 || stat(tools_gcc, &st) != 0) goto fail;
+        if (ret != 0 || stat(tools_gcc, &st) != 0)
+            goto fail;
     }
 
 found:
@@ -914,13 +974,16 @@ static const char* get_cflags(void) {
     static char flags[512] = "";
     static bool checked = false;
 
-    if (checked) return flags;
+    if (checked)
+        return flags;
     checked = true;
 
-    if (!path_exists("aether.toml")) return flags;
+    if (!path_exists("aether.toml"))
+        return flags;
 
     TomlDocument* doc = toml_parse_file("aether.toml");
-    if (!doc) return flags;
+    if (!doc)
+        return flags;
 
     const char* val = toml_get_value(doc, "build", "cflags");
     if (val) {
@@ -937,10 +1000,12 @@ static const char* get_cflags(void) {
 // Only handles single-line arrays: extra_sources = ["a.c", "b.c"]
 static void get_extra_sources_for_bin(const char* ae_file, char* out, size_t out_size) {
     out[0] = '\0';
-    if (!ae_file || !path_exists("aether.toml")) return;
+    if (!ae_file || !path_exists("aether.toml"))
+        return;
 
     FILE* f = fopen("aether.toml", "r");
-    if (!f) return;
+    if (!f)
+        return;
 
     char line[1024];
     int in_bin = 0;
@@ -948,10 +1013,13 @@ static void get_extra_sources_for_bin(const char* ae_file, char* out, size_t out
 
     while (fgets(line, sizeof(line), f)) {
         char* s = line;
-        while (*s == ' ' || *s == '\t') s++;
+        while (*s == ' ' || *s == '\t')
+            s++;
         size_t ln = strlen(s);
-        while (ln > 0 && (s[ln-1] == '\n' || s[ln-1] == '\r' || s[ln-1] == ' ')) s[--ln] = '\0';
-        if (!s[0] || s[0] == '#') continue;
+        while (ln > 0 && (s[ln - 1] == '\n' || s[ln - 1] == '\r' || s[ln - 1] == ' '))
+            s[--ln] = '\0';
+        if (!s[0] || s[0] == '#')
+            continue;
 
         // [[bin]] section marker
         if (strncmp(s, "[[bin]]", 7) == 0) {
@@ -967,25 +1035,29 @@ static void get_extra_sources_for_bin(const char* ae_file, char* out, size_t out
             continue;
         }
 
-        if (!in_bin) continue;
+        if (!in_bin)
+            continue;
 
         // path = "..." — check if this bin entry matches ae_file
         if (strncmp(s, "path", 4) == 0 && strchr(s, '=')) {
             char* eq = strchr(s, '=') + 1;
-            while (*eq == ' ') eq++;
-            if (*eq == '"') eq++;
+            while (*eq == ' ')
+                eq++;
+            if (*eq == '"')
+                eq++;
             char* end = strrchr(eq, '"');
-            if (end) *end = '\0';
+            if (end)
+                *end = '\0';
             // Normalize: strip leading "./"
             const char* aef = ae_file;
-            if (aef[0] == '.' && aef[1] == '/') aef += 2;
-            if (eq[0] == '.' && eq[1] == '/') eq += 2;
+            if (aef[0] == '.' && aef[1] == '/')
+                aef += 2;
+            if (eq[0] == '.' && eq[1] == '/')
+                eq += 2;
             // Match if equal or ae_file ends with the path value
             size_t vlen = strlen(eq);
             size_t alen = strlen(aef);
-            if (strcmp(aef, eq) == 0 ||
-                (alen >= vlen && aef[alen - vlen - 1] == '/' &&
-                 strcmp(aef + alen - vlen, eq) == 0)) {
+            if (strcmp(aef, eq) == 0 || (alen >= vlen && aef[alen - vlen - 1] == '/' && strcmp(aef + alen - vlen, eq) == 0)) {
                 matched = 1;
             }
             continue;
@@ -994,18 +1066,24 @@ static void get_extra_sources_for_bin(const char* ae_file, char* out, size_t out
         // extra_sources = ["a.c", "b.c"] in a matched [[bin]]
         if (matched && strncmp(s, "extra_sources", 13) == 0 && strchr(s, '=')) {
             char* eq = strchr(s, '=') + 1;
-            while (*eq == ' ') eq++;
-            if (*eq != '[') continue;
+            while (*eq == ' ')
+                eq++;
+            if (*eq != '[')
+                continue;
             eq++; // skip '['
             while (*eq && *eq != ']') {
-                while (*eq == ' ' || *eq == ',') eq++;
-                if (*eq == ']' || !*eq) break;
+                while (*eq == ' ' || *eq == ',')
+                    eq++;
+                if (*eq == ']' || !*eq)
+                    break;
                 if (*eq == '"') {
                     eq++;
                     char* end = strchr(eq, '"');
-                    if (!end) break;
+                    if (!end)
+                        break;
                     *end = '\0';
-                    if (out[0]) strncat(out, " ", out_size - strlen(out) - 1);
+                    if (out[0])
+                        strncat(out, " ", out_size - strlen(out) - 1);
                     strncat(out, eq, out_size - strlen(out) - 1);
                     eq = end + 1;
                 } else {
@@ -1020,9 +1098,7 @@ static void get_extra_sources_for_bin(const char* ae_file, char* out, size_t out
 
 // --------------------------------------------------------------------------
 // Build GCC/MinGW command for linking an Aether-compiled C file
-static void build_gcc_cmd(char* cmd, size_t size,
-                          const char* c_file, const char* out_file,
-                          bool optimize, const char* extra_files) {
+static void build_gcc_cmd(char* cmd, size_t size, const char* c_file, const char* out_file, bool optimize, const char* extra_files) {
     const char* link_flags = get_link_flags();
     const char* extra = extra_files ? extra_files : "";
 
@@ -1032,7 +1108,7 @@ static void build_gcc_cmd(char* cmd, size_t size,
 #ifdef _WIN32
     // Ensure GCC is available (auto-downloads WinLibs on first run if needed).
     if (!ensure_gcc_windows()) {
-        snprintf(cmd, size, "exit 1");  // will fail; error already printed
+        snprintf(cmd, size, "exit 1"); // will fail; error already printed
         return;
     }
     // Windows (MinGW): no -pthread (Win32 threads via aether_thread.h), no -lm (CRT).
@@ -1051,27 +1127,23 @@ static void build_gcc_cmd(char* cmd, size_t size,
         char* bs = strrchr(lib_dir, '\\');
         char* fs = strrchr(lib_dir, '/');
         char* slash = (!bs) ? fs : (!fs) ? bs : (bs > fs ? bs : fs);
-        if (slash) *slash = '\0';
-        snprintf(cmd, size,
-            "\"%s\" %s %s \"%s\" %s -L\"%s\" -laether -o \"%s\" -lws2_32 %s",
-            s_gcc_bin, opt, tc.include_flags, c_file, extra, lib_dir, out_file, link_flags);
+        if (slash)
+            *slash = '\0';
+        snprintf(cmd, size, "\"%s\" %s %s \"%s\" %s -L\"%s\" -laether -o \"%s\" -lws2_32 %s", s_gcc_bin, opt, tc.include_flags, c_file, extra, lib_dir, out_file, link_flags);
     } else {
-        snprintf(cmd, size,
-            "\"%s\" %s %s \"%s\" %s %s -o \"%s\" -lws2_32 %s",
-            s_gcc_bin, opt, tc.include_flags, c_file, extra, tc.runtime_srcs, out_file, link_flags);
+        snprintf(cmd, size, "\"%s\" %s %s \"%s\" %s %s -o \"%s\" -lws2_32 %s", s_gcc_bin, opt, tc.include_flags, c_file, extra, tc.runtime_srcs, out_file, link_flags);
     }
 #else
     // POSIX (Linux/macOS): -pthread for POSIX threads, -lm for math
     // Pre-flight check: ensure gcc (or cc) is available
-    if (system("command -v gcc >/dev/null 2>&1") != 0 &&
-        system("command -v cc >/dev/null 2>&1") != 0) {
+    if (system("command -v gcc >/dev/null 2>&1") != 0 && system("command -v cc >/dev/null 2>&1") != 0) {
         fprintf(stderr, "Error: C compiler not found (gcc or cc).\n");
-#ifdef __APPLE__
+#    ifdef __APPLE__
         fprintf(stderr, "Install Xcode Command Line Tools: xcode-select --install\n");
-#else
+#    else
         fprintf(stderr, "Install GCC: sudo apt install gcc  (Debian/Ubuntu)\n");
         fprintf(stderr, "             sudo dnf install gcc  (Fedora)\n");
-#endif
+#    endif
         snprintf(cmd, size, "false");
         return;
     }
@@ -1085,33 +1157,25 @@ static void build_gcc_cmd(char* cmd, size_t size,
         strncpy(lib_dir, tc.lib, sizeof(lib_dir) - 1);
         lib_dir[sizeof(lib_dir) - 1] = '\0';
         char* slash = strrchr(lib_dir, '/');
-        if (slash) *slash = '\0';
+        if (slash)
+            *slash = '\0';
 
-        snprintf(cmd, size,
-            "gcc %s %s \"%s\" %s -L%s -laether -o \"%s\" -pthread -lm %s",
-            opt, tc.include_flags, c_file, extra, lib_dir, out_file, link_flags);
+        snprintf(cmd, size, "gcc %s %s \"%s\" %s -L%s -laether -o \"%s\" -pthread -lm %s", opt, tc.include_flags, c_file, extra, lib_dir, out_file, link_flags);
     } else {
-        snprintf(cmd, size,
-            "gcc %s %s \"%s\" %s %s -o \"%s\" -pthread -lm %s",
-            opt, tc.include_flags, c_file, extra, tc.runtime_srcs, out_file, link_flags);
+        snprintf(cmd, size, "gcc %s %s \"%s\" %s %s -o \"%s\" -pthread -lm %s", opt, tc.include_flags, c_file, extra, tc.runtime_srcs, out_file, link_flags);
     }
 #endif
 }
 
-static int build_wasm_cmd(char* cmd, size_t size,
-                          const char* c_file, const char* out_file) {
+static int build_wasm_cmd(char* cmd, size_t size, const char* c_file, const char* out_file) {
     // Build include paths from toolchain root
     char includes[8192];
     if (tc.include_flags[0]) {
         strncpy(includes, tc.include_flags, sizeof(includes) - 1);
         includes[sizeof(includes) - 1] = '\0';
     } else {
-        static const char* include_dirs[] = {
-            "runtime", "runtime/actors", "runtime/scheduler",
-            "runtime/utils", "runtime/memory", "runtime/config",
-            "std", "std/string", "std/io", "std/math",
-            "std/net", "std/collections", "std/json", NULL
-        };
+        static const char* include_dirs[] = {"runtime",    "runtime/actors", "runtime/scheduler", "runtime/utils", "runtime/memory",  "runtime/config", "std",
+                                             "std/string", "std/io",         "std/math",          "std/net",       "std/collections", "std/json",       NULL};
         includes[0] = '\0';
         for (int i = 0; include_dirs[i]; i++) {
             char flag[2048];
@@ -1121,44 +1185,42 @@ static int build_wasm_cmd(char* cmd, size_t size,
     }
 
     // Runtime source files (cooperative scheduler, not multicore)
-    static const char* wasm_runtime_files[] = {
-        "runtime/scheduler/aether_scheduler_coop.c",
-        "runtime/scheduler/scheduler_optimizations.c",
-        "runtime/config/aether_optimization_config.c",
-        "runtime/memory/memory.c",
-        "runtime/memory/aether_arena.c",
-        "runtime/memory/aether_pool.c",
-        "runtime/memory/aether_memory_stats.c",
-        "runtime/utils/aether_tracing.c",
-        "runtime/utils/aether_bounds_check.c",
-        "runtime/utils/aether_test.c",
-        "runtime/memory/aether_arena_optimized.c",
-        "runtime/aether_runtime_types.c",
-        "runtime/utils/aether_cpu_detect.c",
-        "runtime/memory/aether_batch.c",
-        "runtime/utils/aether_simd_vectorized.c",
-        "runtime/aether_runtime.c",
-        "runtime/aether_numa.c",
-        "runtime/actors/aether_send_buffer.c",
-        "runtime/actors/aether_send_message.c",
-        "runtime/actors/aether_actor_thread.c",
-        "std/string/aether_string.c",
-        "std/math/aether_math.c",
-        "std/net/aether_http.c",
-        "std/net/aether_http_server.c",
-        "std/net/aether_net.c",
-        "std/collections/aether_collections.c",
-        "std/json/aether_json.c",
-        "std/fs/aether_fs.c",
-        "std/log/aether_log.c",
-        "std/io/aether_io.c",
-        "std/os/aether_os.c",
-        "std/collections/aether_hashmap.c",
-        "std/collections/aether_set.c",
-        "std/collections/aether_vector.c",
-        "std/collections/aether_pqueue.c",
-        NULL
-    };
+    static const char* wasm_runtime_files[] = {"runtime/scheduler/aether_scheduler_coop.c",
+                                               "runtime/scheduler/scheduler_optimizations.c",
+                                               "runtime/config/aether_optimization_config.c",
+                                               "runtime/memory/memory.c",
+                                               "runtime/memory/aether_arena.c",
+                                               "runtime/memory/aether_pool.c",
+                                               "runtime/memory/aether_memory_stats.c",
+                                               "runtime/utils/aether_tracing.c",
+                                               "runtime/utils/aether_bounds_check.c",
+                                               "runtime/utils/aether_test.c",
+                                               "runtime/memory/aether_arena_optimized.c",
+                                               "runtime/aether_runtime_types.c",
+                                               "runtime/utils/aether_cpu_detect.c",
+                                               "runtime/memory/aether_batch.c",
+                                               "runtime/utils/aether_simd_vectorized.c",
+                                               "runtime/aether_runtime.c",
+                                               "runtime/aether_numa.c",
+                                               "runtime/actors/aether_send_buffer.c",
+                                               "runtime/actors/aether_send_message.c",
+                                               "runtime/actors/aether_actor_thread.c",
+                                               "std/string/aether_string.c",
+                                               "std/math/aether_math.c",
+                                               "std/net/aether_http.c",
+                                               "std/net/aether_http_server.c",
+                                               "std/net/aether_net.c",
+                                               "std/collections/aether_collections.c",
+                                               "std/json/aether_json.c",
+                                               "std/fs/aether_fs.c",
+                                               "std/log/aether_log.c",
+                                               "std/io/aether_io.c",
+                                               "std/os/aether_os.c",
+                                               "std/collections/aether_hashmap.c",
+                                               "std/collections/aether_set.c",
+                                               "std/collections/aether_vector.c",
+                                               "std/collections/aether_pqueue.c",
+                                               NULL};
     char runtime[8192];
     runtime[0] = '\0';
     for (int i = 0; wasm_runtime_files[i]; i++) {
@@ -1168,11 +1230,11 @@ static int build_wasm_cmd(char* cmd, size_t size,
     }
 
     snprintf(cmd, size,
-        "emcc -O2 -DAETHER_NO_THREADING -DAETHER_NO_FILESYSTEM -DAETHER_NO_NETWORKING "
-        "%s \"%s\" %s -o \"%s\" -lm "
-        "-Wall -Wextra -Wno-unused-parameter -Wno-unused-function "
-        "-Wno-unused-variable -Wno-missing-field-initializers -Wno-unused-label",
-        includes, c_file, runtime, out_file);
+             "emcc -O2 -DAETHER_NO_THREADING -DAETHER_NO_FILESYSTEM -DAETHER_NO_NETWORKING "
+             "%s \"%s\" %s -o \"%s\" -lm "
+             "-Wall -Wextra -Wno-unused-parameter -Wno-unused-function "
+             "-Wno-unused-variable -Wno-missing-field-initializers -Wno-unused-label",
+             includes, c_file, runtime, out_file);
 
     return 1;
 }
@@ -1187,7 +1249,8 @@ static int cmd_run(int argc, char** argv) {
 
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--extra") == 0 && i + 1 < argc) {
-            if (extra_files[0]) strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
+            if (extra_files[0])
+                strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
             strncat(extra_files, argv[++i], sizeof(extra_files) - strlen(extra_files) - 1);
         } else if (argv[i][0] != '-' && !file) {
             file = argv[i];
@@ -1246,18 +1309,22 @@ static int cmd_run(int argc, char** argv) {
         init_cache_dir();
         snprintf(cached_exe, sizeof(cached_exe), "%s/%016llx" EXE_EXT, s_cache_dir, cache_key);
         if (path_exists(cached_exe)) {
-            if (tc.verbose) fprintf(stderr, "[cache] hit: %016llx\n", cache_key);
+            if (tc.verbose)
+                fprintf(stderr, "[cache] hit: %016llx\n", cache_key);
             snprintf(cmd, sizeof(cmd), "%s", cached_exe);
             int rc = run_cmd(cmd);
             if (rc < 0) {
                 fprintf(stderr, "Program crashed (signal %d", -rc);
-                if (-rc == 11) fprintf(stderr, ": segmentation fault");
-                else if (-rc == 6) fprintf(stderr, ": aborted");
+                if (-rc == 11)
+                    fprintf(stderr, ": segmentation fault");
+                else if (-rc == 6)
+                    fprintf(stderr, ": aborted");
                 fprintf(stderr, ")\n");
             }
             return rc;
         }
-        if (tc.verbose) fprintf(stderr, "[cache] miss: %016llx\n", cache_key);
+        if (tc.verbose)
+            fprintf(stderr, "[cache] miss: %016llx\n", cache_key);
         using_cache = true;
     }
 
@@ -1280,7 +1347,8 @@ static int cmd_run(int argc, char** argv) {
     }
 
     // Step 1: Compile .ae to .c
-    if (tc.verbose) printf("Compiling %s...\n", file);
+    if (tc.verbose)
+        printf("Compiling %s...\n", file);
     snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, file, c_file);
 
     int aetherc_ret = tc.verbose ? run_cmd(cmd) : run_cmd_quiet(cmd);
@@ -1297,7 +1365,8 @@ static int cmd_run(int argc, char** argv) {
     char toml_extra[2048] = "";
     get_extra_sources_for_bin(file, toml_extra, sizeof(toml_extra));
     if (toml_extra[0]) {
-        if (extra_files[0]) strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
+        if (extra_files[0])
+            strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
         strncat(extra_files, toml_extra, sizeof(extra_files) - strlen(extra_files) - 1);
     }
     const char* run_extra = extra_files[0] ? extra_files : NULL;
@@ -1322,15 +1391,19 @@ static int cmd_run(int argc, char** argv) {
 
     if (rc < 0) {
         fprintf(stderr, "Program crashed (signal %d", -rc);
-        if (-rc == 11) fprintf(stderr, ": segmentation fault");
-        else if (-rc == 6) fprintf(stderr, ": aborted");
+        if (-rc == 11)
+            fprintf(stderr, ": segmentation fault");
+        else if (-rc == 6)
+            fprintf(stderr, ": aborted");
         fprintf(stderr, ")\n");
         // Remove crashed binary from cache so next run recompiles
-        if (using_cache) remove(exe_file);
+        if (using_cache)
+            remove(exe_file);
     }
 
     // If not cached, remove the temp exe
-    if (!using_cache) remove(exe_file);
+    if (!using_cache)
+        remove(exe_file);
 
     return rc;
 }
@@ -1382,7 +1455,8 @@ static int cmd_build(int argc, char** argv) {
         } else if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
             target = argv[++i];
         } else if (strcmp(argv[i], "--extra") == 0 && i + 1 < argc) {
-            if (extra_files[0]) strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
+            if (extra_files[0])
+                strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
             strncat(extra_files, argv[++i], sizeof(extra_files) - strlen(extra_files) - 1);
         } else if (argv[i][0] != '-') {
             file = argv[i];
@@ -1520,7 +1594,8 @@ static int cmd_build(int argc, char** argv) {
             char toml_extra[2048] = "";
             get_extra_sources_for_bin(file, toml_extra, sizeof(toml_extra));
             if (toml_extra[0]) {
-                if (extra_files[0]) strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
+                if (extra_files[0])
+                    strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
                 strncat(extra_files, toml_extra, sizeof(extra_files) - strlen(extra_files) - 1);
             }
         }
@@ -1548,7 +1623,8 @@ static int cmd_build(int argc, char** argv) {
         char wasm_file[2048];
         strncpy(wasm_file, exe_file, sizeof(wasm_file) - 1);
         char* js_ext = strrchr(wasm_file, '.');
-        if (js_ext) strcpy(js_ext, ".wasm");
+        if (js_ext)
+            strcpy(js_ext, ".wasm");
         printf("       %s\n", wasm_file);
         printf("Run with: node %s\n", exe_file);
     }
@@ -1577,7 +1653,10 @@ static int cmd_init(int argc, char** argv) {
     // aether.toml
     snprintf(path, sizeof(path), "%s/aether.toml", name);
     f = fopen(path, "w");
-    if (!f) { fprintf(stderr, "Error: Could not create %s\n", path); return 1; }
+    if (!f) {
+        fprintf(stderr, "Error: Could not create %s\n", path);
+        return 1;
+    }
     fprintf(f, "[package]\n");
     fprintf(f, "name = \"%s\"\n", name);
     fprintf(f, "version = \"0.1.0\"\n");
@@ -1725,12 +1804,12 @@ static int cmd_test(int argc, char** argv) {
         // GCC conservatively assumes argv paths may be PATH_MAX-sized; cmd[8192]
         // is sufficient for real-world paths (compiler + test + c_file < 8KB).
 #if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-truncation"
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wformat-truncation"
 #endif
         snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\" \"%s\"", tc.compiler, test, c_file);
 #if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic pop
+#    pragma GCC diagnostic pop
 #endif
         if (run_cmd_quiet(cmd) != 0) {
             printf("FAIL (compile)\n");
@@ -1828,7 +1907,10 @@ static int cmd_add(int argc, char** argv) {
         strncpy(parent, pkg_dir, sizeof(parent) - 1);
         parent[sizeof(parent) - 1] = '\0';
         char* slash = strrchr(parent, '/');
-        if (slash) { *slash = '\0'; mkdirs(parent); }
+        if (slash) {
+            *slash = '\0';
+            mkdirs(parent);
+        }
 
         char cmd[4096];
         if (version) {
@@ -1850,8 +1932,7 @@ static int cmd_add(int argc, char** argv) {
             } else {
                 snprintf(tag, sizeof(tag), "v%s", version);
             }
-            snprintf(cmd, sizeof(cmd), "cd \"%s\" && git checkout %s 2>/dev/null || git checkout v%s 2>/dev/null",
-                     pkg_dir, tag, version);
+            snprintf(cmd, sizeof(cmd), "cd \"%s\" && git checkout %s 2>/dev/null || git checkout v%s 2>/dev/null", pkg_dir, tag, version);
             if (run_cmd_quiet(cmd) != 0) {
                 fprintf(stderr, "Error: Version '%s' not found.\n", version);
                 // List available tags
@@ -1979,20 +2060,21 @@ static int cmd_examples(int argc, char** argv) {
 
         // Skip module files (lib/) and project mains (packages/) —
         // these need `ae run` with module orchestration, not bare aetherc.
-        if (strstr(src, "/lib/") || strstr(src, "\\lib\\") ||
-            strstr(src, "/packages/") || strstr(src, "\\packages\\")) {
+        if (strstr(src, "/lib/") || strstr(src, "\\lib\\") || strstr(src, "/packages/") || strstr(src, "\\packages\\")) {
             skipped++;
             continue;
         }
 
         const char* slash = strrchr(src, '/');
-        if (!slash) slash = strrchr(src, '\\');
+        if (!slash)
+            slash = strrchr(src, '\\');
         const char* name = slash ? slash + 1 : src;
         char base[256];
         strncpy(base, name, sizeof(base) - 1);
         base[sizeof(base) - 1] = '\0';
         char* dot = strrchr(base, '.');
-        if (dot) *dot = '\0';
+        if (dot)
+            *dot = '\0';
 
         printf("  %-30s ", base);
         fflush(stdout);
@@ -2006,9 +2088,12 @@ static int cmd_examples(int argc, char** argv) {
         strncpy(src_dir, src, sizeof(src_dir) - 1);
         src_dir[sizeof(src_dir) - 1] = '\0';
         char* last_sep = strrchr(src_dir, '/');
-        if (!last_sep) last_sep = strrchr(src_dir, '\\');
-        if (last_sep) *last_sep = '\0';
-        else strcpy(src_dir, ".");
+        if (!last_sep)
+            last_sep = strrchr(src_dir, '\\');
+        if (last_sep)
+            *last_sep = '\0';
+        else
+            strcpy(src_dir, ".");
 
         char extra_c[2048] = "";
         char find_c[1024];
@@ -2022,7 +2107,8 @@ static int cmd_examples(int argc, char** argv) {
             char c_line[512];
             while (fgets(c_line, sizeof(c_line), c_pipe)) {
                 c_line[strcspn(c_line, "\n\r")] = '\0';
-                if (strlen(c_line) == 0) continue;
+                if (strlen(c_line) == 0)
+                    continue;
                 char c_path[512];
 #ifdef _WIN32
                 snprintf(c_path, sizeof(c_path), "%s\\%s", src_dir, c_line);
@@ -2041,12 +2127,12 @@ static int cmd_examples(int argc, char** argv) {
         // GCC conservatively assumes src (char* from glob) may be PATH_MAX-sized;
         // cmd[8192] is sufficient for real-world paths.
 #if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-truncation"
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wformat-truncation"
 #endif
         snprintf(cmd, sizeof(cmd), "%s %s %s", tc.compiler, src, c_file);
 #if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic pop
+#    pragma GCC diagnostic pop
 #endif
         if (run_cmd_quiet(cmd) != 0) {
             printf("FAIL (compile)\n");
@@ -2078,14 +2164,13 @@ static int cmd_examples(int argc, char** argv) {
 // Each entry is a statement (assignment, function def, etc.) that gets
 // replayed before the current input so variables/functions stay in scope.
 #define REPL_MAX_LINES 256
-#define REPL_LINE_LEN  1024
+#define REPL_LINE_LEN 1024
 
 // Compile and run the REPL input. Returns 1 on success, 0 on failure.
-static int repl_eval(const char* ae_file, const char* c_file,
-                     const char* exe_file, char** history,
-                     int history_count, const char* input) {
+static int repl_eval(const char* ae_file, const char* c_file, const char* exe_file, char** history, int history_count, const char* input) {
     FILE* f = fopen(ae_file, "w");
-    if (!f) return 0;
+    if (!f)
+        return 0;
     fprintf(f, "main() {\n");
     for (int i = 0; i < history_count; i++)
         fprintf(f, "    %s\n", history[i]);
@@ -2095,7 +2180,8 @@ static int repl_eval(const char* ae_file, const char* c_file,
         fprintf(f, "    %.*s\n", (int)(nl - rest), rest);
         rest = nl + 1;
     }
-    if (*rest) fprintf(f, "    %s\n", rest);
+    if (*rest)
+        fprintf(f, "    %s\n", rest);
     fprintf(f, "}\n");
     fclose(f);
 
@@ -2125,21 +2211,22 @@ static int repl_eval(const char* ae_file, const char* c_file,
 // previous assignments to the same variable name.
 static void repl_persist(char** history, int* history_count, const char* input) {
     char* eq = strchr(input, '=');
-    int has_assign = (eq && (eq == input ||
-        (eq[-1] != '=' && eq[-1] != '!' && eq[-1] != '<' && eq[-1] != '>'))
-        && eq[1] != '=');
+    int has_assign = (eq && (eq == input || (eq[-1] != '=' && eq[-1] != '!' && eq[-1] != '<' && eq[-1] != '>')) && eq[1] != '=');
     int has_const = (strncmp(input, "const ", 6) == 0);
-    if (!has_assign && !has_const) return;
+    if (!has_assign && !has_const)
+        return;
 
     int replaced = 0;
     if (has_assign && eq) {
         int name_len = (int)(eq - input);
-        while (name_len > 0 && input[name_len - 1] == ' ') name_len--;
+        while (name_len > 0 && input[name_len - 1] == ' ')
+            name_len--;
         for (int i = 0; i < *history_count; i++) {
             char* heq = strchr(history[i], '=');
             if (heq) {
                 int hlen = (int)(heq - history[i]);
-                while (hlen > 0 && history[i][hlen - 1] == ' ') hlen--;
+                while (hlen > 0 && history[i][hlen - 1] == ' ')
+                    hlen--;
                 if (hlen == name_len && strncmp(input, history[i], name_len) == 0) {
                     free(history[i]);
                     history[i] = strdup(input);
@@ -2158,8 +2245,10 @@ static void repl_persist(char** history, int* history_count, const char* input) 
 static int repl_is_complete_line(const char* line) {
     int depth = 0;
     for (const char* p = line; *p; p++) {
-        if (*p == '{') depth++;
-        else if (*p == '}') depth--;
+        if (*p == '{')
+            depth++;
+        else if (*p == '}')
+            depth--;
     }
     return depth == 0;
 }
@@ -2168,16 +2257,27 @@ static int cmd_repl(void) {
     printf("\n");
     // Dynamic box: "   Aether X.Y.Z REPL   "
     int ver_len = (int)strlen(AE_VERSION);
-    int title_len = 15 + ver_len;  // "   Aether " (10) + ver + " REPL" (5)
-    int help_len  = 21;            // "   :help for commands"
-    int inner = title_len + 3;     // 3 chars right padding
-    if (inner < help_len + 3) inner = help_len + 3;
-    printf("  ┌"); for (int i = 0; i < inner; i++) printf("─"); printf("┐\n");
+    int title_len = 15 + ver_len; // "   Aether " (10) + ver + " REPL" (5)
+    int help_len = 21;            // "   :help for commands"
+    int inner = title_len + 3;    // 3 chars right padding
+    if (inner < help_len + 3)
+        inner = help_len + 3;
+    printf("  ┌");
+    for (int i = 0; i < inner; i++)
+        printf("─");
+    printf("┐\n");
     printf("  │   Aether %s REPL", AE_VERSION);
-    for (int i = title_len; i < inner; i++) printf(" "); printf("│\n");
+    for (int i = title_len; i < inner; i++)
+        printf(" ");
+    printf("│\n");
     printf("  │   :help for commands");
-    for (int i = help_len; i < inner; i++) printf(" "); printf("│\n");
-    printf("  └"); for (int i = 0; i < inner; i++) printf("─"); printf("┘\n");
+    for (int i = help_len; i < inner; i++)
+        printf(" ");
+    printf("│\n");
+    printf("  └");
+    for (int i = 0; i < inner; i++)
+        printf("─");
+    printf("┘\n");
     printf("\n");
 
     char* history[REPL_MAX_LINES];
@@ -2187,8 +2287,8 @@ static int cmd_repl(void) {
     int brace_depth = 0;
 
     char ae_file[1024], c_file[1024], exe_file[1024];
-    snprintf(ae_file,  sizeof(ae_file),  "%s/_aether_repl_%d.ae",  get_temp_dir(), (int)getpid());
-    snprintf(c_file,   sizeof(c_file),   "%s/_aether_repl_%d.c",   get_temp_dir(), (int)getpid());
+    snprintf(ae_file, sizeof(ae_file), "%s/_aether_repl_%d.ae", get_temp_dir(), (int)getpid());
+    snprintf(c_file, sizeof(c_file), "%s/_aether_repl_%d.c", get_temp_dir(), (int)getpid());
     snprintf(exe_file, sizeof(exe_file), "%s/_aether_repl_%d" EXE_EXT, get_temp_dir(), (int)getpid());
 
     while (1) {
@@ -2199,13 +2299,14 @@ static int cmd_repl(void) {
         else
             printf("  ae> ");
         fflush(stdout);
-        if (!fgets(line, sizeof(line), stdin)) break;
+        if (!fgets(line, sizeof(line), stdin))
+            break;
         line[strcspn(line, "\r\n")] = '\0';
 
         // Commands (only at top level, not mid-block)
         if (brace_depth == 0 && !input[0]) {
-            if (strcmp(line, ":quit") == 0 || strcmp(line, ":q") == 0 ||
-                strcmp(line, "exit") == 0  || strcmp(line, "quit") == 0) break;
+            if (strcmp(line, ":quit") == 0 || strcmp(line, ":q") == 0 || strcmp(line, "exit") == 0 || strcmp(line, "quit") == 0)
+                break;
             if (strcmp(line, ":help") == 0 || strcmp(line, ":h") == 0) {
                 printf("\n");
                 printf("  Commands:\n");
@@ -2233,13 +2334,17 @@ static int cmd_repl(void) {
                 continue;
             }
             if (strcmp(line, ":reset") == 0 || strcmp(line, ":r") == 0) {
-                for (int i = 0; i < history_count; i++) free(history[i]);
+                for (int i = 0; i < history_count; i++)
+                    free(history[i]);
                 history_count = 0;
                 printf("  Session reset.\n");
                 continue;
             }
             if (strcmp(line, ":show") == 0 || strcmp(line, ":s") == 0) {
-                if (history_count == 0) { printf("  (empty session)\n"); continue; }
+                if (history_count == 0) {
+                    printf("  (empty session)\n");
+                    continue;
+                }
                 printf("\n");
                 for (int i = 0; i < history_count; i++)
                     printf("    %s\n", history[i]);
@@ -2251,15 +2356,18 @@ static int cmd_repl(void) {
         // Track brace depth
         int prev_depth = brace_depth;
         for (char* p = line; *p; p++) {
-            if (*p == '{') brace_depth++;
-            else if (*p == '}' && brace_depth > 0) brace_depth--;
+            if (*p == '{')
+                brace_depth++;
+            else if (*p == '}' && brace_depth > 0)
+                brace_depth--;
         }
         int is_empty = (strlen(line) == 0);
         int block_closed = (prev_depth > 0 && brace_depth == 0);
 
         // Accumulate non-empty lines
         if (!is_empty) {
-            if (input[0]) strncat(input, "\n", sizeof(input) - strlen(input) - 1);
+            if (input[0])
+                strncat(input, "\n", sizeof(input) - strlen(input) - 1);
             strncat(input, line, sizeof(input) - strlen(input) - 1);
         }
 
@@ -2272,13 +2380,11 @@ static int cmd_repl(void) {
             should_run = 1;
         else if (is_empty && input[0])
             should_run = 1;
-        else if (!is_empty && brace_depth == 0 && prev_depth == 0 &&
-                 !strchr(input, '\n') && repl_is_complete_line(input))
+        else if (!is_empty && brace_depth == 0 && prev_depth == 0 && !strchr(input, '\n') && repl_is_complete_line(input))
             should_run = 1;
 
         if (should_run) {
-            if (repl_eval(ae_file, c_file, exe_file, history,
-                          history_count, input)) {
+            if (repl_eval(ae_file, c_file, exe_file, history, history_count, input)) {
                 repl_persist(history, &history_count, input);
             }
             input[0] = '\0';
@@ -2286,7 +2392,8 @@ static int cmd_repl(void) {
         }
     }
 
-    for (int i = 0; i < history_count; i++) free(history[i]);
+    for (int i = 0; i < history_count; i++)
+        free(history[i]);
     remove(ae_file);
     remove(c_file);
     remove(exe_file);
@@ -2300,24 +2407,24 @@ static int cmd_repl(void) {
 
 // Compile-time platform string used to pick the right release archive.
 #if defined(_WIN32)
-#  if defined(__aarch64__) || defined(_M_ARM64)
-#    define AE_PLATFORM "windows-arm64"
-#  else
-#    define AE_PLATFORM "windows-x86_64"
-#  endif
-#  define AE_ARCHIVE_EXT ".zip"
+#    if defined(__aarch64__) || defined(_M_ARM64)
+#        define AE_PLATFORM "windows-arm64"
+#    else
+#        define AE_PLATFORM "windows-x86_64"
+#    endif
+#    define AE_ARCHIVE_EXT ".zip"
 #elif defined(__APPLE__) && (defined(__arm64__) || defined(__aarch64__))
-#  define AE_PLATFORM "macos-arm64"
-#  define AE_ARCHIVE_EXT ".tar.gz"
+#    define AE_PLATFORM "macos-arm64"
+#    define AE_ARCHIVE_EXT ".tar.gz"
 #elif defined(__APPLE__)
-#  define AE_PLATFORM "macos-x86_64"
-#  define AE_ARCHIVE_EXT ".tar.gz"
+#    define AE_PLATFORM "macos-x86_64"
+#    define AE_ARCHIVE_EXT ".tar.gz"
 #elif defined(__linux__) && (defined(__aarch64__) || defined(__arm64__))
-#  define AE_PLATFORM "linux-arm64"
-#  define AE_ARCHIVE_EXT ".tar.gz"
+#    define AE_PLATFORM "linux-arm64"
+#    define AE_ARCHIVE_EXT ".tar.gz"
 #else
-#  define AE_PLATFORM "linux-x86_64"
-#  define AE_ARCHIVE_EXT ".tar.gz"
+#    define AE_PLATFORM "linux-x86_64"
+#    define AE_ARCHIVE_EXT ".tar.gz"
 #endif
 
 #define AE_GITHUB_REPO "nicolasmd87/aether"
@@ -2331,8 +2438,12 @@ static int ae_download(const char* url, const char* dest) {
         strncpy(parent, dest, sizeof(parent) - 1);
         parent[sizeof(parent) - 1] = '\0';
         char* slash = strrchr(parent, '/');
-        if (!slash) slash = strrchr(parent, '\\');
-        if (slash) { *slash = '\0'; mkdirs(parent); }
+        if (!slash)
+            slash = strrchr(parent, '\\');
+        if (slash) {
+            *slash = '\0';
+            mkdirs(parent);
+        }
     }
 #ifdef _WIN32
     char tmp[64];
@@ -2340,16 +2451,16 @@ static int ae_download(const char* url, const char* dest) {
     char ps_path[1024];
     snprintf(ps_path, sizeof(ps_path), "%s\\%s", get_temp_dir(), tmp);
     FILE* ps = fopen(ps_path, "w");
-    if (!ps) return 1;
+    if (!ps)
+        return 1;
     fprintf(ps,
-        "$ProgressPreference='SilentlyContinue'\n"
-        "Invoke-WebRequest -Uri '%s' -OutFile '%s' "
-        "-Headers @{'User-Agent'='ae-cli'}\n",
-        url, dest);
+            "$ProgressPreference='SilentlyContinue'\n"
+            "Invoke-WebRequest -Uri '%s' -OutFile '%s' "
+            "-Headers @{'User-Agent'='ae-cli'}\n",
+            url, dest);
     fclose(ps);
     char cmd[2048];
-    snprintf(cmd, sizeof(cmd),
-        "powershell -NoProfile -ExecutionPolicy Bypass -File \"%s\" >nul 2>&1", ps_path);
+    snprintf(cmd, sizeof(cmd), "powershell -NoProfile -ExecutionPolicy Bypass -File \"%s\" >nul 2>&1", ps_path);
     int r = system(cmd);
     remove(ps_path);
     return r;
@@ -2371,15 +2482,15 @@ static int ae_extract(const char* archive, const char* dest_dir) {
     char ps_path[1024];
     snprintf(ps_path, sizeof(ps_path), "%s\\%s", get_temp_dir(), tmp);
     FILE* ps = fopen(ps_path, "w");
-    if (!ps) return 1;
+    if (!ps)
+        return 1;
     fprintf(ps,
-        "$ProgressPreference='SilentlyContinue'\n"
-        "Expand-Archive -Path '%s' -DestinationPath '%s' -Force\n",
-        archive, dest_dir);
+            "$ProgressPreference='SilentlyContinue'\n"
+            "Expand-Archive -Path '%s' -DestinationPath '%s' -Force\n",
+            archive, dest_dir);
     fclose(ps);
     char cmd[2048];
-    snprintf(cmd, sizeof(cmd),
-        "powershell -NoProfile -ExecutionPolicy Bypass -File \"%s\" >nul 2>&1", ps_path);
+    snprintf(cmd, sizeof(cmd), "powershell -NoProfile -ExecutionPolicy Bypass -File \"%s\" >nul 2>&1", ps_path);
     int r = system(cmd);
     remove(ps_path);
     return r;
@@ -2410,9 +2521,13 @@ static int cmd_version_list(void) {
             target[rlen] = '\0';
             // Extract version tag from path: last component is e.g. "v0.21.0"
             const char* last = strrchr(target, '/');
-            if (last) last++; else last = target;
+            if (last)
+                last++;
+            else
+                last = target;
             // Strip 'v' prefix for comparison
-            if (last[0] == 'v') last++;
+            if (last[0] == 'v')
+                last++;
             strncpy(active_ver, last, sizeof(active_ver) - 1);
             active_ver[sizeof(active_ver) - 1] = '\0';
         }
@@ -2430,8 +2545,12 @@ static int cmd_version_list(void) {
         FILE* avf = fopen(avpath, "r");
         if (avf) {
             if (fgets(active_ver, sizeof(active_ver), avf)) {
-                char* nl = strchr(active_ver, '\n'); if (nl) *nl = '\0';
-                char* cr = strchr(active_ver, '\r'); if (cr) *cr = '\0';
+                char* nl = strchr(active_ver, '\n');
+                if (nl)
+                    *nl = '\0';
+                char* cr = strchr(active_ver, '\r');
+                if (cr)
+                    *cr = '\0';
             }
             fclose(avf);
         }
@@ -2451,8 +2570,7 @@ static int cmd_version_list(void) {
     snprintf(json_path, sizeof(json_path), "%s/ae_releases_%d.json", get_temp_dir(), (int)getpid());
 #endif
     char url[256];
-    snprintf(url, sizeof(url),
-        "https://api.github.com/repos/" AE_GITHUB_REPO "/releases?per_page=20");
+    snprintf(url, sizeof(url), "https://api.github.com/repos/" AE_GITHUB_REPO "/releases?per_page=20");
 
     printf("Fetching release list...\n");
     if (ae_download(url, json_path) != 0) {
@@ -2480,11 +2598,19 @@ static int cmd_version_list(void) {
     int found = 0;
     char* p = buf;
     while ((p = strstr(p, "\"tag_name\"")) != NULL) {
-        p += 10;  // skip past "tag_name"
-        char* q = strchr(p, '"'); if (!q) break; q++;   // opening "
-        char* end = strchr(q, '"'); if (!end) break;
+        p += 10; // skip past "tag_name"
+        char* q = strchr(p, '"');
+        if (!q)
+            break;
+        q++; // opening "
+        char* end = strchr(q, '"');
+        if (!end)
+            break;
         size_t len = (size_t)(end - q);
-        if (len == 0 || len > 32) { p = end + 1; continue; }
+        if (len == 0 || len > 32) {
+            p = end + 1;
+            continue;
+        }
 
         char tag[33];
         memcpy(tag, q, len);
@@ -2500,9 +2626,7 @@ static int cmd_version_list(void) {
         snprintf(ver_dir, sizeof(ver_dir), "%s/.aether/versions/%s", home, tag);
         bool installed = dir_exists(ver_dir);
 
-        const char* status = is_current ? "* current"
-                           : installed  ? "  installed"
-                                        : "";
+        const char* status = is_current ? "* current" : installed ? "  installed" : "";
         printf("  %-16s  %s\n", tag, status);
         found++;
     }
@@ -2519,11 +2643,18 @@ static int cmd_version_list(void) {
         char* lp = strstr(buf, "\"tag_name\"");
         if (lp) {
             lp += 10;
-            char* lq = strchr(lp, '"'); if (lq) { lq++;
-            char* le = strchr(lq, '"'); if (le) {
-                size_t ll = (size_t)(le - lq);
-                if (ll > 0 && ll < sizeof(latest)) { memcpy(latest, lq, ll); latest[ll] = '\0'; }
-            }}
+            char* lq = strchr(lp, '"');
+            if (lq) {
+                lq++;
+                char* le = strchr(lq, '"');
+                if (le) {
+                    size_t ll = (size_t)(le - lq);
+                    if (ll > 0 && ll < sizeof(latest)) {
+                        memcpy(latest, lq, ll);
+                        latest[ll] = '\0';
+                    }
+                }
+            }
         }
         printf("Install a version:  ae version install %s\n", latest);
         printf("Switch versions:    ae version use %s\n", latest);
@@ -2537,10 +2668,14 @@ static int cmd_version_list(void) {
 // Download and install a specific version into ~/.aether/versions/<tag>/
 static int cmd_version_install(const char* version) {
     char vtag[64];
-    if (version[0] != 'v') snprintf(vtag, sizeof(vtag), "v%s", version);
-    else { strncpy(vtag, version, sizeof(vtag) - 1); vtag[sizeof(vtag)-1] = '\0'; }
+    if (version[0] != 'v')
+        snprintf(vtag, sizeof(vtag), "v%s", version);
+    else {
+        strncpy(vtag, version, sizeof(vtag) - 1);
+        vtag[sizeof(vtag) - 1] = '\0';
+    }
 
-    const char* ver = vtag + 1;  // strip leading 'v'
+    const char* ver = vtag + 1; // strip leading 'v'
     const char* home = get_home_dir();
 
     char ver_dir[512];
@@ -2551,14 +2686,18 @@ static int cmd_version_install(const char* version) {
         int has_binary = 0;
 #ifdef _WIN32
         snprintf(probe, sizeof(probe), "%s\\bin\\aetherc.exe", ver_dir);
-        if (path_exists(probe)) has_binary = 1;
+        if (path_exists(probe))
+            has_binary = 1;
         snprintf(probe, sizeof(probe), "%s\\aetherc.exe", ver_dir);
-        if (path_exists(probe)) has_binary = 1;
+        if (path_exists(probe))
+            has_binary = 1;
 #else
         snprintf(probe, sizeof(probe), "%s/bin/aetherc", ver_dir);
-        if (path_exists(probe)) has_binary = 1;
+        if (path_exists(probe))
+            has_binary = 1;
         snprintf(probe, sizeof(probe), "%s/aetherc", ver_dir);
-        if (path_exists(probe)) has_binary = 1;
+        if (path_exists(probe))
+            has_binary = 1;
 #endif
         if (has_binary) {
             // Also verify the install has sources or a prebuilt lib —
@@ -2566,9 +2705,11 @@ static int cmd_version_install(const char* version) {
             char lib_probe[1024], share_probe[1024];
             int has_sources = 0;
             snprintf(lib_probe, sizeof(lib_probe), "%s/lib/libaether.a", ver_dir);
-            if (path_exists(lib_probe)) has_sources = 1;
+            if (path_exists(lib_probe))
+                has_sources = 1;
             snprintf(share_probe, sizeof(share_probe), "%s/share/aether/runtime", ver_dir);
-            if (dir_exists(share_probe)) has_sources = 1;
+            if (dir_exists(share_probe))
+                has_sources = 1;
             if (has_sources) {
                 printf("Version %s is already installed.\n", vtag);
                 printf("Switch to it with: ae version use %s\n", vtag);
@@ -2596,11 +2737,8 @@ static int cmd_version_install(const char* version) {
 
     // Build URL and local archive path
     char filename[256], url[1024], archive[512];
-    snprintf(filename, sizeof(filename),
-        "aether-%s-" AE_PLATFORM AE_ARCHIVE_EXT, ver);
-    snprintf(url, sizeof(url),
-        "https://github.com/" AE_GITHUB_REPO "/releases/download/%s/%s",
-        vtag, filename);
+    snprintf(filename, sizeof(filename), "aether-%s-" AE_PLATFORM AE_ARCHIVE_EXT, ver);
+    snprintf(url, sizeof(url), "https://github.com/" AE_GITHUB_REPO "/releases/download/%s/%s", vtag, filename);
     snprintf(archive, sizeof(archive), "%s/.aether/%s", home, filename);
 
     printf("Downloading Aether %s for " AE_PLATFORM "...\n", vtag);
@@ -2637,7 +2775,8 @@ static int cmd_version_install(const char* version) {
         return 1;
     }
     snprintf(cmd, sizeof(cmd), "rmdir /S /Q \"%s\"", tmp_dir);
-    if (system(cmd) != 0) { /* non-fatal: temp dir cleanup */ }
+    if (system(cmd) != 0) { /* non-fatal: temp dir cleanup */
+    }
 #else
     {
         char cmd[4096];
@@ -2645,20 +2784,21 @@ static int cmd_version_install(const char* version) {
         // treat it as a wrapper and copy its contents. Otherwise copy
         // everything directly (the archive has bin/, lib/, etc. at root).
         snprintf(cmd, sizeof(cmd),
-            "entries=$(ls '%s' | wc -l | tr -d ' '); "
-            "single=$(ls -d '%s'/*/ 2>/dev/null | wc -l | tr -d ' '); "
-            "if [ \"$entries\" = \"1\" ] && [ \"$single\" = \"1\" ]; then "
-            "  src=$(ls -d '%s'/*/); cp -r \"$src\"* '%s/'; "
-            "else "
-            "  cp -r '%s'/* '%s/'; "
-            "fi",
-            tmp_dir, tmp_dir, tmp_dir, ver_dir, tmp_dir, ver_dir);
+                 "entries=$(ls '%s' | wc -l | tr -d ' '); "
+                 "single=$(ls -d '%s'/*/ 2>/dev/null | wc -l | tr -d ' '); "
+                 "if [ \"$entries\" = \"1\" ] && [ \"$single\" = \"1\" ]; then "
+                 "  src=$(ls -d '%s'/*/); cp -r \"$src\"* '%s/'; "
+                 "else "
+                 "  cp -r '%s'/* '%s/'; "
+                 "fi",
+                 tmp_dir, tmp_dir, tmp_dir, ver_dir, tmp_dir, ver_dir);
         if (system(cmd) != 0) {
             fprintf(stderr, "Error: Failed to copy installation files.\n");
             return 1;
         }
         snprintf(cmd, sizeof(cmd), "rm -rf '%s'", tmp_dir);
-        if (system(cmd) != 0) { /* non-fatal: temp dir cleanup */ }
+        if (system(cmd) != 0) { /* non-fatal: temp dir cleanup */
+        }
     }
 #endif
 
@@ -2669,11 +2809,14 @@ static int cmd_version_install(const char* version) {
         char probe[1024];
         int has_structure = 0;
         snprintf(probe, sizeof(probe), "%s/bin", ver_dir);
-        if (dir_exists(probe)) has_structure = 1;
+        if (dir_exists(probe))
+            has_structure = 1;
         snprintf(probe, sizeof(probe), "%s/lib", ver_dir);
-        if (dir_exists(probe)) has_structure = 1;
+        if (dir_exists(probe))
+            has_structure = 1;
         snprintf(probe, sizeof(probe), "%s/share/aether", ver_dir);
-        if (dir_exists(probe)) has_structure = 1;
+        if (dir_exists(probe))
+            has_structure = 1;
         if (!has_structure) {
             fprintf(stderr, "Warning: Installation may be incomplete — no bin/, lib/, or share/ found in %s\n", ver_dir);
             fprintf(stderr, "Try: ae version install %s --force  or  ./install.sh\n", vtag);
@@ -2691,23 +2834,39 @@ static void resolve_version_bin_dir(const char* ver_dir, char* out, size_t outsz
     char probe[1024];
 #ifdef _WIN32
     snprintf(probe, sizeof(probe), "%s\\bin\\aetherc" EXE_EXT, ver_dir);
-    if (path_exists(probe)) { snprintf(out, outsz, "%s\\bin", ver_dir); return; }
+    if (path_exists(probe)) {
+        snprintf(out, outsz, "%s\\bin", ver_dir);
+        return;
+    }
     snprintf(probe, sizeof(probe), "%s\\bin\\ae" EXE_EXT, ver_dir);
-    if (path_exists(probe)) { snprintf(out, outsz, "%s\\bin", ver_dir); return; }
+    if (path_exists(probe)) {
+        snprintf(out, outsz, "%s\\bin", ver_dir);
+        return;
+    }
     snprintf(out, outsz, "%s", ver_dir);
 #else
     snprintf(probe, sizeof(probe), "%s/bin/aetherc" EXE_EXT, ver_dir);
-    if (path_exists(probe)) { snprintf(out, outsz, "%s/bin", ver_dir); return; }
+    if (path_exists(probe)) {
+        snprintf(out, outsz, "%s/bin", ver_dir);
+        return;
+    }
     snprintf(probe, sizeof(probe), "%s/bin/ae" EXE_EXT, ver_dir);
-    if (path_exists(probe)) { snprintf(out, outsz, "%s/bin", ver_dir); return; }
+    if (path_exists(probe)) {
+        snprintf(out, outsz, "%s/bin", ver_dir);
+        return;
+    }
     snprintf(out, outsz, "%s", ver_dir);
 #endif
 }
 
 static int cmd_version_use(const char* version) {
     char vtag[64];
-    if (version[0] != 'v') snprintf(vtag, sizeof(vtag), "v%s", version);
-    else { strncpy(vtag, version, sizeof(vtag) - 1); vtag[sizeof(vtag)-1] = '\0'; }
+    if (version[0] != 'v')
+        snprintf(vtag, sizeof(vtag), "v%s", version);
+    else {
+        strncpy(vtag, version, sizeof(vtag) - 1);
+        vtag[sizeof(vtag) - 1] = '\0';
+    }
 
     const char* home = get_home_dir();
     char ver_dir[512];
@@ -2734,13 +2893,18 @@ static int cmd_version_use(const char* version) {
             char cur_ver[64] = "";
             if (fgets(cur_ver, sizeof(cur_ver), avf_bak)) {
                 char* nl = strchr(cur_ver, '\n');
-                if (nl) *nl = '\0';
+                if (nl)
+                    *nl = '\0';
             }
             fclose(avf_bak);
             if (cur_ver[0]) {
                 char cur_vtag[64];
-                if (cur_ver[0] != 'v') snprintf(cur_vtag, sizeof(cur_vtag), "v%s", cur_ver);
-                else { strncpy(cur_vtag, cur_ver, sizeof(cur_vtag) - 1); cur_vtag[sizeof(cur_vtag)-1] = '\0'; }
+                if (cur_ver[0] != 'v')
+                    snprintf(cur_vtag, sizeof(cur_vtag), "v%s", cur_ver);
+                else {
+                    strncpy(cur_vtag, cur_ver, sizeof(cur_vtag) - 1);
+                    cur_vtag[sizeof(cur_vtag) - 1] = '\0';
+                }
                 char cur_ver_dir[512];
                 snprintf(cur_ver_dir, sizeof(cur_ver_dir), "%s\\.aether\\versions\\%s", home, cur_vtag);
                 if (!dir_exists(cur_ver_dir)) {
@@ -2749,9 +2913,7 @@ static int cmd_version_use(const char* version) {
                     char dest_root_bak[512];
                     snprintf(dest_root_bak, sizeof(dest_root_bak), "%s\\.aether", home);
                     mkdirs(cur_ver_dir);
-                    snprintf(bak_cmd, sizeof(bak_cmd),
-                        "robocopy \"%s\" \"%s\" /E /NFL /NDL /NJH /NJS /IS /IT /XD versions cache >nul 2>&1",
-                        dest_root_bak, cur_ver_dir);
+                    snprintf(bak_cmd, sizeof(bak_cmd), "robocopy \"%s\" \"%s\" /E /NFL /NDL /NJH /NJS /IS /IT /XD versions cache >nul 2>&1", dest_root_bak, cur_ver_dir);
                     (void)system(bak_cmd);
                 }
             }
@@ -2764,15 +2926,12 @@ static int cmd_version_use(const char* version) {
     snprintf(dest_root, sizeof(dest_root), "%s\\.aether", home);
     char cmd[2048];
     // robocopy /E copies all subdirectories; /NFL /NDL /NJH /NJS suppress output
-    snprintf(cmd, sizeof(cmd),
-        "robocopy \"%s\" \"%s\" /E /NFL /NDL /NJH /NJS /IS /IT >nul 2>&1",
-        ver_dir, dest_root);
+    snprintf(cmd, sizeof(cmd), "robocopy \"%s\" \"%s\" /E /NFL /NDL /NJH /NJS /IS /IT >nul 2>&1", ver_dir, dest_root);
     int rc = system(cmd);
     // robocopy returns 0-7 for success, >=8 for failure
     if (rc >= 8) {
         // Fall back to xcopy
-        snprintf(cmd, sizeof(cmd),
-            "xcopy /E /Y /Q \"%s\\*\" \"%s\\\"", ver_dir, dest_root);
+        snprintf(cmd, sizeof(cmd), "xcopy /E /Y /Q \"%s\\*\" \"%s\\\"", ver_dir, dest_root);
         if (system(cmd) != 0) {
             fprintf(stderr, "Failed to copy version files from %s to %s\n", ver_dir, dest_root);
             return 1;
@@ -2787,13 +2946,19 @@ static int cmd_version_use(const char* version) {
         if (avf_bak) {
             char cur_ver[64] = "";
             if (fgets(cur_ver, sizeof(cur_ver), avf_bak)) {
-                char* nl = strchr(cur_ver, '\n'); if (nl) *nl = '\0';
+                char* nl = strchr(cur_ver, '\n');
+                if (nl)
+                    *nl = '\0';
             }
             fclose(avf_bak);
             if (cur_ver[0]) {
                 char cur_vtag[64];
-                if (cur_ver[0] != 'v') snprintf(cur_vtag, sizeof(cur_vtag), "v%s", cur_ver);
-                else { strncpy(cur_vtag, cur_ver, sizeof(cur_vtag) - 1); cur_vtag[sizeof(cur_vtag)-1] = '\0'; }
+                if (cur_ver[0] != 'v')
+                    snprintf(cur_vtag, sizeof(cur_vtag), "v%s", cur_ver);
+                else {
+                    strncpy(cur_vtag, cur_ver, sizeof(cur_vtag) - 1);
+                    cur_vtag[sizeof(cur_vtag) - 1] = '\0';
+                }
                 char cur_ver_dir[512];
                 snprintf(cur_ver_dir, sizeof(cur_ver_dir), "%s/.aether/versions/%s", home, cur_vtag);
                 if (!dir_exists(cur_ver_dir)) {
@@ -2801,12 +2966,11 @@ static int cmd_version_use(const char* version) {
                     mkdirs(cur_ver_dir);
                     // Copy bin/, lib/, include/, share/ but NOT versions/ or cache/
                     snprintf(bak_cmd, sizeof(bak_cmd),
-                        "cp -r \"%s/.aether/bin\" \"%s/\" 2>/dev/null; "
-                        "cp -r \"%s/.aether/lib\" \"%s/\" 2>/dev/null; "
-                        "cp -r \"%s/.aether/include\" \"%s/\" 2>/dev/null; "
-                        "cp -r \"%s/.aether/share\" \"%s/\" 2>/dev/null; true",
-                        home, cur_ver_dir, home, cur_ver_dir,
-                        home, cur_ver_dir, home, cur_ver_dir);
+                             "cp -r \"%s/.aether/bin\" \"%s/\" 2>/dev/null; "
+                             "cp -r \"%s/.aether/lib\" \"%s/\" 2>/dev/null; "
+                             "cp -r \"%s/.aether/include\" \"%s/\" 2>/dev/null; "
+                             "cp -r \"%s/.aether/share\" \"%s/\" 2>/dev/null; true",
+                             home, cur_ver_dir, home, cur_ver_dir, home, cur_ver_dir, home, cur_ver_dir);
                     (void)system(bak_cmd);
                 }
             }
@@ -2826,18 +2990,16 @@ static int cmd_version_use(const char* version) {
     }
     char dest_bin[512];
     snprintf(dest_bin, sizeof(dest_bin), "%s/.aether/bin", home);
-    snprintf(cmd, sizeof(cmd),
-        "mkdir -p \"%s\" && cp -f \"%s\"/* \"%s/\" 2>/dev/null; true",
-        dest_bin, src_bin, dest_bin);
+    snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\" && cp -f \"%s\"/* \"%s/\" 2>/dev/null; true", dest_bin, src_bin, dest_bin);
     if (system(cmd) != 0) {
         fprintf(stderr, "Error: failed to copy binaries from %s to %s\n", src_bin, dest_bin);
         return 1;
     }
-#ifdef __APPLE__
+#    ifdef __APPLE__
     // Remove macOS quarantine so Gatekeeper doesn't kill unsigned binaries
     snprintf(cmd, sizeof(cmd), "xattr -cr \"%s\"/* 2>/dev/null; true", dest_bin);
     (void)system(cmd);
-#endif
+#    endif
 
     // Sync lib/, include/, and share/ from the version directory to ~/.aether/
     // so that stale files left by a previous install.sh don't shadow the
@@ -2854,9 +3016,8 @@ static int cmd_version_use(const char* version) {
         char new_ae[1024];
         snprintf(new_ae, sizeof(new_ae), "%s/ae" EXE_EXT, dest_bin);
         if (path_exists(new_ae)) {
-            snprintf(cmd, sizeof(cmd),
-                "\"%s\" version --sync-from \"%s\" 2>/dev/null", new_ae, ver_dir);
-            int _sync_rc = system(cmd);  // best-effort; in-process sync below handles failure
+            snprintf(cmd, sizeof(cmd), "\"%s\" version --sync-from \"%s\" 2>/dev/null", new_ae, ver_dir);
+            int _sync_rc = system(cmd); // best-effort; in-process sync below handles failure
             (void)_sync_rc;
         }
     }
@@ -2868,9 +3029,7 @@ static int cmd_version_use(const char* version) {
             snprintf(src_sub, sizeof(src_sub), "%s/%s", ver_dir, subdirs[i]);
             if (dir_exists(src_sub)) {
                 snprintf(dest, sizeof(dest), "%s/.aether/%s", home, subdirs[i]);
-                snprintf(cmd, sizeof(cmd),
-                    "rm -rf \"%s\" && cp -r \"%s\" \"%s\"",
-                    dest, src_sub, dest);
+                snprintf(cmd, sizeof(cmd), "rm -rf \"%s\" && cp -r \"%s\" \"%s\"", dest, src_sub, dest);
                 if (system(cmd) != 0) {
                     fprintf(stderr, "Warning: failed to sync %s to %s\n", src_sub, dest);
                 }
@@ -2917,9 +3076,11 @@ static const char* get_active_version(void) {
         if (fgets(active, sizeof(active), f)) {
             // Trim newline
             char* nl = strchr(active, '\n');
-            if (nl) *nl = '\0';
+            if (nl)
+                *nl = '\0';
             fclose(f);
-            if (active[0]) return active;
+            if (active[0])
+                return active;
         }
         fclose(f);
     }
@@ -2937,19 +3098,27 @@ static int cmd_version(int argc, char** argv) {
         return 0;
     }
     const char* sub = argv[0];
-    if (strcmp(sub, "list") == 0)    return cmd_version_list();
+    if (strcmp(sub, "list") == 0)
+        return cmd_version_list();
     if (strcmp(sub, "install") == 0) {
-        if (argc < 2) { fprintf(stderr, "Usage: ae version install <v>\n"); return 1; }
+        if (argc < 2) {
+            fprintf(stderr, "Usage: ae version install <v>\n");
+            return 1;
+        }
         return cmd_version_install(argv[1]);
     }
     if (strcmp(sub, "use") == 0) {
-        if (argc < 2) { fprintf(stderr, "Usage: ae version use <v>\n"); return 1; }
+        if (argc < 2) {
+            fprintf(stderr, "Usage: ae version use <v>\n");
+            return 1;
+        }
         return cmd_version_use(argv[1]);
     }
     // Internal: called by old ae binaries after copying new ae to ~/.aether/bin/
     // Syncs lib/, include/, share/ from a version directory to ~/.aether/
     if (strcmp(sub, "--sync-from") == 0) {
-        if (argc < 2) return 1;
+        if (argc < 2)
+            return 1;
         const char* ver_dir = argv[1];
         const char* h = get_home_dir();
         const char* subdirs[] = {"lib", "include", "share"};
@@ -2958,8 +3127,7 @@ static int cmd_version(int argc, char** argv) {
             snprintf(src_sub, sizeof(src_sub), "%s/%s", ver_dir, subdirs[i]);
             if (dir_exists(src_sub)) {
                 snprintf(dest, sizeof(dest), "%s/.aether/%s", h, subdirs[i]);
-                snprintf(cmd, sizeof(cmd),
-                    "rm -rf \"%s\" && cp -r \"%s\" \"%s\"", dest, src_sub, dest);
+                snprintf(cmd, sizeof(cmd), "rm -rf \"%s\" && cp -r \"%s\" \"%s\"", dest, src_sub, dest);
                 if (system(cmd) != 0) {
                     fprintf(stderr, "Warning: failed to sync %s to %s\n", src_sub, dest);
                 }
@@ -2996,7 +3164,8 @@ static int cmd_cache(int argc, char** argv) {
         }
         int count = 0;
         do {
-            if (fd.cFileName[0] == '.') continue;
+            if (fd.cFileName[0] == '.')
+                continue;
             char full[1024];
             snprintf(full, sizeof(full), "%s\\%s", cache_path, fd.cFileName);
             remove(full);
@@ -3012,7 +3181,8 @@ static int cmd_cache(int argc, char** argv) {
         int count = 0;
         struct dirent* entry;
         while ((entry = readdir(d)) != NULL) {
-            if (entry->d_name[0] == '.') continue;
+            if (entry->d_name[0] == '.')
+                continue;
             char full[1024];
             snprintf(full, sizeof(full), "%s/%s", cache_path, entry->d_name);
             remove(full);
@@ -3038,15 +3208,18 @@ static int cmd_cache(int argc, char** argv) {
         int count = 0;
         long long total_bytes = 0;
         do {
-            if (fd.cFileName[0] == '.') continue;
+            if (fd.cFileName[0] == '.')
+                continue;
             char full[1024];
             snprintf(full, sizeof(full), "%s\\%s", cache_path, fd.cFileName);
             struct stat st;
-            if (stat(full, &st) == 0) { total_bytes += st.st_size; count++; }
+            if (stat(full, &st) == 0) {
+                total_bytes += st.st_size;
+                count++;
+            }
         } while (FindNextFileA(h, &fd));
         FindClose(h);
-        printf("Cache: %d build(s), %.1f MB\nLocation: %s\n",
-               count, (double)total_bytes / (1024.0 * 1024.0), cache_path);
+        printf("Cache: %d build(s), %.1f MB\nLocation: %s\n", count, (double)total_bytes / (1024.0 * 1024.0), cache_path);
     }
 #else
     {
@@ -3059,15 +3232,18 @@ static int cmd_cache(int argc, char** argv) {
         long long total_bytes = 0;
         struct dirent* entry;
         while ((entry = readdir(d)) != NULL) {
-            if (entry->d_name[0] == '.') continue;
+            if (entry->d_name[0] == '.')
+                continue;
             char full[1024];
             snprintf(full, sizeof(full), "%s/%s", cache_path, entry->d_name);
             struct stat st;
-            if (stat(full, &st) == 0) { total_bytes += st.st_size; count++; }
+            if (stat(full, &st) == 0) {
+                total_bytes += st.st_size;
+                count++;
+            }
         }
         closedir(d);
-        printf("Cache: %d build(s), %.1f MB\nLocation: %s\n",
-               count, (double)total_bytes / (1024.0 * 1024.0), cache_path);
+        printf("Cache: %d build(s), %.1f MB\nLocation: %s\n", count, (double)total_bytes / (1024.0 * 1024.0), cache_path);
     }
 #endif
     printf("Use 'ae cache clear' to free space.\n");
@@ -3164,14 +3340,22 @@ int main(int argc, char** argv) {
     // All other commands need the toolchain
     discover_toolchain();
 
-    if (strcmp(cmd, "run") == 0)      return cmd_run(sub_argc, sub_argv);
-    if (strcmp(cmd, "build") == 0)    return cmd_build(sub_argc, sub_argv);
-    if (strcmp(cmd, "check") == 0)    return cmd_check(sub_argc, sub_argv);
-    if (strcmp(cmd, "test") == 0)     return cmd_test(sub_argc, sub_argv);
-    if (strcmp(cmd, "examples") == 0) return cmd_examples(sub_argc, sub_argv);
-    if (strcmp(cmd, "add") == 0)      return cmd_add(sub_argc, sub_argv);
-    if (strcmp(cmd, "cache") == 0)    return cmd_cache(sub_argc, sub_argv);
-    if (strcmp(cmd, "repl") == 0)     return cmd_repl();
+    if (strcmp(cmd, "run") == 0)
+        return cmd_run(sub_argc, sub_argv);
+    if (strcmp(cmd, "build") == 0)
+        return cmd_build(sub_argc, sub_argv);
+    if (strcmp(cmd, "check") == 0)
+        return cmd_check(sub_argc, sub_argv);
+    if (strcmp(cmd, "test") == 0)
+        return cmd_test(sub_argc, sub_argv);
+    if (strcmp(cmd, "examples") == 0)
+        return cmd_examples(sub_argc, sub_argv);
+    if (strcmp(cmd, "add") == 0)
+        return cmd_add(sub_argc, sub_argv);
+    if (strcmp(cmd, "cache") == 0)
+        return cmd_cache(sub_argc, sub_argv);
+    if (strcmp(cmd, "repl") == 0)
+        return cmd_repl();
 
     fprintf(stderr, "Unknown command '%s'. Run 'ae help' for usage.\n", cmd);
     return 1;
