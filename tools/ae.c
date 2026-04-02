@@ -501,6 +501,7 @@ static void discover_toolchain(void) {
         if (path_exists(candidate)) {
             char parent_runtime[1024];
             snprintf(parent_runtime, sizeof(parent_runtime), "%s/../runtime", exe_dir);
+            log_debug("parent_runtime: %s", parent_runtime);
             if (dir_exists(parent_runtime)) {
                 snprintf(tc.root, sizeof(tc.root), "%s/..", exe_dir);
                 strncpy(tc.compiler, candidate, sizeof(tc.compiler) - 1);
@@ -3288,6 +3289,9 @@ static void print_usage(void) {
 }
 
 int main(int argc, char** argv) {
+#ifdef TCC_RUN
+    log_init('./logs/log.log', LOG_TRACE, true);
+#endif
 #ifdef _WIN32
     // Set UTF-8 console codepage so Aether programs can print Unicode correctly
     // on Windows CMD and PowerShell (default CP1252/OEM is not UTF-8).
