@@ -53,7 +53,7 @@ extern char** environ;
 #    include <mach-o/dyld.h>
 #endif
 
-#include "apkg/toml_parser.h"
+#include "apkg/tomlc17.h"
 
 // For direct tcc -run ./tools/ae.c compilation
 #ifdef TCC_RUN
@@ -63,8 +63,8 @@ extern char** environ;
 #    include "../std/collections/aether_vector.c"
 #    include "../std/log/aether_log.c"
 #    include "../std/string/aether_string.c"
-#    include "apkg/toml_parser.c"
 #    include "apkg/util.c"
+#    include "apkg/tomlc17.c"
 #endif
 
 // Version is set by Makefile from VERSION file
@@ -109,6 +109,7 @@ typedef struct {
 
 static Toolchain tc = {0};
 
+toml_result_t result;
 // --------------------------------------------------------------------------
 // Cache infrastructure
 // --------------------------------------------------------------------------
@@ -130,6 +131,32 @@ static const char* get_home_dir(void) {
     const char* h = getenv("HOME");
     return h ? h : "/tmp";
 #endif
+}
+
+char* path_dirname(const char* path) {
+    if (!path)
+        return NULL;
+
+    const char* last_sep = strrchr(path, '/');
+    const char* last_sep_win = strrchr(path, '\\');
+
+    if (last_sep_win && (!last_sep || last_sep_win > last_sep)) {
+        last_sep = last_sep_win;
+    }
+
+    if (!last_sep) {
+        return strdup(".");
+    }
+
+    size_t len = last_sep - path;
+    if (len == 0)
+        len = 1; // Root directory
+
+    char* result = (char*)malloc(len + 1);
+    strncpy(result, path, len);
+    result[len] = '\0';
+
+    return result;
 }
 
 static void init_cache_dir(void) {
@@ -495,15 +522,16 @@ static void discover_toolchain(void) {
     // GUARD: The installed layout also has aetherc next to ae (in bin/),
     // so we verify that the parent directory contains runtime/ (repo root)
     // rather than lib/ or share/ (installed prefix).
+
     if (found_exe_dir) {
         char candidate[1024];
         snprintf(candidate, sizeof(candidate), "%s/aetherc" EXE_EXT, exe_dir);
         if (path_exists(candidate)) {
             char parent_runtime[1024];
-            snprintf(parent_runtime, sizeof(parent_runtime), "%s/../runtime", exe_dir);
-            log_debug("parent_runtime: %s", parent_runtime);
+            char* root_dir = path_dirname(exe_dir);
+            snprintf(parent_runtime, sizeof(parent_runtime), "%s/runtime", root_dir);
             if (dir_exists(parent_runtime)) {
-                snprintf(tc.root, sizeof(tc.root), "%s/..", exe_dir);
+                snprintf(tc.root, sizeof(tc.root), "%s", root_dir);
                 strncpy(tc.compiler, candidate, sizeof(tc.compiler) - 1);
                 tc.dev_mode = true;
                 goto found_root;
@@ -522,6 +550,7 @@ static void discover_toolchain(void) {
             home_clean[--len] = '\0';
         home = home_clean;
     }
+
     if (home && home[0] && dir_exists(home)) {
         // Prefer ~/.aether/current/ if a version symlink exists (ae version use)
         char current_compiler[1024];
@@ -842,6 +871,7 @@ found_root:
         }
     }
 }
+
 #if defined(__GNUC__) && !defined(__clang__)
 #    pragma GCC diagnostic pop
 #endif
@@ -859,17 +889,24 @@ static const char* get_link_flags(void) {
     if (!path_exists("aether.toml"))
         return flags;
 
-    TomlDocument* doc = toml_parse_file("aether.toml");
-    if (!doc)
-        return flags;
 
-    const char* val = toml_get_value(doc, "build", "link_flags");
+    toml_option_t opt = toml_default_option();
+    opt.check_utf8 = 1;
+    toml_set_option(opt);
+    toml_result_t result = toml_parse_file_ex("aether.toml");
+    if (!result.ok) {
+        fprintf(stderr, "Error: %s", result.errmsg);
+        toml_free(result);
+        return NULL;
+    }
+    toml_datum_t link_flags_datum = toml_seek(result.toptab, "build.link_flags");
+    const char* val = link_flags_datum.u.s;
     if (val) {
         strncpy(flags, val, sizeof(flags) - 1);
         flags[sizeof(flags) - 1] = '\0';
     }
 
-    toml_free_document(doc);
+    toml_free(result);
     return flags;
 }
 
@@ -982,17 +1019,26 @@ static const char* get_cflags(void) {
     if (!path_exists("aether.toml"))
         return flags;
 
-    TomlDocument* doc = toml_parse_file("aether.toml");
-    if (!doc)
-        return flags;
 
-    const char* val = toml_get_value(doc, "build", "cflags");
+    toml_option_t opt = toml_default_option();
+    opt.check_utf8 = 1;
+    toml_set_option(opt);
+    toml_result_t result;
+    result = toml_parse_file_ex("aether.toml");
+    if (!result.ok) {
+        fprintf(stderr, "Error: %s", result.errmsg);
+        toml_free(result);
+        return NULL;
+    }
+
+    toml_datum_t cflags_datum = toml_seek(result.toptab, "build.cflags");
+    const char* val = cflags_datum.u.s;
     if (val) {
         strncpy(flags, val, sizeof(flags) - 1);
         flags[sizeof(flags) - 1] = '\0';
     }
 
-    toml_free_document(doc);
+    toml_free(result);
     return flags;
 }
 
@@ -1246,7 +1292,9 @@ static int build_wasm_cmd(char* cmd, size_t size, const char* c_file, const char
 
 static int cmd_run(int argc, char** argv) {
     const char* file = NULL;
+    char toml_file[512] = "";
     char extra_files[2048] = "";
+    bool run_dir_mode = false;
 
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--extra") == 0 && i + 1 < argc) {
@@ -1257,26 +1305,24 @@ static int cmd_run(int argc, char** argv) {
             file = argv[i];
         }
     }
-
     // Resolve directory argument (e.g. "." or "myproject/") to src/main.ae
     if (file && dir_exists(file)) {
         static char resolved_run_file[512];
         snprintf(resolved_run_file, sizeof(resolved_run_file), "%s/src/main.ae", file);
+        snprintf(toml_file, sizeof(toml_file), "%s/aether.toml", file);
+        run_dir_mode = true;
         if (path_exists(resolved_run_file)) {
             file = resolved_run_file;
         } else {
-            char toml_path[512];
-            snprintf(toml_path, sizeof(toml_path), "%s/aether.toml", file);
-            if (path_exists(toml_path))
+            if (path_exists(toml_file))
                 fprintf(stderr, "Error: No src/main.ae found in %s\n", file);
             else
                 fprintf(stderr, "Error: '%s' is not an Aether project directory\n", file);
             return 1;
         }
-    }
-
-    // Project mode: no file argument, look for aether.toml
-    if (!file && path_exists("aether.toml")) {
+    } else if (path_exists("./aether.toml")) {
+        // Project mode: no file argument, look for aether.toml
+        snprintf(toml_file, sizeof(toml_file), "./aether.toml");
         if (path_exists("src/main.ae"))
             file = "src/main.ae";
         else {
@@ -1285,7 +1331,6 @@ static int cmd_run(int argc, char** argv) {
             return 1;
         }
     }
-
     if (!file) {
         fprintf(stderr, "Error: No input file specified.\n");
         fprintf(stderr, "Usage: ae run <file.ae>\n");
@@ -1365,10 +1410,49 @@ static int cmd_run(int argc, char** argv) {
     // Merge extra_sources from aether.toml [[bin]] with any --extra CLI args
     char toml_extra[2048] = "";
     get_extra_sources_for_bin(file, toml_extra, sizeof(toml_extra));
-    if (toml_extra[0]) {
-        if (extra_files[0])
-            strncat(extra_files, " ", sizeof(extra_files) - strlen(extra_files) - 1);
-        strncat(extra_files, toml_extra, sizeof(extra_files) - strlen(extra_files) - 1);
+    toml_result_t result;
+    result = toml_parse_file_ex(toml_file);
+    if (!result.ok) {
+        fprintf(stderr, "Error: %s", result.errmsg);
+        toml_free(result);
+        return 1;
+    }
+    // 获取 bin 数组
+    toml_datum_t bin_array = toml_seek(result.toptab, "bin");
+    if (bin_array.type != TOML_ARRAY || bin_array.u.arr.size == 0) {
+        fprintf(stderr, "No bin array found in aether.toml");
+        toml_free(result);
+        return 1;
+    }
+
+    // 获取第一个 bin 节点（table）
+    toml_datum_t first_bin = bin_array.u.arr.elem[0];
+    if (first_bin.type != TOML_TABLE) {
+        fprintf(stderr, "First bin entry is not a table");
+        toml_free(result);
+        return 1;
+    }
+
+    // 获取 extra_sources 数组
+    toml_datum_t extra_sources = toml_get(first_bin, "extra_sources");
+
+    if (extra_sources.type != TOML_UNKNOWN) {
+        if (extra_sources.type != TOML_ARRAY) {
+            fprintf(stderr, "extra_sources is not an array");
+            toml_free(result);
+            return 1;
+        }
+        // 遍历并打印 extra_sources 中的每个字符串
+        int32_t extra_files_size = extra_sources.u.arr.size;
+        for (int i = 0; i < extra_files_size; i++) {
+            toml_datum_t item = extra_sources.u.arr.elem[i];
+            if (item.type == TOML_STRING) {
+                strcat(extra_files, item.u.s);
+                if (i < extra_files_size - 1) {
+                    strcat(extra_files, " ");
+                }
+            }
+        }
     }
     const char* run_extra = extra_files[0] ? extra_files : NULL;
     build_gcc_cmd(cmd, sizeof(cmd), c_file, exe_file, false, run_extra);
@@ -1449,7 +1533,6 @@ static int cmd_build(int argc, char** argv) {
     char extra_files[2048] = "";
 
     const char* target = NULL;
-
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             output_name = argv[++i];
@@ -1467,16 +1550,17 @@ static int cmd_build(int argc, char** argv) {
     // Read target from aether.toml if not specified on CLI
     if (!target && path_exists("aether.toml")) {
         static char toml_target[64];
-        TomlDocument* doc = toml_parse_file("aether.toml");
-        if (doc) {
-            const char* val = toml_get_value(doc, "build", "target");
-            if (val && strcmp(val, "native") != 0) {
-                strncpy(toml_target, val, sizeof(toml_target) - 1);
+        toml_result_t result = toml_parse_file_ex("aether.toml");
+        if (result.ok) {
+            toml_datum_t target_datum = toml_seek(result.toptab, "build.target");
+            const char* s = target_datum.u.s;
+            if (s && strcmp(s, "native") != 0) {
+                strncpy(toml_target, s, sizeof(s) - 1);
                 toml_target[sizeof(toml_target) - 1] = '\0';
                 target = toml_target;
             }
-            toml_free_document(doc);
         }
+        toml_free(result);
     }
 
     // Validate target
@@ -1493,9 +1577,9 @@ static int cmd_build(int argc, char** argv) {
         if (path_exists(resolved_build_file)) {
             file = resolved_build_file;
         } else {
-            char toml_path[512];
-            snprintf(toml_path, sizeof(toml_path), "%s/aether.toml", file);
-            if (path_exists(toml_path))
+            char toml_file[512];
+            snprintf(toml_file, sizeof(toml_file), "%s/aether.toml", file);
+            if (path_exists(toml_file))
                 fprintf(stderr, "Error: No src/main.ae found in %s\n", file);
             else
                 fprintf(stderr, "Error: '%s' is not an Aether project directory\n", file);
@@ -3288,9 +3372,10 @@ static void print_usage(void) {
     printf("  AETHER_HOME          Aether installation directory\n");
 }
 
+
 int main(int argc, char** argv) {
 #ifdef TCC_RUN
-    log_init('./logs/log.log', LOG_TRACE, true);
+    log_init("./logs/log.log", LOG_TRACE, true);
 #endif
 #ifdef _WIN32
     // Set UTF-8 console codepage so Aether programs can print Unicode correctly
@@ -3298,7 +3383,6 @@ int main(int argc, char** argv) {
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 #endif
-
     if (argc < 2) {
         print_usage();
         return 1;
@@ -3334,6 +3418,9 @@ int main(int argc, char** argv) {
     if (strcmp(cmd, "version") == 0 || strcmp(cmd, "--version") == 0) {
         return cmd_version(sub_argc, sub_argv);
     }
+    toml_option_t opt = toml_default_option();
+    opt.check_utf8 = 1;
+    toml_set_option(opt);
     if (strcmp(cmd, "init") == 0) {
         return cmd_init(sub_argc, sub_argv);
     }

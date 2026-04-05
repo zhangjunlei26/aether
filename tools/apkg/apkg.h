@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "toml_parser.h"
 
 typedef struct {
     char* name;
@@ -43,4 +42,3 @@ void apkg_print_help();
 void apkg_print_version();
 
 #endif
-

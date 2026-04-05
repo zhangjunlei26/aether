@@ -475,14 +475,14 @@ apkg:
 	@echo "==================================="
 	@echo "Building Aether Package Manager ($(DETECTED_OS))"
 	@echo "==================================="
-	$(CC) $(CFLAGS) tools/apkg/main.c tools/apkg/apkg.c tools/apkg/toml_parser.c $(LDFLAGS) -o build/apkg$(EXE_EXT)
+	$(CC) $(CFLAGS) tools/apkg/main.c tools/apkg/apkg.c tools/apkg/tomlc17.c $(LDFLAGS) -o build/apkg$(EXE_EXT)
 	@echo "✓ Package Manager built successfully: build/apkg$(EXE_EXT)"
 
 ae: compiler
 	@echo "==================================="
 	@echo "Building ae command-line tool ($(DETECTED_OS)) v$(VERSION)"
 	@echo "==================================="
-	$(CC) -O2 -DAETHER_VERSION=\"$(VERSION)\" -Itools tools/ae.c tools/apkg/toml_parser.c -o build/ae$(EXE_EXT) $(LDFLAGS)
+	$(CC) -O2 -DAETHER_VERSION=\"$(VERSION)\" -Itools tools/ae.c tools/apkg/tomlc17.c -o build/ae$(EXE_EXT) $(LDFLAGS)
 	@echo "✓ Built successfully: build/ae$(EXE_EXT)"
 	@echo ""
 	@echo "Usage:"
